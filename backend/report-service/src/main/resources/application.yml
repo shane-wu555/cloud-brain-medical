@@ -1,0 +1,7 @@
+server:
+  port: 8108
+
+spring:
+  application:
+    name: report-service
+

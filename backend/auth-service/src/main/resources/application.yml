@@ -1,0 +1,17 @@
+server:
+  port: 8101
+
+spring:
+  application:
+    name: auth-service
+  datasource:
+    url: ${AUTH_DB_URL:jdbc:postgresql://localhost:5432/cloud_brain_medical?currentSchema=auth}
+    username: ${DB_USERNAME:cloudbrain}
+    password: ${DB_PASSWORD:cloudbrain}
+    driver-class-name: org.postgresql.Driver
+  flyway:
+    enabled: true
+    schemas: auth
+    default-schema: auth
+    create-schemas: true
+    locations: classpath:db/migration

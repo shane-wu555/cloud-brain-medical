@@ -1,0 +1,7 @@
+server:
+  port: 8107
+
+spring:
+  application:
+    name: pharmacy-service
+

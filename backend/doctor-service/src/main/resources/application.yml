@@ -1,0 +1,7 @@
+server:
+  port: 8103
+
+spring:
+  application:
+    name: doctor-service
+

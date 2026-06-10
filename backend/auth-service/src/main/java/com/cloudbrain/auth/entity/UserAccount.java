@@ -1,0 +1,77 @@
+package com.cloudbrain.auth.entity;
+
+import java.time.LocalDateTime;
+import java.util.List;
+
+public class UserAccount {
+    private final String id;
+    private final String username;
+    private final String password;
+    private final String phone;
+    private final String name;
+    private final String role;
+    private final List<String> permissions;
+    private boolean realNameVerified;
+    private final LocalDateTime createdAt;
+
+    public UserAccount(
+            String id,
+            String username,
+            String password,
+            String phone,
+            String name,
+            String role,
+            List<String> permissions,
+            boolean realNameVerified) {
+        this.id = id;
+        this.username = username;
+        this.password = password;
+        this.phone = phone;
+        this.name = name;
+        this.role = role;
+        this.permissions = permissions;
+        this.realNameVerified = realNameVerified;
+        this.createdAt = LocalDateTime.now();
+    }
+
+    public String getId() {
+        return id;
+    }
+
+    public String getUsername() {
+        return username;
+    }
+
+    public String getPassword() {
+        return password;
+    }
+
+    public String getPhone() {
+        return phone;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public String getRole() {
+        return role;
+    }
+
+    public List<String> getPermissions() {
+        return permissions;
+    }
+
+    public boolean isRealNameVerified() {
+        return realNameVerified;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public void verifyRealName() {
+        this.realNameVerified = true;
+    }
+}
+

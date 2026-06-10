@@ -1,0 +1,35 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: gateway-service
+  cloud:
+    gateway:
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOrigins: "*"
+            allowedMethods: "*"
+            allowedHeaders: "*"
+      routes:
+        - id: auth-service
+          uri: http://localhost:8101
+          predicates:
+            - Path=/api/auth/**
+        - id: patient-service
+          uri: http://localhost:8102
+          predicates:
+            - Path=/api/patients/**
+        - id: doctor-service
+          uri: http://localhost:8103
+          predicates:
+            - Path=/api/departments/**,/api/doctors/**,/api/schedules/**
+        - id: appointment-service
+          uri: http://localhost:8104
+          predicates:
+            - Path=/api/appointments/**,/api/dashboard/**,/api/ai/**
+        - id: medical-record-service
+          uri: http://localhost:8105
+          predicates:
+            - Path=/api/medical-records/**
