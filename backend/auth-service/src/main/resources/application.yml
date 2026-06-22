@@ -1,6 +1,9 @@
 server:
   port: 8101
 
+internal:
+  api-key: ${INTERNAL_API_KEY:cloud-brain-internal-development-key}
+
 spring:
   application:
     name: auth-service
@@ -21,3 +24,6 @@ security:
     secret: ${JWT_SECRET:cloud-brain-medical-development-secret-change-me}
     issuer: ${JWT_ISSUER:cloud-brain-medical}
     ttl-seconds: ${JWT_TTL_SECONDS:7200}
+  verification-code:
+    ttl-seconds: ${VERIFICATION_CODE_TTL_SECONDS:300}
+    expose-in-response: ${EXPOSE_VERIFICATION_CODE:true}

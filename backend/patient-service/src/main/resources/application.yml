@@ -4,4 +4,23 @@ server:
 spring:
   application:
     name: patient-service
+  datasource:
+    url: ${PATIENT_DB_URL:jdbc:postgresql://localhost:5432/cloud_brain_medical?currentSchema=patient}
+    username: ${DB_USERNAME:cloudbrain}
+    password: ${DB_PASSWORD:cloudbrain}
+  flyway:
+    enabled: true
+    schemas: patient
+    default-schema: patient
+    create-schemas: true
 
+security:
+  jwt:
+    secret: ${JWT_SECRET:cloud-brain-medical-development-secret-change-me}
+    issuer: ${JWT_ISSUER:cloud-brain-medical}
+
+internal:
+  api-key: ${INTERNAL_API_KEY:cloud-brain-internal-development-key}
+services:
+  auth:
+    base-url: ${AUTH_SERVICE_URL:http://localhost:8101}

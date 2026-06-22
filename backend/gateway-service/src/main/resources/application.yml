@@ -24,7 +24,7 @@ spring:
         - id: doctor-service
           uri: http://localhost:8103
           predicates:
-            - Path=/api/departments/**,/api/doctors/**,/api/schedules/**
+            - Path=/api/departments/**,/api/doctors/**,/api/schedules/**,/api/catalog/**
         - id: appointment-service
           uri: http://localhost:8104
           predicates:

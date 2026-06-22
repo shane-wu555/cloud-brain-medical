@@ -27,6 +27,12 @@ public class UserAccountRepository {
         return result.stream().findFirst();
     }
 
+    public Optional<UserAccount> findByPhone(String phone) {
+        List<UserAccount> result = jdbcTemplate.query(
+                "select * from user_account where phone = ? order by created_at limit 1", rowMapper, phone);
+        return result.stream().findFirst();
+    }
+
     public boolean existsByUsername(String username) {
         Integer count = jdbcTemplate.queryForObject(
                 "select count(*) from user_account where username = ?",
@@ -60,6 +66,12 @@ public class UserAccountRepository {
 
     public void updatePassword(String id, String encodedPassword) {
         jdbcTemplate.update("update user_account set password = ? where id = ?", encodedPassword, id);
+    }
+
+    public void markRealNameVerified(String id) {
+        if (jdbcTemplate.update("update user_account set real_name_verified = true where id = ? and role = 'PATIENT'", id) != 1) {
+            throw new IllegalArgumentException("患者账号不存在");
+        }
     }
 
     public int size() {

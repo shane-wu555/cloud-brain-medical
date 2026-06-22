@@ -59,6 +59,9 @@ public class AppointmentController {
     @PostMapping
     @PreAuthorize("hasRole('PATIENT')")
     public Appointment lockOnline(@RequestBody CreateAppointmentRequest request, JwtAuthenticationToken authentication) {
+        if (!Boolean.TRUE.equals(authentication.getToken().getClaimAsBoolean("realNameVerified"))) {
+            throw new AccessDeniedException("完成实名认证后才能挂号");
+        }
         if (!authentication.getToken().getSubject().equals(request.patientId())) {
             throw new AccessDeniedException("患者只能为本人创建挂号");
         }
@@ -75,6 +78,9 @@ public class AppointmentController {
     @PreAuthorize("hasAnyRole('PATIENT','CASHIER')")
     public Appointment pay(@PathVariable("id") String id, @RequestBody PayRequest request, JwtAuthenticationToken authentication) {
         String role = authentication.getToken().getClaimAsString("role");
+        if ("PATIENT".equals(role) && !Boolean.TRUE.equals(authentication.getToken().getClaimAsBoolean("realNameVerified"))) {
+            throw new AccessDeniedException("完成实名认证后才能缴费");
+        }
         appointmentService.validatePatientAccess(id, authentication.getToken().getSubject(), role);
         return appointmentService.pay(id, request.paymentMethod(), request.amount(), authentication.getToken().getSubject());
     }

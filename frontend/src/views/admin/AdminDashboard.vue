@@ -65,7 +65,25 @@
             <el-table-column prop="period" label="时段" width="120" />
             <el-table-column prop="capacity" label="号源" width="100" />
             <el-table-column prop="booked" label="已约" width="100" />
+            <el-table-column prop="status" label="状态" width="110" />
+            <el-table-column label="操作" width="110">
+              <template #default="scope"><el-button v-if="scope.row.status === 'PUBLISHED'" type="danger" link @click="stopSchedule(scope.row)">停诊</el-button></template>
+            </el-table-column>
           </el-table>
+        </el-card>
+
+        <el-card class="span-6" shadow="never">
+          <template #header>新增科室</template>
+          <el-form label-position="top"><el-form-item label="名称"><el-input v-model="departmentForm.name" /></el-form-item>
+            <el-form-item label="说明"><el-input v-model="departmentForm.description" /></el-form-item>
+            <el-button type="primary" @click="submitDepartment">保存科室</el-button></el-form>
+        </el-card>
+        <el-card class="span-6" shadow="never">
+          <template #header>新增医生</template>
+          <el-form label-position="top"><el-form-item label="姓名"><el-input v-model="doctorForm.name" /></el-form-item>
+            <el-form-item label="科室"><el-select v-model="doctorForm.departmentId" class="full"><el-option v-for="item in departments" :key="item.id" :label="item.name" :value="item.id" /></el-select></el-form-item>
+            <el-form-item label="医生类型"><el-select v-model="doctorForm.roleType" class="full"><el-option label="门诊医生" value="OUTPATIENT_DOCTOR" /><el-option label="检查医生" value="CHECK_DOCTOR" /><el-option label="检验医生" value="LAB_DOCTOR" /></el-select></el-form-item>
+            <el-button type="primary" @click="submitDoctor">保存医生</el-button></el-form>
         </el-card>
       </section>
     </div>
@@ -77,7 +95,7 @@ import { onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { useAuthStore } from '../../store/auth';
-import { createSchedule, getDoctors, getSchedules, type Doctor, type Schedule } from '../../api/doctor';
+import { createDepartment, createDoctor, createSchedule, getDepartments, getDoctors, getSchedules, suspendSchedule, type Department, type Doctor, type Schedule } from '../../api/doctor';
 import { getDashboardOverview } from '../../api/dashboard';
 
 const router = useRouter();
@@ -85,6 +103,9 @@ const auth = useAuthStore();
 const overview = ref<Awaited<ReturnType<typeof getDashboardOverview>>>();
 const doctors = ref<Doctor[]>([]);
 const schedules = ref<Schedule[]>([]);
+const departments = ref<Department[]>([]);
+const departmentForm = reactive({ name: '', description: '' });
+const doctorForm = reactive({ name: '', title: '主治医师', departmentId: '', roleType: 'OUTPATIENT_DOCTOR', specialty: '' });
 const scheduleForm = reactive({
   doctorId: '',
   doctorName: '',
@@ -113,6 +134,17 @@ async function submitSchedule() {
   schedules.value = await getSchedules();
 }
 
+async function stopSchedule(schedule: Schedule) {
+  await suspendSchedule(schedule.id, '管理员停诊'); ElMessage.success('已停诊'); schedules.value = await getSchedules();
+}
+async function submitDepartment() {
+  await createDepartment(departmentForm); ElMessage.success('科室已保存'); departments.value = await getDepartments();
+  departmentForm.name=''; departmentForm.description='';
+}
+async function submitDoctor() {
+  await createDoctor(doctorForm); ElMessage.success('医生已保存'); doctors.value = await getDoctors(); doctorForm.name='';
+}
+
 function logout() {
   auth.signOut();
   router.push('/login');
@@ -121,6 +153,8 @@ function logout() {
 onMounted(async () => {
   overview.value = await getDashboardOverview();
   doctors.value = await getDoctors();
+  departments.value = await getDepartments();
+  doctorForm.departmentId = departments.value[0]?.id ?? '';
   scheduleForm.doctorId = doctors.value[0]?.id ?? '';
   syncDoctor();
   schedules.value = await getSchedules();

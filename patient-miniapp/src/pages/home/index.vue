@@ -3,6 +3,7 @@
     <view class="card">
       <view class="title">你好，{{ auth.user?.name }}</view>
       <view class="muted">{{ auth.user?.realNameVerified ? '已实名认证' : '请先完成实名认证' }}</view>
+      <button v-if="!auth.user?.realNameVerified" class="button" @click="go('/pages/real-name/index')">立即认证</button>
     </view>
     <view class="grid">
       <button class="entry" @click="go('/pages/consultation/index')">AI 智能问诊</button>
@@ -20,8 +21,11 @@
 import { onShow } from '@dcloudio/uni-app';
 import { useAuthStore } from '../../stores/auth';
 const auth = useAuthStore();
-onShow(() => { if (!auth.token) uni.reLaunch({ url: '/pages/login/index' }); });
-function go(url: string) { uni.navigateTo({ url }); }
+onShow(async () => { if (!auth.token) { uni.reLaunch({ url: '/pages/login/index' }); return; } try { await auth.loadProfile(); } catch {} });
+function go(url: string) {
+  if (url === '/pages/booking/index' && !auth.user?.realNameVerified) { uni.showToast({ title: '请先完成实名认证', icon: 'none' }); return; }
+  uni.navigateTo({ url });
+}
 </script>
 
 <style scoped>.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20rpx; }.entry { height: 160rpx; display: grid; place-items: center; background: #fff; color: #0f766e; font-weight: 600; }</style>

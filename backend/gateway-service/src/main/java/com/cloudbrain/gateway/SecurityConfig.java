@@ -37,7 +37,8 @@ public class SecurityConfig {
         return http
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
                 .authorizeExchange(exchange -> exchange
-                        .pathMatchers("/api/auth/login", "/api/auth/register", "/actuator/health").permitAll()
+                        .pathMatchers("/api/auth/login", "/api/auth/register", "/api/auth/sms-codes",
+                                "/api/auth/sms-login", "/api/auth/reset-password", "/actuator/health").permitAll()
                         .anyExchange().authenticated())
                 .oauth2ResourceServer(resource -> resource.jwt(jwt -> {}))
                 .build();

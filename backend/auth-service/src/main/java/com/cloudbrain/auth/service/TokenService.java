@@ -34,8 +34,10 @@ public class TokenService {
                 .expiresAt(now.plus(ttlSeconds, ChronoUnit.SECONDS))
                 .subject(account.getId())
                 .claim("name", account.getName())
+                .claim("phone", account.getPhone())
                 .claim("role", account.getRole())
                 .claim("permissions", account.getPermissions())
+                .claim("realNameVerified", account.isRealNameVerified())
                 .build();
         JwsHeader header = JwsHeader.with(MacAlgorithm.HS256).build();
         return encoder.encode(JwtEncoderParameters.from(header, claims)).getTokenValue();

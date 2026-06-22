@@ -2,6 +2,7 @@
   "pages": [
     { "path": "pages/login/index", "style": { "navigationBarTitleText": "患者登录" } },
     { "path": "pages/home/index", "style": { "navigationBarTitleText": "智慧云脑诊疗" } },
+    { "path": "pages/real-name/index", "style": { "navigationBarTitleText": "实名认证" } },
     { "path": "pages/consultation/index", "style": { "navigationBarTitleText": "AI 智能问诊" } },
     { "path": "pages/booking/index", "style": { "navigationBarTitleText": "线上挂号" } },
     { "path": "pages/appointments/index", "style": { "navigationBarTitleText": "我的挂号" } }

@@ -20,7 +20,7 @@ import { request } from '../../api/http';
 import { useAuthStore } from '../../stores/auth';
 
 interface Department { id: string; name: string }
-interface Schedule { id: string; doctorId: string; doctorName: string; departmentId: string; workDate: string; period: string; capacity: number; booked: number }
+interface Schedule { id: string; doctorId: string; doctorName: string; departmentId: string; workDate: string; period: string; capacity: number; booked: number; status: string }
 interface Appointment { id: string }
 const auth = useAuthStore();
 const departments = ref<Department[]>([]);
