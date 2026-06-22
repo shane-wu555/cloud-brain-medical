@@ -77,7 +77,8 @@ import { onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { useAuthStore } from '../../store/auth';
-import { createSchedule, getDashboardOverview, getDoctors, getSchedules, type Doctor, type Schedule } from '../../api/medical';
+import { createSchedule, getDoctors, getSchedules, type Doctor, type Schedule } from '../../api/doctor';
+import { getDashboardOverview } from '../../api/dashboard';
 
 const router = useRouter();
 const auth = useAuthStore();
@@ -103,7 +104,6 @@ async function submitSchedule() {
   syncDoctor();
   await createSchedule({
     doctorId: scheduleForm.doctorId,
-    doctorName: scheduleForm.doctorName,
     departmentId: scheduleForm.departmentId,
     workDate: scheduleForm.workDate,
     period: scheduleForm.period,

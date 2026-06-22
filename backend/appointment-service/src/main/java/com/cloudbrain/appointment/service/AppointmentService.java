@@ -7,26 +7,29 @@ import com.cloudbrain.appointment.entity.AppointmentStatus;
 import com.cloudbrain.appointment.entity.PaymentStatus;
 import com.cloudbrain.appointment.entity.SlotInventory;
 import com.cloudbrain.appointment.repository.AppointmentRepository;
+import com.cloudbrain.appointment.repository.MedicalRecordEventRepository;
+import java.math.BigDecimal;
 import com.cloudbrain.appointment.repository.SlotInventoryRepository;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class AppointmentService {
     private final AppointmentRepository appointmentRepository;
     private final SlotInventoryRepository slotInventoryRepository;
-    private final MedicalRecordClient medicalRecordClient;
+    private final MedicalRecordEventRepository integrationEventRepository;
 
     public AppointmentService(
             AppointmentRepository appointmentRepository,
             SlotInventoryRepository slotInventoryRepository,
-            MedicalRecordClient medicalRecordClient) {
+            MedicalRecordEventRepository integrationEventRepository) {
         this.appointmentRepository = appointmentRepository;
         this.slotInventoryRepository = slotInventoryRepository;
-        this.medicalRecordClient = medicalRecordClient;
-        seed();
+        this.integrationEventRepository = integrationEventRepository;
     }
 
     public List<Appointment> list(String doctorId, String patientId, String status) {
@@ -37,6 +40,13 @@ public class AppointmentService {
                 .toList();
     }
 
+    public void validatePatientAccess(String appointmentId, String actorId, String role) {
+        if ("PATIENT".equals(role) && !get(appointmentId).getPatientId().equals(actorId)) {
+            throw new org.springframework.security.access.AccessDeniedException("患者只能操作自己的挂号记录");
+        }
+    }
+
+    @Transactional
     public Appointment lockOnline(AppointmentController.CreateAppointmentRequest request) {
         validateRequired(request.scheduleId(), "scheduleId");
         validateRequired(request.patientId(), "patientId");
@@ -44,54 +54,66 @@ public class AppointmentService {
         validateRequired(request.visitDate(), "visitDate");
         validateRequired(request.period(), "period");
 
-        SlotInventory inventory = slotInventoryRepository.findByScheduleId(request.scheduleId())
-                .orElseThrow(() -> new IllegalArgumentException("排班号源不存在"));
-        synchronized (inventory) {
-            inventory.lock();
-            slotInventoryRepository.save(inventory);
+        if (!slotInventoryRepository.tryLock(request.scheduleId())) {
+            throw new IllegalStateException("当前号源已约满或排班不存在");
         }
 
         Appointment appointment = buildAppointment(request, AppointmentSource.ONLINE, AppointmentStatus.PENDING_PAYMENT, PaymentStatus.UNPAID);
         return appointmentRepository.save(appointment);
     }
 
+    @Transactional
     public Appointment createOffline(AppointmentController.CreateAppointmentRequest request) {
+        validateRequired(request.scheduleId(), "scheduleId");
+        validateRequired(request.patientId(), "patientId");
+        validateRequired(request.doctorId(), "doctorId");
+        validateRequired(request.visitDate(), "visitDate");
+        if (!slotInventoryRepository.bookOffline(request.scheduleId())) {
+            throw new IllegalStateException("当前号源已约满或排班不存在");
+        }
         Appointment appointment = buildAppointment(request, AppointmentSource.OFFLINE, AppointmentStatus.WAITING, PaymentStatus.PAID);
         appointment.markPaid("OFFLINE_WINDOW");
         appointmentRepository.save(appointment);
-        medicalRecordClient.createInitialRecord(appointment);
+        integrationEventRepository.enqueuePayment(appointment, BigDecimal.ZERO, "cashier");
+        integrationEventRepository.enqueueMedicalRecord(appointment);
         return appointment;
     }
 
-    public Appointment pay(String id, String paymentMethod) {
+    @Transactional
+    public Appointment pay(String id, String paymentMethod, BigDecimal amount, String operatorId) {
         Appointment appointment = get(id);
         if (appointment.getStatus() != AppointmentStatus.PENDING_PAYMENT) {
             throw new IllegalStateException("只有待缴费挂号可以支付");
         }
-        SlotInventory inventory = slotInventoryRepository.findByScheduleId(appointment.getScheduleId())
-                .orElseThrow(() -> new IllegalArgumentException("排班号源不存在"));
-        synchronized (inventory) {
-            inventory.confirm();
-            slotInventoryRepository.save(inventory);
+        if (!slotInventoryRepository.confirmLocked(appointment.getScheduleId())) {
+            throw new IllegalStateException("锁定号源已失效，请重新挂号");
         }
         appointment.markPaid(Optional.ofNullable(paymentMethod).orElse("WECHAT"));
-        medicalRecordClient.createInitialRecord(appointment);
-        return appointmentRepository.save(appointment);
+        Appointment saved = appointmentRepository.save(appointment);
+        integrationEventRepository.enqueuePayment(
+                appointment, Optional.ofNullable(amount).orElse(BigDecimal.ZERO),
+                Optional.ofNullable(operatorId).orElse(appointment.getPatientId()));
+        integrationEventRepository.enqueueMedicalRecord(appointment);
+        return saved;
     }
 
+    @Transactional
     public Appointment cancel(String id) {
         Appointment appointment = get(id);
+        if (appointment.getStatus() == AppointmentStatus.CANCELLED || appointment.getStatus() == AppointmentStatus.FINISHED) {
+            throw new IllegalStateException("当前挂号状态不允许取消");
+        }
         if (!appointment.getVisitDate().isAfter(LocalDate.now())) {
             throw new IllegalStateException("就诊当天不可取消挂号或退费");
         }
-        SlotInventory inventory = slotInventoryRepository.findByScheduleId(appointment.getScheduleId()).orElse(null);
-        if (inventory != null) {
-            synchronized (inventory) {
-                inventory.releasePaidOrLocked(appointment.getPaymentStatus() == PaymentStatus.PAID);
-                slotInventoryRepository.save(inventory);
-            }
+        boolean paid = appointment.getPaymentStatus() == PaymentStatus.PAID;
+        if (paid) {
+            slotInventoryRepository.releaseBooked(appointment.getScheduleId());
+            integrationEventRepository.enqueueRefund(appointment, BigDecimal.ZERO, appointment.getPatientId());
+        } else {
+            slotInventoryRepository.releaseLocked(appointment.getScheduleId());
         }
-        appointment.markCancelled();
+        appointment.markCancelled(paid);
         return appointmentRepository.save(appointment);
     }
 
@@ -117,6 +139,7 @@ public class AppointmentService {
         return slotInventoryRepository.findAll();
     }
 
+    @Transactional
     public SlotInventory syncSlot(String scheduleId, int capacity) {
         SlotInventory inventory = slotInventoryRepository.findByScheduleId(scheduleId)
                 .orElse(new SlotInventory(scheduleId, capacity, 0));
@@ -134,7 +157,7 @@ public class AppointmentService {
             PaymentStatus paymentStatus) {
         int queueNumber = appointmentRepository.nextQueueNumber(request.doctorId(), request.visitDate());
         return new Appointment(
-                "appt-" + String.format("%03d", appointmentRepository.size() + 1),
+                "appt-" + UUID.randomUUID(),
                 request.scheduleId(),
                 request.patientId(),
                 request.patientName(),
@@ -159,25 +182,4 @@ public class AppointmentService {
         }
     }
 
-    private void seed() {
-        if (appointmentRepository.size() > 0) {
-            return;
-        }
-        AppointmentController.CreateAppointmentRequest request = new AppointmentController.CreateAppointmentRequest(
-                "schedule-001",
-                "patient-001",
-                "王小云",
-                "doctor-001",
-                "张医生",
-                "dept-neuro",
-                "神经内科",
-                LocalDate.now().toString(),
-                "上午",
-                "AI问诊提示：反复头痛，建议神经内科复诊",
-                "MEDIUM",
-                "dept-neuro");
-        Appointment seed = buildAppointment(request, AppointmentSource.ONLINE, AppointmentStatus.WAITING, PaymentStatus.PAID);
-        seed.markPaid("WECHAT");
-        appointmentRepository.save(seed);
-    }
 }

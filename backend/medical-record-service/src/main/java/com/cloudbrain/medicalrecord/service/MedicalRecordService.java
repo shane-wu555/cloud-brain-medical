@@ -5,6 +5,7 @@ import com.cloudbrain.medicalrecord.entity.MedicalRecord;
 import com.cloudbrain.medicalrecord.repository.MedicalRecordRepository;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -26,7 +27,7 @@ public class MedicalRecordService {
     public MedicalRecord createInitial(MedicalRecordController.CreateInitialRecordRequest request) {
         return repository.findByAppointmentId(request.appointmentId())
                 .orElseGet(() -> repository.save(new MedicalRecord(
-                        "record-" + String.format("%03d", repository.size() + 1),
+                        "record-" + UUID.randomUUID(),
                         request.appointmentId(),
                         request.patientId(),
                         request.patientName(),
@@ -57,4 +58,3 @@ public class MedicalRecordService {
         return repository.save(record);
     }
 }
-

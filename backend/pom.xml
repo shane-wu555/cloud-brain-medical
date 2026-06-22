@@ -15,13 +15,12 @@
         <module>patient-service</module>
         <module>doctor-service</module>
         <module>appointment-service</module>
+        <module>cashier-service</module>
         <module>medical-record-service</module>
-        <module>inspection-service</module>
+        <module>medical-order-service</module>
         <module>pharmacy-service</module>
         <module>report-service</module>
-        <module>notification-service</module>
         <module>audit-service</module>
-        <module>doctor-schedule-service</module>
     </modules>
 
     <properties>

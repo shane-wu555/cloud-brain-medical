@@ -164,9 +164,9 @@ public class Appointment {
         this.status = AppointmentStatus.FINISHED;
     }
 
-    public void markCancelled() {
+    public void markCancelled(boolean refunded) {
         this.status = AppointmentStatus.CANCELLED;
-        this.paymentStatus = PaymentStatus.REFUNDED;
+        this.paymentStatus = refunded ? PaymentStatus.REFUNDED : PaymentStatus.CANCELLED;
         this.cancelledAt = LocalDateTime.now();
     }
 

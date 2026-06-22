@@ -1,7 +1,14 @@
 import { defineStore } from 'pinia';
 import { login } from '../api/auth';
 
-export type Role = 'PATIENT' | 'DOCTOR' | 'ADMIN';
+export type Role =
+  | 'CASHIER'
+  | 'OUTPATIENT_DOCTOR'
+  | 'CHECK_DOCTOR'
+  | 'LAB_DOCTOR'
+  | 'DISPOSAL_DOCTOR'
+  | 'PHARMACY_DOCTOR'
+  | 'ADMIN';
 
 export interface CurrentUser {
   id: string;
@@ -20,9 +27,14 @@ export const useAuthStore = defineStore('auth', {
   getters: {
     isAuthenticated: (state) => Boolean(state.token && state.user),
     homePath: (state) => {
-      if (state.user?.role === 'DOCTOR') return '/doctor';
+      if (state.user?.role === 'OUTPATIENT_DOCTOR') return '/doctor/outpatient';
+      if (state.user?.role === 'CHECK_DOCTOR') return '/doctor/check';
+      if (state.user?.role === 'LAB_DOCTOR') return '/doctor/lab';
+      if (state.user?.role === 'DISPOSAL_DOCTOR') return '/doctor/disposal';
+      if (state.user?.role === 'PHARMACY_DOCTOR') return '/doctor/pharmacy';
+      if (state.user?.role === 'CASHIER') return '/cashier';
       if (state.user?.role === 'ADMIN') return '/admin';
-      return '/patient';
+      return '/login';
     }
   },
   actions: {

@@ -6,7 +6,10 @@ V1 已将核心内存仓储替换为 PostgreSQL + Flyway。
 
 - `auth-service`：`auth`
 - `appointment-service`：`appointment`
+- `cashier-service`：`cashier`
 - `medical-record-service`：`medical_record`
+- `medical-order-service`：`medical_order`
+- `doctor-service`：`doctor`
 
 ## 默认连接
 
@@ -22,7 +25,10 @@ password: cloudbrain
 - `DB_PASSWORD`
 - `AUTH_DB_URL`
 - `APPOINTMENT_DB_URL`
+- `CASHIER_DB_URL`
 - `MEDICAL_RECORD_DB_URL`
+- `MEDICAL_ORDER_DB_URL`
+- `DOCTOR_DB_URL`
 
 ## 本地启动数据库
 
@@ -42,4 +48,8 @@ docker compose -f docker/docker-compose.yml up -d postgres
 - 号源表：`appointment.slot_inventory`
 - 挂号记录表：`appointment.appointment`
 - 电子病历表：`medical_record.medical_record`
-
+- 支付单：`cashier.payment_order`
+- 退款单：`cashier.refund_order`
+- 可靠集成事件：`appointment.integration_event`
+- 检查/检验/处置统一医嘱：`medical_order.medical_order`
+- 科室、医生与排班：`doctor.department`、`doctor.doctor`、`doctor.doctor_schedule`

@@ -1,0 +1,22 @@
+server:
+  port: 8113
+spring:
+  application:
+    name: cashier-service
+  datasource:
+    url: ${CASHIER_DB_URL:jdbc:postgresql://localhost:5432/cloud_brain_medical?currentSchema=cashier}
+    username: ${DB_USERNAME:cloudbrain}
+    password: ${DB_PASSWORD:cloudbrain}
+    driver-class-name: org.postgresql.Driver
+  flyway:
+    enabled: true
+    schemas: cashier
+    default-schema: cashier
+    create-schemas: true
+    locations: classpath:db/migration
+security:
+  jwt:
+    secret: ${JWT_SECRET:cloud-brain-medical-development-secret-change-me}
+    issuer: ${JWT_ISSUER:cloud-brain-medical}
+internal:
+  api-key: ${INTERNAL_API_KEY:cloud-brain-medical-internal-development-key}

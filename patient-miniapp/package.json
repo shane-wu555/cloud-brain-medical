@@ -1,0 +1,22 @@
+{
+  "name": "cloud-brain-medical-patient-miniapp",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev:mp-weixin": "uni -p mp-weixin",
+    "build:mp-weixin": "uni build -p mp-weixin"
+  },
+  "dependencies": {
+    "@dcloudio/uni-app": "3.0.0-alpha-1000920260615733",
+    "@dcloudio/uni-components": "3.0.0-alpha-1000920260615733",
+    "@dcloudio/uni-mp-weixin": "3.0.0-alpha-1000920260615733",
+    "pinia": "^2.3.0",
+    "vue": "3.5.35"
+  },
+  "devDependencies": {
+    "@dcloudio/types": "3.4.31",
+    "@dcloudio/vite-plugin-uni": "3.0.0-alpha-1000920260615733",
+    "typescript": "^5.7.0",
+    "vite": "7.3.3"
+  }
+}

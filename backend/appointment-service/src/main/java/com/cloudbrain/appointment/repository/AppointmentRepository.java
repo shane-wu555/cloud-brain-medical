@@ -78,6 +78,10 @@ public class AppointmentRepository {
     }
 
     public int nextQueueNumber(String doctorId, String visitDate) {
+        jdbcTemplate.query(
+                "select pg_advisory_xact_lock(hashtext(?))",
+                resultSet -> null,
+                doctorId + ":" + visitDate);
         Integer max = jdbcTemplate.queryForObject(
                 "select coalesce(max(queue_number), 0) from appointment where doctor_id = ? and visit_date = ?::date",
                 Integer.class,

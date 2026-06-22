@@ -12,3 +12,7 @@ AI 服务采用 FastAPI 作为统一入口，按文档预留智能问诊、分�
 - `app/rag`：医学知识库检索增强
 - `app/scheduling`：AI 医生排班
 
+## 当前接口
+
+- `POST /api/ai/consultations`：患者症状摘要、风险分级、科室和医生推荐。
+- `GET /health`：服务健康检查。

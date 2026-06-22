@@ -58,6 +58,10 @@ public class UserAccountRepository {
         return account;
     }
 
+    public void updatePassword(String id, String encodedPassword) {
+        jdbcTemplate.update("update user_account set password = ? where id = ?", encodedPassword, id);
+    }
+
     public int size() {
         Integer count = jdbcTemplate.queryForObject("select count(*) from user_account", Integer.class);
         return count == null ? 0 : count;

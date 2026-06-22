@@ -76,15 +76,8 @@ import { onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { useAuthStore } from '../../store/auth';
-import {
-  getMedicalRecords,
-  getAppointments,
-  skipAppointment,
-  updateAppointmentStatus,
-  writeDoctorNote,
-  type Appointment,
-  type MedicalRecord
-} from '../../api/medical';
+import { getAppointments, skipAppointment, updateAppointmentStatus, type Appointment } from '../../api/appointment';
+import { getMedicalRecords, writeDoctorNote, type MedicalRecord } from '../../api/medical-record';
 
 const router = useRouter();
 const auth = useAuthStore();

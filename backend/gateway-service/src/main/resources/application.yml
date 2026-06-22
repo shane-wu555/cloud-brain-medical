@@ -28,8 +28,25 @@ spring:
         - id: appointment-service
           uri: http://localhost:8104
           predicates:
-            - Path=/api/appointments/**,/api/dashboard/**,/api/ai/**
+            - Path=/api/appointments/**,/api/dashboard/**
+        - id: cashier-service
+          uri: http://localhost:8113
+          predicates:
+            - Path=/api/payments/**,/api/refunds/**
         - id: medical-record-service
           uri: http://localhost:8105
           predicates:
             - Path=/api/medical-records/**
+        - id: medical-order-service
+          uri: http://localhost:8112
+          predicates:
+            - Path=/api/medical-orders/**
+        - id: ai-service
+          uri: http://localhost:8000
+          predicates:
+            - Path=/api/ai/**
+
+security:
+  jwt:
+    secret: ${JWT_SECRET:cloud-brain-medical-development-secret-change-me}
+    issuer: ${JWT_ISSUER:cloud-brain-medical}

@@ -46,6 +46,38 @@ public class SlotInventoryRepository {
         return inventory;
     }
 
+    public boolean tryLock(String scheduleId) {
+        return jdbcTemplate.update("""
+                update slot_inventory
+                set locked = locked + 1
+                where schedule_id = ? and locked + booked < capacity
+                """, scheduleId) == 1;
+    }
+
+    public boolean confirmLocked(String scheduleId) {
+        return jdbcTemplate.update("""
+                update slot_inventory
+                set locked = locked - 1, booked = booked + 1
+                where schedule_id = ? and locked > 0
+                """, scheduleId) == 1;
+    }
+
+    public boolean bookOffline(String scheduleId) {
+        return jdbcTemplate.update("""
+                update slot_inventory
+                set booked = booked + 1
+                where schedule_id = ? and locked + booked < capacity
+                """, scheduleId) == 1;
+    }
+
+    public void releaseLocked(String scheduleId) {
+        jdbcTemplate.update("update slot_inventory set locked = locked - 1 where schedule_id = ? and locked > 0", scheduleId);
+    }
+
+    public void releaseBooked(String scheduleId) {
+        jdbcTemplate.update("update slot_inventory set booked = booked - 1 where schedule_id = ? and booked > 0", scheduleId);
+    }
+
     private static class SlotInventoryRowMapper implements RowMapper<SlotInventory> {
         @Override
         public SlotInventory mapRow(ResultSet rs, int rowNum) throws SQLException {
