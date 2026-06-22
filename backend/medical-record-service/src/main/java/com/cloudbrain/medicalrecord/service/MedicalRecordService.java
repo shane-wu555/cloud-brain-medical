@@ -43,12 +43,19 @@ public class MedicalRecordService {
     public MedicalRecord writeDoctorNote(MedicalRecordController.WriteDoctorNoteRequest request) {
         MedicalRecord record = repository.findByAppointmentId(request.appointmentId())
                 .orElseThrow(() -> new IllegalArgumentException("本次就诊病历不存在"));
+        String source = request.diagnosisCreatedByType() == null ? "HUMAN" : request.diagnosisCreatedByType().toUpperCase();
+        if (!source.equals("HUMAN") && !source.equals("AI")) throw new IllegalArgumentException("diagnosisCreatedByType 必须为 HUMAN 或 AI");
+        if (source.equals("AI") && (request.diagnosisAiRecordId() == null || request.diagnosisAiRecordId().isBlank())) {
+            throw new IllegalArgumentException("AI 生成诊断必须关联 diagnosisAiRecordId");
+        }
         record.writeDoctorNote(
                 request.chiefComplaint(),
                 request.presentIllness(),
                 request.diagnosis(),
                 request.treatmentPlan(),
-                request.doctorRevisionNote());
+                request.doctorRevisionNote(),
+                source,
+                request.diagnosisAiRecordId());
         return repository.save(record);
     }
 

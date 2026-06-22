@@ -57,11 +57,12 @@ public class MedicalOrderController {
     @PostMapping("/{id}/complete")
     @PreAuthorize("hasAnyRole('CHECK_DOCTOR','LAB_DOCTOR','DISPOSAL_DOCTOR')")
     public MedicalOrder complete(@PathVariable String id, @RequestBody CompleteRequest request, JwtAuthenticationToken authentication) {
-        return service.complete(id, authentication.getToken().getSubject(), authentication.getToken().getClaimAsString("role"), request.resultData(), request.summary());
+        return service.complete(id, authentication.getToken().getSubject(), authentication.getToken().getClaimAsString("role"),
+                request.resultData(), request.summary(), request.createdByType(), request.aiRecordId());
     }
 
     public record CreateRequest(
             String appointmentId, String patientId, String patientName, String orderType,
             String projectCode, String projectName, String purpose, String bodyPart, BigDecimal amount) {}
-    public record CompleteRequest(String resultData, String summary) {}
+    public record CompleteRequest(String resultData, String summary, String createdByType, String aiRecordId) {}
 }

@@ -17,6 +17,10 @@ public class MedicalRecord {
     private String chiefComplaint;
     private String presentIllness;
     private String diagnosis;
+    private String diagnosisCreatedByType = "HUMAN";
+    private String diagnosisAiRecordId;
+    private String diagnosisConfirmedBy;
+    private LocalDateTime diagnosisConfirmedAt;
     private String treatmentPlan;
     private String doctorRevisionNote;
     private MedicalRecordStatus status;
@@ -109,6 +113,11 @@ public class MedicalRecord {
         return diagnosis;
     }
 
+    public String getDiagnosisCreatedByType() { return diagnosisCreatedByType; }
+    public String getDiagnosisAiRecordId() { return diagnosisAiRecordId; }
+    public String getDiagnosisConfirmedBy() { return diagnosisConfirmedBy; }
+    public LocalDateTime getDiagnosisConfirmedAt() { return diagnosisConfirmedAt; }
+
     public String getTreatmentPlan() {
         return treatmentPlan;
     }
@@ -138,10 +147,16 @@ public class MedicalRecord {
             String presentIllness,
             String diagnosis,
             String treatmentPlan,
-            String doctorRevisionNote) {
+            String doctorRevisionNote,
+            String diagnosisCreatedByType,
+            String diagnosisAiRecordId) {
         this.chiefComplaint = chiefComplaint;
         this.presentIllness = presentIllness;
         this.diagnosis = diagnosis;
+        this.diagnosisCreatedByType = diagnosisCreatedByType;
+        this.diagnosisAiRecordId = diagnosisAiRecordId;
+        this.diagnosisConfirmedBy = this.doctorId;
+        this.diagnosisConfirmedAt = LocalDateTime.now();
         this.treatmentPlan = treatmentPlan;
         this.doctorRevisionNote = doctorRevisionNote;
         this.status = MedicalRecordStatus.ACTIVE;
@@ -160,12 +175,20 @@ public class MedicalRecord {
             String diagnosis,
             String treatmentPlan,
             String doctorRevisionNote,
-            MedicalRecordStatus status) {
+            MedicalRecordStatus status,
+            String diagnosisCreatedByType,
+            String diagnosisAiRecordId,
+            String diagnosisConfirmedBy,
+            LocalDateTime diagnosisConfirmedAt) {
         this.chiefComplaint = chiefComplaint;
         this.presentIllness = presentIllness;
         this.diagnosis = diagnosis;
         this.treatmentPlan = treatmentPlan;
         this.doctorRevisionNote = doctorRevisionNote;
         this.status = status;
+        this.diagnosisCreatedByType = diagnosisCreatedByType;
+        this.diagnosisAiRecordId = diagnosisAiRecordId;
+        this.diagnosisConfirmedBy = diagnosisConfirmedBy;
+        this.diagnosisConfirmedAt = diagnosisConfirmedAt;
     }
 }

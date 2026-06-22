@@ -62,7 +62,8 @@ public class MedicalRecordController {
             String presentIllness,
             String diagnosis,
             String treatmentPlan,
-            String doctorRevisionNote) {
+            String doctorRevisionNote,
+            String diagnosisCreatedByType,
+            String diagnosisAiRecordId) {
     }
 }
-

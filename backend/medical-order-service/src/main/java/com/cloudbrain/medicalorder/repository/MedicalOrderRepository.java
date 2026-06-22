@@ -48,11 +48,13 @@ public class MedicalOrderRepository {
         return jdbcTemplate.update("update medical_order set status = 'IN_PROGRESS', executor_id = ?, started_at = now() where id = ? and status = 'WAITING'", executorId, id) == 1;
     }
 
-    public boolean complete(String id, String executorId, String resultData, String summary) {
+    public boolean complete(String id, String executorId, String resultData, String summary, String sourceType, String aiRecordId) {
         return jdbcTemplate.update("""
-                update medical_order set status = 'COMPLETED', result_data = ?::jsonb, result_summary = ?, completed_at = now()
+                update medical_order set status = 'COMPLETED', result_data = ?::jsonb, result_summary = ?,
+                    result_created_by_type = ?, result_ai_record_id = ?, result_confirmed_by = ?,
+                    result_confirmed_at = now(), completed_at = now()
                 where id = ? and status = 'IN_PROGRESS' and executor_id = ?
-                """, resultData, summary, id, executorId) == 1;
+                """, resultData, summary, sourceType, aiRecordId, executorId, id, executorId) == 1;
     }
 
     private static class Mapper implements RowMapper<MedicalOrder> {

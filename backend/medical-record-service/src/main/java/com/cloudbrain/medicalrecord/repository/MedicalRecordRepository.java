@@ -42,8 +42,9 @@ public class MedicalRecordRepository {
                     id, appointment_id, patient_id, patient_name, doctor_id, doctor_name, department_name,
                     visit_date, period, ai_triage_summary, ai_risk_level, chief_complaint, present_illness,
                     diagnosis, treatment_plan, doctor_revision_note, status, updated_at, archived_at
+                    , diagnosis_created_by_type, diagnosis_ai_record_id, diagnosis_confirmed_by, diagnosis_confirmed_at
                 )
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 on conflict (appointment_id) do update set
                     chief_complaint = excluded.chief_complaint,
                     present_illness = excluded.present_illness,
@@ -53,6 +54,10 @@ public class MedicalRecordRepository {
                     status = excluded.status,
                     updated_at = excluded.updated_at,
                     archived_at = excluded.archived_at
+                    , diagnosis_created_by_type = excluded.diagnosis_created_by_type
+                    , diagnosis_ai_record_id = excluded.diagnosis_ai_record_id
+                    , diagnosis_confirmed_by = excluded.diagnosis_confirmed_by
+                    , diagnosis_confirmed_at = excluded.diagnosis_confirmed_at
                 """,
                 record.getId(),
                 record.getAppointmentId(),
@@ -72,7 +77,11 @@ public class MedicalRecordRepository {
                 record.getDoctorRevisionNote(),
                 record.getStatus().name(),
                 record.getUpdatedAt(),
-                record.getArchivedAt());
+                record.getArchivedAt(),
+                record.getDiagnosisCreatedByType(),
+                record.getDiagnosisAiRecordId(),
+                record.getDiagnosisConfirmedBy(),
+                record.getDiagnosisConfirmedAt());
         return record;
     }
 
@@ -102,7 +111,11 @@ public class MedicalRecordRepository {
                     rs.getString("diagnosis"),
                     rs.getString("treatment_plan"),
                     rs.getString("doctor_revision_note"),
-                    MedicalRecordStatus.valueOf(rs.getString("status")));
+                    MedicalRecordStatus.valueOf(rs.getString("status")),
+                    rs.getString("diagnosis_created_by_type"),
+                    rs.getString("diagnosis_ai_record_id"),
+                    rs.getString("diagnosis_confirmed_by"),
+                    rs.getTimestamp("diagnosis_confirmed_at") == null ? null : rs.getTimestamp("diagnosis_confirmed_at").toLocalDateTime());
             return record;
         }
     }

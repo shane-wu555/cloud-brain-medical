@@ -37,6 +37,19 @@ public class CashierRepository {
                 """, "refund-" + UUID.randomUUID(), type, businessId, patientId, amount, reason, operatorId);
     }
 
+    public Payment recordTestPayment(String businessType, String businessId, String patientId,
+                                     String channel, String operatorId, String channelTradeNo) {
+        jdbc.update("""
+                insert into payment_order
+                    (id, business_type, business_id, patient_id, amount, payment_method, status,
+                     operator_id, paid_at, payment_scene, channel_trade_no, callback_received_at)
+                values (?, ?, ?, ?, 0.01, ?, 'PAID', ?, now(), 'SANDBOX_0_01', ?, now())
+                on conflict (business_type, business_id) do nothing
+                """, "pay-test-" + UUID.randomUUID(), businessType, businessId, patientId,
+                channel + "_TEST", operatorId, channelTradeNo);
+        return payments(patientId, businessId).stream().findFirst().orElseThrow();
+    }
+
     public List<Payment> payments(String patientId, String businessId) {
         return jdbc.query("""
                 select * from payment_order

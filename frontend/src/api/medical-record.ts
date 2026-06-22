@@ -1,5 +1,5 @@
 import { http } from './http';
 export interface MedicalRecord { id:string;appointmentId:string;patientId:string;patientName:string;doctorId:string;doctorName:string;departmentName:string;visitDate:string;period:string;aiTriageSummary:string;aiRiskLevel:string;chiefComplaint:string;presentIllness?:string;diagnosis:string;treatmentPlan:string;doctorRevisionNote?:string;status:string;createdAt:string;updatedAt:string;archivedAt?:string }
 export async function getMedicalRecords(params:{patientId?:string;appointmentId?:string;status?:string}={}){return(await http.get<MedicalRecord[]>('/medical-records',{params})).data;}
-export async function writeDoctorNote(payload:{appointmentId:string;chiefComplaint:string;presentIllness:string;diagnosis:string;treatmentPlan:string;doctorRevisionNote:string}){return(await http.post<MedicalRecord>('/medical-records/doctor-note',payload)).data;}
+export async function writeDoctorNote(payload:{appointmentId:string;chiefComplaint:string;presentIllness:string;diagnosis:string;treatmentPlan:string;doctorRevisionNote:string;diagnosisCreatedByType?:'HUMAN'|'AI';diagnosisAiRecordId?:string}){return(await http.post<MedicalRecord>('/medical-records/doctor-note',payload)).data;}
 export async function archiveMedicalRecord(id:string){return(await http.post<MedicalRecord>(`/medical-records/${id}/archive`)).data;}

@@ -55,11 +55,17 @@ public class MedicalOrderService {
     }
 
     @Transactional
-    public MedicalOrder complete(String id, String executorId, String role, String resultData, String summary) {
+    public MedicalOrder complete(String id, String executorId, String role, String resultData, String summary,
+                                 String createdByType, String aiRecordId) {
         MedicalOrder order = get(id);
         validateExecutor(order.orderType(), role);
         String json = resultData == null || resultData.isBlank() ? "{}" : resultData;
-        if (!repository.complete(id, executorId, json, summary)) throw new IllegalStateException("医嘱未开始、已完成或执行人不匹配");
+        String source = createdByType == null || createdByType.isBlank() ? "HUMAN" : createdByType.toUpperCase();
+        if (!source.equals("HUMAN") && !source.equals("AI")) throw new IllegalArgumentException("createdByType 必须为 HUMAN 或 AI");
+        if (source.equals("AI") && (aiRecordId == null || aiRecordId.isBlank())) {
+            throw new IllegalArgumentException("AI 生成结果必须关联 aiRecordId");
+        }
+        if (!repository.complete(id, executorId, json, summary, source, aiRecordId)) throw new IllegalStateException("医嘱未开始、已完成或执行人不匹配");
         return get(id);
     }
 
