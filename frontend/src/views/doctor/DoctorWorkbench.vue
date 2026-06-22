@@ -15,7 +15,8 @@
           <section class="grid">
         <el-card class="span-7" shadow="never">
           <template #header>待接诊队列</template>
-          <el-table :data="appointments" highlight-current-row @current-change="selectAppointment">
+          <el-input v-model="queueKeyword" clearable placeholder="按患者姓名或业务编号搜索" style="margin-bottom:12px" />
+          <el-table :data="filteredAppointments" highlight-current-row @current-change="selectAppointment">
             <el-table-column prop="queueNumber" label="序号" width="80" />
             <el-table-column prop="patientName" label="患者" width="110" />
             <el-table-column prop="source" label="来源" width="100" />
@@ -24,8 +25,10 @@
             <el-table-column prop="period" label="时段" width="100" />
             <el-table-column prop="missedCount" label="过号" width="80" />
             <el-table-column prop="triageSummary" label="AI 问诊摘要" />
-            <el-table-column label="操作" width="100">
+            <el-table-column label="操作" width="210">
               <template #default="{ row }">
+                <el-button v-if="row.status === 'WAITING'" size="small" type="primary" link @click.stop="call(row)">叫号</el-button>
+                <el-button v-if="row.status === 'WAITING' || row.status === 'CALLED'" size="small" type="success" link @click.stop="start(row)">接诊</el-button>
                 <el-button size="small" @click.stop="skip(row)">过号</el-button>
               </template>
             </el-table-column>
@@ -44,7 +47,10 @@
             <el-form-item label="现病史">
               <el-input v-model="recordForm.presentIllness" type="textarea" :rows="3" />
             </el-form-item>
-            <el-form-item label="诊断">
+            <el-form-item label="既往史"><el-input v-model="recordForm.pastHistory" type="textarea" :rows="2" /></el-form-item>
+            <el-form-item label="过敏史"><el-input v-model="recordForm.allergyHistory" type="textarea" :rows="2" /></el-form-item>
+            <el-form-item label="体格检查"><el-input v-model="recordForm.physicalExamination" type="textarea" :rows="2" /></el-form-item>
+            <el-form-item label="初步诊断">
               <el-input v-model="recordForm.diagnosis" />
             </el-form-item>
             <el-form-item label="处理方案">
@@ -53,7 +59,8 @@
             <el-form-item label="AI内容修订说明">
               <el-input v-model="recordForm.doctorRevisionNote" />
             </el-form-item>
-            <el-button type="primary" class="full" :disabled="!current" @click="saveRecord">保存病历并完成接诊</el-button>
+            <el-button type="primary" :disabled="!current" @click="saveRecord">保存病历</el-button>
+            <el-button type="success" :disabled="!current" @click="finishVisit">结束接诊</el-button>
           </el-form>
         </el-card>
 
@@ -67,6 +74,10 @@
             <el-table-column prop="diagnosis" label="诊断" />
             <el-table-column prop="treatmentPlan" label="方案" />
           </el-table>
+        </el-card>
+        <el-card class="span-12" shadow="never"><template #header>相关历史病历（访问将审计）</template>
+          <div style="display:flex;gap:12px;margin-bottom:12px"><el-input v-model="historyReason" placeholder="访问原因" /><el-button :disabled="!current" @click="loadHistory">查看历史</el-button></div>
+          <el-table :data="historyRecords"><el-table-column prop="visitDate" label="日期" width="120" /><el-table-column prop="departmentName" label="科室" width="120" /><el-table-column prop="chiefComplaint" label="主诉" /><el-table-column prop="preliminaryDiagnosis" label="诊断" /></el-table>
         </el-card>
           </section>
         </div>
@@ -117,18 +128,22 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { useAuthStore } from '../../store/auth';
-import { getAppointments, skipAppointment, updateAppointmentStatus, type Appointment } from '../../api/appointment';
-import { getMedicalRecords, writeDoctorNote, type MedicalRecord } from '../../api/medical-record';
+import { callAppointment, getTodayQueue, skipAppointment, startAppointment, updateAppointmentStatus, type Appointment } from '../../api/appointment';
+import { getMedicalRecords, getPatientHistory, writeDoctorNote, type MedicalRecord } from '../../api/medical-record';
 import { getClinicalAssistance } from '../../api/ai';
 
 const router = useRouter();
 const auth = useAuthStore();
 const appointments = ref<Appointment[]>([]);
+const queueKeyword=ref('');
+const filteredAppointments=computed(()=>{const keyword=queueKeyword.value.trim().toLowerCase();return keyword?appointments.value.filter(item=>item.patientName.toLowerCase().includes(keyword)||item.businessNo.toLowerCase().includes(keyword)):appointments.value});
 const records = ref<MedicalRecord[]>([]);
+const historyRecords=ref<MedicalRecord[]>([]);const historyReason=ref('复诊关联病史查阅');
+const recordVersion=ref<number>();const dirty=ref(false);let loadingRecord=false;
 const current = ref<Appointment>();
 const aiPrompt = ref('结合当前病历给出鉴别诊断方向和进一步检查建议');
 const aiMessages = ref<Array<{ id: string; label: string; content: string; kind: 'diagnosis' | 'advice' }>>([]);
@@ -137,56 +152,72 @@ const diagnosisAiRecordId = ref<string>();
 const recordForm = reactive({
   chiefComplaint: '',
   presentIllness: '',
+  pastHistory: '',
+  allergyHistory: '',
+  physicalExamination: '',
   diagnosis: '',
   treatmentPlan: '',
   doctorRevisionNote: ''
 });
 
 async function selectAppointment(row?: Appointment) {
+  loadingRecord=true;
   current.value = row;
   recordForm.chiefComplaint = row?.triageSummary ?? '';
   recordForm.presentIllness = '';
+  recordForm.pastHistory='';recordForm.allergyHistory='';recordForm.physicalExamination='';
   recordForm.diagnosis = '';
   recordForm.treatmentPlan = '';
   recordForm.doctorRevisionNote = '';
   aiMessages.value = [];
   diagnosisSource.value = 'HUMAN';
   diagnosisAiRecordId.value = undefined;
+  recordVersion.value=undefined;historyRecords.value=[];
   if (row) {
     const currentRecords = await getMedicalRecords({ appointmentId: row.id });
     const currentRecord = currentRecords[0];
     if (currentRecord) {
       recordForm.chiefComplaint = currentRecord.chiefComplaint || currentRecord.aiTriageSummary;
       recordForm.presentIllness = currentRecord.presentIllness ?? '';
+      recordForm.pastHistory=currentRecord.pastHistory??'';recordForm.allergyHistory=currentRecord.allergyHistory??'';
+      recordForm.physicalExamination=currentRecord.physicalExamination??'';
       recordForm.diagnosis = currentRecord.diagnosis ?? '';
       recordForm.treatmentPlan = currentRecord.treatmentPlan ?? '';
       recordForm.doctorRevisionNote = currentRecord.doctorRevisionNote ?? '';
+      recordVersion.value=currentRecord.version;
     }
   }
+  loadingRecord=false;dirty.value=false;
 }
 
 async function loadQueue() {
-  appointments.value = await getAppointments({ doctorId: 'doctor-001', status: 'WAITING' });
+  appointments.value = await getTodayQueue();
 }
+
+async function call(appointment:Appointment){await callAppointment(appointment.id);ElMessage.success('已叫号');await loadQueue()}
+async function start(appointment:Appointment){current.value=await startAppointment(appointment.id);await selectAppointment(current.value);ElMessage.success('已开始接诊');await loadQueue()}
 
 async function saveRecord() {
   if (!current.value) return;
-  await writeDoctorNote({
+  if(recordVersion.value===undefined){ElMessage.warning('电子病历尚未创建，请稍后刷新');return}
+  const saved=await writeDoctorNote({
     appointmentId: current.value.id,
+    version:recordVersion.value,
     chiefComplaint: recordForm.chiefComplaint,
     presentIllness: recordForm.presentIllness,
-    diagnosis: recordForm.diagnosis,
+    pastHistory:recordForm.pastHistory,allergyHistory:recordForm.allergyHistory,
+    physicalExamination:recordForm.physicalExamination,preliminaryDiagnosis: recordForm.diagnosis,
     treatmentPlan: recordForm.treatmentPlan,
     doctorRevisionNote: recordForm.doctorRevisionNote,
     diagnosisCreatedByType: diagnosisSource.value,
     diagnosisAiRecordId: diagnosisAiRecordId.value
   });
-  await updateAppointmentStatus(current.value.id, 'FINISHED');
-  ElMessage.success('病历已保存');
-  current.value = undefined;
-  await loadQueue();
+  recordVersion.value=saved.version;dirty.value=false;ElMessage.success('病历已保存，可继续编辑');
   records.value = await getMedicalRecords({});
 }
+
+async function finishVisit(){if(!current.value)return;if(dirty.value||recordVersion.value===undefined){ElMessage.warning('请先保存当前病历');return}await updateAppointmentStatus(current.value.id,'FINISHED');ElMessage.success('接诊已结束');current.value=undefined;await loadQueue()}
+async function loadHistory(){if(!current.value)return;historyRecords.value=await getPatientHistory(current.value.patientId,current.value.id,historyReason.value)}
 
 async function generateAssistance() {
   if (!current.value) return;
@@ -226,6 +257,7 @@ onMounted(async () => {
   await loadQueue();
   records.value = await getMedicalRecords({});
 });
+watch(recordForm,()=>{if(!loadingRecord)dirty.value=true},{deep:true});
 </script>
 
 <style scoped>

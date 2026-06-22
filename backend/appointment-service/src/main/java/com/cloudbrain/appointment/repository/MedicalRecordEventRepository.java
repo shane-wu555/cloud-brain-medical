@@ -100,5 +100,25 @@ public class MedicalRecordEventRepository {
                 """, status, error == null ? "unknown error" : error.substring(0, Math.min(error.length(), 1000)), id);
     }
 
+    public List<EventView> findEvents(String status) {
+        return jdbcTemplate.query("""
+                select id,aggregate_id,event_type,status,retry_count,next_attempt_at,last_error,created_at,completed_at
+                from integration_event where (? is null or status=?) order by created_at desc limit 200
+                """,(rs,row)->new EventView(rs.getString("id"),rs.getString("aggregate_id"),rs.getString("event_type"),
+                rs.getString("status"),rs.getInt("retry_count"),rs.getTimestamp("next_attempt_at").toLocalDateTime(),
+                rs.getString("last_error"),rs.getTimestamp("created_at").toLocalDateTime(),
+                rs.getTimestamp("completed_at")==null?null:rs.getTimestamp("completed_at").toLocalDateTime()),status,status);
+    }
+
+    public void retry(String id) {
+        if(jdbcTemplate.update("""
+                update integration_event set status='PENDING',next_attempt_at=now(),last_error=null
+                where id=? and status in ('FAILED','RETRY')
+                """,id)!=1) throw new IllegalArgumentException("事件不存在或当前状态不可重试");
+    }
+
     public record PendingEvent(String id, String eventType, String payload, int retryCount) {}
+    public record EventView(String id,String aggregateId,String eventType,String status,int retryCount,
+            java.time.LocalDateTime nextAttemptAt,String lastError,java.time.LocalDateTime createdAt,
+            java.time.LocalDateTime completedAt) {}
 }

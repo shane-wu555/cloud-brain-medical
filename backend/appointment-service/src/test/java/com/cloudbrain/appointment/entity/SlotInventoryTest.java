@@ -13,4 +13,10 @@ class SlotInventoryTest {
         assertEquals(0, inventory.getAvailable());
         assertThrows(IllegalStateException.class, inventory::lock);
     }
+
+    @Test
+    void resizingCannotHideExistingReservations() {
+        SlotInventory inventory = new SlotInventory("schedule", 2, 2);
+        assertThrows(IllegalArgumentException.class, () -> inventory.resize(1));
+    }
 }

@@ -36,53 +36,63 @@ public class MedicalRecordRepository {
         return result.stream().findFirst();
     }
 
-    public MedicalRecord save(MedicalRecord record) {
+    public MedicalRecord save(MedicalRecord record,long expectedVersion) {
+        int updated=jdbcTemplate.update("""
+                update medical_record set chief_complaint=?,present_illness=?,past_history=?,allergy_history=?,
+                    physical_examination=?,preliminary_diagnosis=?,diagnosis=?,treatment_plan=?,doctor_revision_note=?,
+                    status=?,updated_at=?,archived_at=?,diagnosis_created_by_type=?,diagnosis_ai_record_id=?,
+                    diagnosis_confirmed_by=?,diagnosis_confirmed_at=?,version=?
+                where id=? and version=?
+                """,record.getChiefComplaint(),record.getPresentIllness(),record.getPastHistory(),record.getAllergyHistory(),
+                record.getPhysicalExamination(),record.getPreliminaryDiagnosis(),record.getDiagnosis(),record.getTreatmentPlan(),
+                record.getDoctorRevisionNote(),record.getStatus().name(),record.getUpdatedAt(),record.getArchivedAt(),
+                record.getDiagnosisCreatedByType(),record.getDiagnosisAiRecordId(),record.getDiagnosisConfirmedBy(),
+                record.getDiagnosisConfirmedAt(),record.getVersion(),record.getId(),expectedVersion);
+        if(updated!=1) throw new org.springframework.dao.OptimisticLockingFailureException("病历已被其他窗口更新，请刷新后重试");
+        jdbcTemplate.update("""
+                insert into medical_record_version
+                    (id,medical_record_id,version,chief_complaint,present_illness,past_history,allergy_history,
+                     physical_examination,preliminary_diagnosis,treatment_plan,doctor_revision_note,
+                     diagnosis_created_by_type,diagnosis_ai_record_id,confirmed_by)
+                values (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """,java.util.UUID.randomUUID(),record.getId(),record.getVersion(),record.getChiefComplaint(),
+                record.getPresentIllness(),record.getPastHistory(),record.getAllergyHistory(),record.getPhysicalExamination(),
+                record.getPreliminaryDiagnosis(),record.getTreatmentPlan(),record.getDoctorRevisionNote(),
+                record.getDiagnosisCreatedByType(),record.getDiagnosisAiRecordId(),record.getDiagnosisConfirmedBy());
+        return record;
+    }
+
+    public List<MedicalRecord> findByPatientId(String patientId) {
+        return jdbcTemplate.query("select * from medical_record where patient_id=? order by visit_date desc,created_at desc",rowMapper,patientId);
+    }
+
+    public void recordAccess(String recordId,String patientId,String actorId,String actorRole,String scope,String reason) {
+        jdbcTemplate.update("""
+                insert into medical_record_access_log
+                    (id,medical_record_id,patient_id,actor_id,actor_role,access_scope,reason)
+                values (?,?,?,?,?,?,?)
+                """,java.util.UUID.randomUUID(),recordId,patientId,actorId,actorRole,scope,reason);
+    }
+
+    public List<AccessLog> accessLogs(String patientId) {
+        return jdbcTemplate.query("""
+                select id,medical_record_id,patient_id,actor_id,actor_role,access_scope,reason,accessed_at
+                from medical_record_access_log where (? is null or patient_id=?) order by accessed_at desc limit 200
+                """,(rs,row)->new AccessLog(rs.getObject(1,java.util.UUID.class),rs.getString(2),rs.getString(3),
+                rs.getString(4),rs.getString(5),rs.getString(6),rs.getString(7),rs.getTimestamp(8).toLocalDateTime()),patientId,patientId);
+    }
+
+    public MedicalRecord createInitialIfAbsent(MedicalRecord record) {
         jdbcTemplate.update("""
                 insert into medical_record (
-                    id, appointment_id, patient_id, patient_name, doctor_id, doctor_name, department_name,
-                    visit_date, period, ai_triage_summary, ai_risk_level, chief_complaint, present_illness,
-                    diagnosis, treatment_plan, doctor_revision_note, status, updated_at, archived_at
-                    , diagnosis_created_by_type, diagnosis_ai_record_id, diagnosis_confirmed_by, diagnosis_confirmed_at
-                )
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                on conflict (appointment_id) do update set
-                    chief_complaint = excluded.chief_complaint,
-                    present_illness = excluded.present_illness,
-                    diagnosis = excluded.diagnosis,
-                    treatment_plan = excluded.treatment_plan,
-                    doctor_revision_note = excluded.doctor_revision_note,
-                    status = excluded.status,
-                    updated_at = excluded.updated_at,
-                    archived_at = excluded.archived_at
-                    , diagnosis_created_by_type = excluded.diagnosis_created_by_type
-                    , diagnosis_ai_record_id = excluded.diagnosis_ai_record_id
-                    , diagnosis_confirmed_by = excluded.diagnosis_confirmed_by
-                    , diagnosis_confirmed_at = excluded.diagnosis_confirmed_at
-                """,
-                record.getId(),
-                record.getAppointmentId(),
-                record.getPatientId(),
-                record.getPatientName(),
-                record.getDoctorId(),
-                record.getDoctorName(),
-                record.getDepartmentName(),
-                record.getVisitDate(),
-                record.getPeriod(),
-                record.getAiTriageSummary(),
-                record.getAiRiskLevel(),
-                record.getChiefComplaint(),
-                record.getPresentIllness(),
-                record.getDiagnosis(),
-                record.getTreatmentPlan(),
-                record.getDoctorRevisionNote(),
-                record.getStatus().name(),
-                record.getUpdatedAt(),
-                record.getArchivedAt(),
-                record.getDiagnosisCreatedByType(),
-                record.getDiagnosisAiRecordId(),
-                record.getDiagnosisConfirmedBy(),
-                record.getDiagnosisConfirmedAt());
-        return record;
+                    id,appointment_id,patient_id,patient_name,doctor_id,doctor_name,department_name,
+                    visit_date,period,ai_triage_summary,ai_risk_level,status,updated_at)
+                values (?,?,?,?,?,?,?,?,?,?,?,'DRAFT',now())
+                on conflict (appointment_id) do nothing
+                """,record.getId(),record.getAppointmentId(),record.getPatientId(),record.getPatientName(),
+                record.getDoctorId(),record.getDoctorName(),record.getDepartmentName(),record.getVisitDate(),
+                record.getPeriod(),record.getAiTriageSummary(),record.getAiRiskLevel());
+        return findByAppointmentId(record.getAppointmentId()).orElseThrow();
     }
 
     public int size() {
@@ -108,6 +118,10 @@ public class MedicalRecordRepository {
             record.restoreDoctorContent(
                     rs.getString("chief_complaint"),
                     rs.getString("present_illness"),
+                    rs.getString("past_history"),
+                    rs.getString("allergy_history"),
+                    rs.getString("physical_examination"),
+                    rs.getString("preliminary_diagnosis"),
                     rs.getString("diagnosis"),
                     rs.getString("treatment_plan"),
                     rs.getString("doctor_revision_note"),
@@ -115,8 +129,12 @@ public class MedicalRecordRepository {
                     rs.getString("diagnosis_created_by_type"),
                     rs.getString("diagnosis_ai_record_id"),
                     rs.getString("diagnosis_confirmed_by"),
-                    rs.getTimestamp("diagnosis_confirmed_at") == null ? null : rs.getTimestamp("diagnosis_confirmed_at").toLocalDateTime());
+                    rs.getTimestamp("diagnosis_confirmed_at") == null ? null : rs.getTimestamp("diagnosis_confirmed_at").toLocalDateTime(),
+                    rs.getLong("version"));
             return record;
         }
     }
+
+    public record AccessLog(java.util.UUID id,String medicalRecordId,String patientId,String actorId,String actorRole,
+            String accessScope,String reason,java.time.LocalDateTime accessedAt) {}
 }

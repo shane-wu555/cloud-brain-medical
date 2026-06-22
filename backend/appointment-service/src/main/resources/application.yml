@@ -27,3 +27,7 @@ internal:
 services:
   cashier:
     base-url: ${CASHIER_SERVICE_URL:http://localhost:8113}
+  patient:
+    base-url: ${PATIENT_SERVICE_URL:http://localhost:8102}
+  medical-record:
+    base-url: ${MEDICAL_RECORD_SERVICE_URL:http://localhost:8105}

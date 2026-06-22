@@ -16,20 +16,24 @@ import java.util.Optional;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.scheduling.annotation.Scheduled;
 
 @Service
 public class AppointmentService {
     private final AppointmentRepository appointmentRepository;
     private final SlotInventoryRepository slotInventoryRepository;
     private final MedicalRecordEventRepository integrationEventRepository;
+    private final MedicalRecordClient medicalRecordClient;
 
     public AppointmentService(
             AppointmentRepository appointmentRepository,
             SlotInventoryRepository slotInventoryRepository,
-            MedicalRecordEventRepository integrationEventRepository) {
+            MedicalRecordEventRepository integrationEventRepository,
+            MedicalRecordClient medicalRecordClient) {
         this.appointmentRepository = appointmentRepository;
         this.slotInventoryRepository = slotInventoryRepository;
         this.integrationEventRepository = integrationEventRepository;
+        this.medicalRecordClient = medicalRecordClient;
     }
 
     public List<Appointment> list(String doctorId, String patientId, String status) {
@@ -38,6 +42,13 @@ public class AppointmentService {
                 .filter(item -> Optional.ofNullable(patientId).map(id -> id.equals(item.getPatientId())).orElse(true))
                 .filter(item -> Optional.ofNullable(status).map(value -> value.equals(item.getStatus().name())).orElse(true))
                 .toList();
+    }
+
+    public List<Appointment> todayQueue(String doctorId) {
+        return appointmentRepository.findAll().stream()
+                .filter(a->a.getDoctorId().equals(doctorId) && a.getVisitDate().equals(LocalDate.now()))
+                .filter(a->List.of(AppointmentStatus.WAITING,AppointmentStatus.CALLED,AppointmentStatus.IN_VISIT).contains(a.getStatus()))
+                .sorted(java.util.Comparator.comparingInt(Appointment::getQueueNumber)).toList();
     }
 
     public void validatePatientAccess(String appointmentId, String actorId, String role) {
@@ -74,14 +85,16 @@ public class AppointmentService {
         Appointment appointment = buildAppointment(request, AppointmentSource.OFFLINE, AppointmentStatus.WAITING, PaymentStatus.PAID);
         appointment.markPaid("OFFLINE_WINDOW");
         appointmentRepository.save(appointment);
-        integrationEventRepository.enqueuePayment(appointment, BigDecimal.ZERO, "cashier");
+        integrationEventRepository.enqueuePayment(appointment, new BigDecimal("0.01"), "cashier");
         integrationEventRepository.enqueueMedicalRecord(appointment);
         return appointment;
     }
 
     @Transactional
     public Appointment pay(String id, String paymentMethod, BigDecimal amount, String operatorId) {
-        Appointment appointment = get(id);
+        Appointment appointment = appointmentRepository.findByIdForUpdate(id)
+                .orElseThrow(() -> new IllegalArgumentException("挂号记录不存在"));
+        if (appointment.getPaymentStatus() == PaymentStatus.PAID) return appointment;
         if (appointment.getStatus() != AppointmentStatus.PENDING_PAYMENT) {
             throw new IllegalStateException("只有待缴费挂号可以支付");
         }
@@ -98,12 +111,14 @@ public class AppointmentService {
     }
 
     @Transactional
-    public Appointment cancel(String id) {
-        Appointment appointment = get(id);
-        if (appointment.getStatus() == AppointmentStatus.CANCELLED || appointment.getStatus() == AppointmentStatus.FINISHED) {
+    public Appointment cancel(String id, boolean windowOperator) {
+        Appointment appointment = appointmentRepository.findByIdForUpdate(id)
+                .orElseThrow(() -> new IllegalArgumentException("挂号记录不存在"));
+        if (appointment.getStatus() == AppointmentStatus.CANCELLED) return appointment;
+        if (appointment.getStatus() == AppointmentStatus.FINISHED || appointment.getStatus() == AppointmentStatus.IN_VISIT) {
             throw new IllegalStateException("当前挂号状态不允许取消");
         }
-        if (!appointment.getVisitDate().isAfter(LocalDate.now())) {
+        if (!windowOperator && !appointment.getVisitDate().isAfter(LocalDate.now())) {
             throw new IllegalStateException("就诊当天不可取消挂号或退费");
         }
         boolean paid = appointment.getPaymentStatus() == PaymentStatus.PAID;
@@ -117,22 +132,40 @@ public class AppointmentService {
         return appointmentRepository.save(appointment);
     }
 
-    public Appointment updateStatus(String id, String status) {
+    public Appointment updateStatus(String id, String status, String doctorId) {
         Appointment appointment = get(id);
+        validateDoctor(appointment,doctorId);
         if ("FINISHED".equals(status)) {
+            if(!medicalRecordClient.isSaved(id)) throw new IllegalStateException("病历未保存，不能结束接诊");
             appointment.markFinished();
             return appointmentRepository.save(appointment);
         }
         throw new IllegalArgumentException("暂不支持的状态流转: " + status);
     }
 
-    public Appointment skip(String id) {
-        Appointment appointment = get(id);
-        if (appointment.getStatus() != AppointmentStatus.WAITING) {
-            throw new IllegalStateException("只有待接诊患者可以过号");
-        }
-        appointment.skip(3);
-        return appointmentRepository.save(appointment);
+    @Transactional
+    public Appointment call(String id,String doctorId) {
+        Appointment appointment=appointmentRepository.findByIdForUpdate(id).orElseThrow(()->new IllegalArgumentException("挂号记录不存在"));
+        validateDoctor(appointment,doctorId);
+        appointment.markCalled(); return appointmentRepository.save(appointment);
+    }
+
+    @Transactional
+    public Appointment startVisit(String id,String doctorId) {
+        Appointment appointment=appointmentRepository.findByIdForUpdate(id).orElseThrow(()->new IllegalArgumentException("挂号记录不存在"));
+        validateDoctor(appointment,doctorId);
+        appointment.startVisit(); return appointmentRepository.save(appointment);
+    }
+
+    @Transactional
+    public Appointment skip(String id,String doctorId) {
+        validateDoctor(get(id),doctorId);
+        return appointmentRepository.skipByPositions(id,3);
+    }
+
+    private void validateDoctor(Appointment appointment,String doctorId) {
+        if(!appointment.getDoctorId().equals(doctorId))
+            throw new org.springframework.security.access.AccessDeniedException("医生只能操作自己的接诊队列");
     }
 
     public List<SlotInventory> slots() {
@@ -143,7 +176,33 @@ public class AppointmentService {
     public SlotInventory syncSlot(String scheduleId, int capacity) {
         SlotInventory inventory = slotInventoryRepository.findByScheduleId(scheduleId)
                 .orElse(new SlotInventory(scheduleId, capacity, 0));
+        inventory.resize(capacity);
         return slotInventoryRepository.save(inventory);
+    }
+
+    @Scheduled(fixedDelayString="${appointment.lock-expiration-scan-ms:30000}")
+    @Transactional
+    public void releaseExpiredLocks() {
+        for(String id:appointmentRepository.findExpiredPendingIds()) expireOne(id);
+    }
+
+    public void expireOne(String id) {
+        Appointment appointment=appointmentRepository.findByIdForUpdate(id).orElse(null);
+        if(appointment==null || appointment.getStatus()!=AppointmentStatus.PENDING_PAYMENT) return;
+        slotInventoryRepository.releaseLocked(appointment.getScheduleId());
+        appointment.markPaymentExpired();
+        appointmentRepository.save(appointment);
+    }
+
+    @Transactional
+    public Appointment failPayment(String id,String patientId) {
+        Appointment appointment=appointmentRepository.findByIdForUpdate(id)
+                .orElseThrow(()->new IllegalArgumentException("挂号记录不存在"));
+        if(!appointment.getPatientId().equals(patientId)) throw new org.springframework.security.access.AccessDeniedException("支付患者不匹配");
+        if(appointment.getPaymentStatus()==PaymentStatus.FAILED) return appointment;
+        if(appointment.getStatus()!=AppointmentStatus.PENDING_PAYMENT) throw new IllegalStateException("当前挂号状态不能标记支付失败");
+        slotInventoryRepository.releaseLocked(appointment.getScheduleId()); appointment.markPaymentExpired();
+        return appointmentRepository.save(appointment);
     }
 
     private Appointment get(String id) {

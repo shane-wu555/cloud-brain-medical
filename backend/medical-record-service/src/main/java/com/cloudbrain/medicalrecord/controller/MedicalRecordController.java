@@ -1,69 +1,48 @@
 package com.cloudbrain.medicalrecord.controller;
 
 import com.cloudbrain.medicalrecord.entity.MedicalRecord;
+import com.cloudbrain.medicalrecord.repository.MedicalRecordRepository;
 import com.cloudbrain.medicalrecord.service.MedicalRecordService;
-import java.util.List;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import java.util.*;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
-@RestController
-@RequestMapping("/api/medical-records")
+@RestController @RequestMapping("/api/medical-records")
 public class MedicalRecordController {
-    private final MedicalRecordService service;
+    private final MedicalRecordService service; private final String internalApiKey;
+    public MedicalRecordController(MedicalRecordService service,@Value("${internal.api-key}") String key){this.service=service;this.internalApiKey=key;}
 
-    public MedicalRecordController(MedicalRecordService service) {
-        this.service = service;
-    }
+    @GetMapping @PreAuthorize("hasAnyRole('PATIENT','OUTPATIENT_DOCTOR')")
+    public List<MedicalRecord> list(@RequestParam(required=false) String patientId,@RequestParam(required=false) String appointmentId,
+            @RequestParam(required=false) String status,JwtAuthenticationToken auth){return service.listAuthorized(auth.getToken().getSubject(),auth.getToken().getClaimAsString("role"),patientId,appointmentId,status);}
 
-    @GetMapping
-    public List<MedicalRecord> list(
-            @RequestParam(name = "patientId", required = false) String patientId,
-            @RequestParam(name = "appointmentId", required = false) String appointmentId,
-            @RequestParam(name = "status", required = false) String status) {
-        return service.list(patientId, appointmentId, status);
-    }
+    @GetMapping("/history") @PreAuthorize("hasRole('OUTPATIENT_DOCTOR')")
+    public List<MedicalRecord> history(@RequestParam String patientId,@RequestParam String currentAppointmentId,
+            @RequestParam String reason,JwtAuthenticationToken auth){return service.history(patientId,currentAppointmentId,reason,auth.getToken().getSubject());}
 
-    @PostMapping("/initial")
-    public MedicalRecord createInitial(@RequestBody CreateInitialRecordRequest request) {
-        return service.createInitial(request);
-    }
+    @GetMapping("/access-logs") @PreAuthorize("hasRole('ADMIN')")
+    public List<MedicalRecordRepository.AccessLog> accessLogs(@RequestParam(required=false) String patientId){return service.accessLogs(patientId);}
 
-    @PostMapping("/doctor-note")
-    public MedicalRecord writeDoctorNote(@RequestBody WriteDoctorNoteRequest request) {
-        return service.writeDoctorNote(request);
-    }
+    @PostMapping("/initial") public MedicalRecord createInitial(@RequestBody CreateInitialRecordRequest request,
+            @RequestHeader(name="X-Internal-Api-Key",required=false) String key){checkKey(key);return service.createInitial(request);}
 
-    @PostMapping("/{id}/archive")
-    public MedicalRecord archive(@PathVariable("id") String id) {
-        return service.archive(id);
-    }
+    @GetMapping("/internal/{appointmentId}/saved") public Map<String,Boolean> saved(@PathVariable String appointmentId,
+            @RequestHeader(name="X-Internal-Api-Key",required=false) String key){checkKey(key);return Map.of("saved",service.isSaved(appointmentId));}
 
-    public record CreateInitialRecordRequest(
-            String appointmentId,
-            String patientId,
-            String patientName,
-            String doctorId,
-            String doctorName,
-            String departmentName,
-            String visitDate,
-            String period,
-            String triageSummary,
-            String riskLevel) {
-    }
+    @PostMapping("/doctor-note") @PreAuthorize("hasRole('OUTPATIENT_DOCTOR')")
+    public MedicalRecord writeDoctorNote(@RequestBody WriteDoctorNoteRequest request,JwtAuthenticationToken auth){return service.writeDoctorNote(request,auth.getToken().getSubject());}
 
-    public record WriteDoctorNoteRequest(
-            String appointmentId,
-            String chiefComplaint,
-            String presentIllness,
-            String diagnosis,
-            String treatmentPlan,
-            String doctorRevisionNote,
-            String diagnosisCreatedByType,
-            String diagnosisAiRecordId) {
-    }
+    @PostMapping("/{id}/archive") @PreAuthorize("hasRole('OUTPATIENT_DOCTOR')")
+    public MedicalRecord archive(@PathVariable String id,JwtAuthenticationToken auth){return service.archive(id,auth.getToken().getSubject());}
+
+    private void checkKey(String key){if(!internalApiKey.equals(key))throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,"内部接口认证失败");}
+    public record CreateInitialRecordRequest(String appointmentId,String patientId,String patientName,String doctorId,String doctorName,
+            String departmentName,String visitDate,String period,String triageSummary,String riskLevel){}
+    public record WriteDoctorNoteRequest(String appointmentId,long version,String chiefComplaint,String presentIllness,String pastHistory,
+            String allergyHistory,String physicalExamination,String preliminaryDiagnosis,String treatmentPlan,String doctorRevisionNote,
+            String diagnosisCreatedByType,String diagnosisAiRecordId){}
 }

@@ -1,6 +1,8 @@
 package com.cloudbrain.cashier.controller;
 
 import com.cloudbrain.cashier.repository.CashierRepository;
+import com.cloudbrain.cashier.service.AppointmentPaymentClient;
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
@@ -19,10 +21,21 @@ import org.springframework.web.bind.annotation.RestController;
 public class CashierController {
     private final CashierRepository repository;
     private final boolean testModeEnabled;
+    private final AppointmentPaymentClient appointmentClient;
     public CashierController(CashierRepository repository,
+                             AppointmentPaymentClient appointmentClient,
                              @Value("${payment.test-mode-enabled:false}") boolean testModeEnabled) {
         this.repository=repository;
+        this.appointmentClient=appointmentClient;
         this.testModeEnabled=testModeEnabled;
+    }
+    @PostMapping("/payments/orders") @PreAuthorize("hasAnyRole('PATIENT','CASHIER')")
+    public CashierRepository.Payment createOrder(@RequestBody CreatePaymentRequest request,JwtAuthenticationToken auth) {
+        String patientId=restrict(request.patientId(),auth);
+        BigDecimal amount=request.amount()==null?new BigDecimal("0.01"):request.amount();
+        if(amount.signum()<0) throw new IllegalArgumentException("支付金额不能为负数");
+        return repository.createPaymentOrder(request.businessType(),request.businessId(),patientId,amount,
+                request.paymentMethod()==null?"WECHAT":request.paymentMethod(),auth.getToken().getSubject());
     }
     @GetMapping("/payments") @PreAuthorize("hasAnyRole('PATIENT','CASHIER','ADMIN')")
     public List<CashierRepository.Payment> payments(@RequestParam(required=false) String patientId,@RequestParam(required=false) String businessId,JwtAuthenticationToken auth) {
@@ -45,8 +58,22 @@ public class CashierController {
         if (!List.of("WECHAT", "ALIPAY", "SIMULATED").contains(channel)) throw new IllegalArgumentException("不支持的测试支付渠道");
         String tradeNo = request.channelTradeNo() == null || request.channelTradeNo().isBlank()
                 ? "test-" + UUID.randomUUID() : request.channelTradeNo();
-        return repository.recordTestPayment(request.businessType(), request.businessId(), patientId,
+        CashierRepository.Payment payment=repository.recordTestPayment(request.businessType(), request.businessId(), patientId,
                 channel, auth.getToken().getSubject(), tradeNo);
+        if("APPOINTMENT".equals(request.businessType())) {
+            appointmentClient.confirm(request.businessId(),patientId,payment.paymentMethod(),payment.id());
+        }
+        return payment;
+    }
+    @PostMapping("/payments/test-failure")
+    @PreAuthorize("hasAnyRole('PATIENT','CASHIER','ADMIN')")
+    public CashierRepository.Payment testFailure(@RequestBody TestPaymentRequest request,JwtAuthenticationToken auth) {
+        if(!testModeEnabled) throw new IllegalStateException("测试支付未启用");
+        String patientId=restrict(request.patientId(),auth);
+        CashierRepository.Payment payment=repository.recordTestFailure(request.businessType(),request.businessId(),patientId,
+                auth.getToken().getSubject(),"SIMULATED_FAILURE");
+        if("APPOINTMENT".equals(request.businessType())) appointmentClient.fail(request.businessId(),patientId,payment.id());
+        return payment;
     }
     private String restrict(String patientId,JwtAuthenticationToken auth) {
         if(!"PATIENT".equals(auth.getToken().getClaimAsString("role"))) return patientId;
@@ -54,4 +81,6 @@ public class CashierController {
     }
     public record TestPaymentRequest(String businessType, String businessId, String patientId,
                                      String channel, String channelTradeNo) {}
+    public record CreatePaymentRequest(String businessType,String businessId,String patientId,
+                                       BigDecimal amount,String paymentMethod) {}
 }

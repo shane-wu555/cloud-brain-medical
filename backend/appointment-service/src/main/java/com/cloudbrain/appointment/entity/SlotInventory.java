@@ -2,7 +2,7 @@ package com.cloudbrain.appointment.entity;
 
 public class SlotInventory {
     private final String scheduleId;
-    private final int capacity;
+    private int capacity;
     private int locked;
     private int booked;
 
@@ -56,5 +56,9 @@ public class SlotInventory {
             locked--;
         }
     }
-}
 
+    public void resize(int newCapacity) {
+        if (newCapacity < locked + booked) throw new IllegalArgumentException("号源容量不能小于已锁定与已预约数量");
+        this.capacity = newCapacity;
+    }
+}

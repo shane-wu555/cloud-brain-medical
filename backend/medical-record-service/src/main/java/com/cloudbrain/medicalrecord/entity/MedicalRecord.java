@@ -16,6 +16,10 @@ public class MedicalRecord {
     private final String aiRiskLevel;
     private String chiefComplaint;
     private String presentIllness;
+    private String pastHistory;
+    private String allergyHistory;
+    private String physicalExamination;
+    private String preliminaryDiagnosis;
     private String diagnosis;
     private String diagnosisCreatedByType = "HUMAN";
     private String diagnosisAiRecordId;
@@ -27,6 +31,7 @@ public class MedicalRecord {
     private final LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private LocalDateTime archivedAt;
+    private long version;
 
     public MedicalRecord(
             String id,
@@ -108,6 +113,11 @@ public class MedicalRecord {
     public String getPresentIllness() {
         return presentIllness;
     }
+    public String getPastHistory(){return pastHistory;}
+    public String getAllergyHistory(){return allergyHistory;}
+    public String getPhysicalExamination(){return physicalExamination;}
+    public String getPreliminaryDiagnosis(){return preliminaryDiagnosis;}
+    public long getVersion(){return version;}
 
     public String getDiagnosis() {
         return diagnosis;
@@ -145,14 +155,21 @@ public class MedicalRecord {
     public void writeDoctorNote(
             String chiefComplaint,
             String presentIllness,
-            String diagnosis,
+            String pastHistory,
+            String allergyHistory,
+            String physicalExamination,
+            String preliminaryDiagnosis,
             String treatmentPlan,
             String doctorRevisionNote,
             String diagnosisCreatedByType,
             String diagnosisAiRecordId) {
         this.chiefComplaint = chiefComplaint;
         this.presentIllness = presentIllness;
-        this.diagnosis = diagnosis;
+        this.pastHistory = pastHistory;
+        this.allergyHistory = allergyHistory;
+        this.physicalExamination = physicalExamination;
+        this.preliminaryDiagnosis = preliminaryDiagnosis;
+        this.diagnosis = preliminaryDiagnosis;
         this.diagnosisCreatedByType = diagnosisCreatedByType;
         this.diagnosisAiRecordId = diagnosisAiRecordId;
         this.diagnosisConfirmedBy = this.doctorId;
@@ -161,17 +178,23 @@ public class MedicalRecord {
         this.doctorRevisionNote = doctorRevisionNote;
         this.status = MedicalRecordStatus.ACTIVE;
         this.updatedAt = LocalDateTime.now();
+        this.version++;
     }
 
     public void archive() {
         this.status = MedicalRecordStatus.ARCHIVED;
         this.archivedAt = LocalDateTime.now();
         this.updatedAt = this.archivedAt;
+        this.version++;
     }
 
     public void restoreDoctorContent(
             String chiefComplaint,
             String presentIllness,
+            String pastHistory,
+            String allergyHistory,
+            String physicalExamination,
+            String preliminaryDiagnosis,
             String diagnosis,
             String treatmentPlan,
             String doctorRevisionNote,
@@ -179,9 +202,14 @@ public class MedicalRecord {
             String diagnosisCreatedByType,
             String diagnosisAiRecordId,
             String diagnosisConfirmedBy,
-            LocalDateTime diagnosisConfirmedAt) {
+            LocalDateTime diagnosisConfirmedAt,
+            long version) {
         this.chiefComplaint = chiefComplaint;
         this.presentIllness = presentIllness;
+        this.pastHistory = pastHistory;
+        this.allergyHistory = allergyHistory;
+        this.physicalExamination = physicalExamination;
+        this.preliminaryDiagnosis = preliminaryDiagnosis;
         this.diagnosis = diagnosis;
         this.treatmentPlan = treatmentPlan;
         this.doctorRevisionNote = doctorRevisionNote;
@@ -190,5 +218,6 @@ public class MedicalRecord {
         this.diagnosisAiRecordId = diagnosisAiRecordId;
         this.diagnosisConfirmedBy = diagnosisConfirmedBy;
         this.diagnosisConfirmedAt = diagnosisConfirmedAt;
+        this.version = version;
     }
 }

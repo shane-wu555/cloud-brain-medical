@@ -21,6 +21,15 @@ class AppointmentTest {
         assertEquals(PaymentStatus.REFUNDED, appointment.getPaymentStatus());
     }
 
+    @Test
+    void queueLifecycleRequiresCallBeforeVisitButAlsoAllowsDirectStart() {
+        Appointment called=appointment(PaymentStatus.PAID,AppointmentStatus.WAITING);
+        called.markCalled();
+        assertEquals(AppointmentStatus.CALLED,called.getStatus());
+        called.startVisit();
+        assertEquals(AppointmentStatus.IN_VISIT,called.getStatus());
+    }
+
     private Appointment appointment(PaymentStatus paymentStatus, AppointmentStatus status) {
         return new Appointment(
                 "appt-test", "schedule-test", "patient-test", "患者", "doctor-test", "医生",

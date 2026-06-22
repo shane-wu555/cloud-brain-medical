@@ -32,7 +32,10 @@ public class SecurityConfig {
         return http.csrf(csrf -> csrf.disable())
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(a -> a.requestMatchers("/actuator/health").permitAll()
-                        .requestMatchers("/api/patients/**").hasRole("PATIENT").anyRequest().authenticated())
+                        .requestMatchers("/api/internal/**").permitAll()
+                        .requestMatchers("/api/patients/me/**").hasRole("PATIENT")
+                        .requestMatchers("/api/patients/**").hasAnyRole("PATIENT","CASHIER","ADMIN")
+                        .anyRequest().authenticated())
                 .oauth2ResourceServer(o -> o.jwt(j -> j.jwtAuthenticationConverter(converter))).build();
     }
 }

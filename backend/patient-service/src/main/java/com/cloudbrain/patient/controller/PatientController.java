@@ -11,6 +11,9 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.client.RestClient;
 import org.springframework.beans.factory.annotation.Value;
 
@@ -29,6 +32,18 @@ public class PatientController {
     @GetMapping("/me")
     public PatientRepository.PatientProfile me(Jwt jwt) {
         return repository.ensure(jwt.getSubject(), jwt.getClaimAsString("phone"), jwt.getClaimAsString("name"));
+    }
+
+    @GetMapping
+    @PreAuthorize("hasAnyRole('CASHIER','ADMIN')")
+    public java.util.List<PatientRepository.PatientProfile> search(@RequestParam String phone) {
+        return repository.findByPhone(phone).stream().toList();
+    }
+
+    @PostMapping("/offline")
+    @PreAuthorize("hasRole('CASHIER')")
+    public PatientRepository.PatientProfile createOffline(@Valid @RequestBody OfflinePatientRequest request) {
+        return repository.findByPhone(request.phone()).orElseGet(()->repository.createOffline(request.phone(),request.name()));
     }
 
     @PutMapping("/me/real-name")
@@ -57,4 +72,6 @@ public class PatientController {
 
     public record RealNameRequest(@NotBlank String name,
             @NotBlank @Pattern(regexp = "^[1-9]\\d{16}[0-9Xx]$") String idCard) {}
+    public record OfflinePatientRequest(
+            @NotBlank @Pattern(regexp="^1\\d{10}$") String phone,@NotBlank String name) {}
 }

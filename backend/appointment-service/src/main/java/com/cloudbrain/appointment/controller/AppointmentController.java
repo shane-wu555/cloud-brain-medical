@@ -3,6 +3,7 @@ package com.cloudbrain.appointment.controller;
 import com.cloudbrain.appointment.entity.Appointment;
 import com.cloudbrain.appointment.entity.SlotInventory;
 import com.cloudbrain.appointment.service.AppointmentService;
+import com.cloudbrain.appointment.service.PatientVerificationClient;
 import java.util.List;
 import java.util.Map;
 import java.math.BigDecimal;
@@ -22,9 +23,11 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/appointments")
 public class AppointmentController {
     private final AppointmentService appointmentService;
+    private final PatientVerificationClient patientVerificationClient;
 
-    public AppointmentController(AppointmentService appointmentService) {
+    public AppointmentController(AppointmentService appointmentService,PatientVerificationClient patientVerificationClient) {
         this.appointmentService = appointmentService;
+        this.patientVerificationClient = patientVerificationClient;
     }
 
     @GetMapping
@@ -50,6 +53,11 @@ public class AppointmentController {
         return appointmentService.slots();
     }
 
+    @GetMapping("/queue/today") @PreAuthorize("hasRole('OUTPATIENT_DOCTOR')")
+    public List<Appointment> todayQueue(JwtAuthenticationToken authentication) {
+        return appointmentService.todayQueue(authentication.getToken().getSubject());
+    }
+
     @PostMapping("/slots")
     @PreAuthorize("hasRole('ADMIN')")
     public SlotInventory syncSlot(@RequestBody SyncSlotRequest request) {
@@ -59,7 +67,7 @@ public class AppointmentController {
     @PostMapping
     @PreAuthorize("hasRole('PATIENT')")
     public Appointment lockOnline(@RequestBody CreateAppointmentRequest request, JwtAuthenticationToken authentication) {
-        if (!Boolean.TRUE.equals(authentication.getToken().getClaimAsBoolean("realNameVerified"))) {
+        if (!patientVerificationClient.isVerified(authentication.getToken().getSubject())) {
             throw new AccessDeniedException("完成实名认证后才能挂号");
         }
         if (!authentication.getToken().getSubject().equals(request.patientId())) {
@@ -75,12 +83,9 @@ public class AppointmentController {
     }
 
     @PostMapping("/{id}/pay")
-    @PreAuthorize("hasAnyRole('PATIENT','CASHIER')")
+    @PreAuthorize("hasRole('CASHIER')")
     public Appointment pay(@PathVariable("id") String id, @RequestBody PayRequest request, JwtAuthenticationToken authentication) {
         String role = authentication.getToken().getClaimAsString("role");
-        if ("PATIENT".equals(role) && !Boolean.TRUE.equals(authentication.getToken().getClaimAsBoolean("realNameVerified"))) {
-            throw new AccessDeniedException("完成实名认证后才能缴费");
-        }
         appointmentService.validatePatientAccess(id, authentication.getToken().getSubject(), role);
         return appointmentService.pay(id, request.paymentMethod(), request.amount(), authentication.getToken().getSubject());
     }
@@ -90,19 +95,27 @@ public class AppointmentController {
     public Appointment cancel(@PathVariable("id") String id, JwtAuthenticationToken authentication) {
         appointmentService.validatePatientAccess(
                 id, authentication.getToken().getSubject(), authentication.getToken().getClaimAsString("role"));
-        return appointmentService.cancel(id);
+        return appointmentService.cancel(id,
+                "CASHIER".equals(authentication.getToken().getClaimAsString("role")));
     }
 
     @PostMapping("/{id}/skip")
     @PreAuthorize("hasRole('OUTPATIENT_DOCTOR')")
-    public Appointment skip(@PathVariable("id") String id) {
-        return appointmentService.skip(id);
+    public Appointment skip(@PathVariable("id") String id,JwtAuthenticationToken authentication) {
+        return appointmentService.skip(id,authentication.getToken().getSubject());
     }
+
+    @PostMapping("/{id}/call") @PreAuthorize("hasRole('OUTPATIENT_DOCTOR')")
+    public Appointment call(@PathVariable String id,JwtAuthenticationToken authentication){return appointmentService.call(id,authentication.getToken().getSubject());}
+
+    @PostMapping("/{id}/start") @PreAuthorize("hasRole('OUTPATIENT_DOCTOR')")
+    public Appointment start(@PathVariable String id,JwtAuthenticationToken authentication){return appointmentService.startVisit(id,authentication.getToken().getSubject());}
 
     @PatchMapping("/{id}/status")
     @PreAuthorize("hasRole('OUTPATIENT_DOCTOR')")
-    public Appointment updateStatus(@PathVariable("id") String id, @RequestBody Map<String, String> body) {
-        return appointmentService.updateStatus(id, body.getOrDefault("status", "WAITING"));
+    public Appointment updateStatus(@PathVariable("id") String id, @RequestBody Map<String, String> body,
+            JwtAuthenticationToken authentication) {
+        return appointmentService.updateStatus(id, body.getOrDefault("status", "WAITING"),authentication.getToken().getSubject());
     }
 
     public record CreateAppointmentRequest(

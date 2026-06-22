@@ -5,6 +5,7 @@ import java.time.LocalDateTime;
 
 public class Appointment {
     private final String id;
+    private String businessNo;
     private final String scheduleId;
     private final String patientId;
     private final String patientName;
@@ -68,6 +69,9 @@ public class Appointment {
     public String getId() {
         return id;
     }
+
+    public String getBusinessNo() { return businessNo; }
+    public void restoreBusinessNo(String businessNo) { this.businessNo=businessNo; }
 
     public String getScheduleId() {
         return scheduleId;
@@ -164,16 +168,27 @@ public class Appointment {
         this.status = AppointmentStatus.FINISHED;
     }
 
+    public void markCalled() {
+        if(status!=AppointmentStatus.WAITING) throw new IllegalStateException("只有待诊患者可以叫号");
+        status=AppointmentStatus.CALLED;
+    }
+
+    public void startVisit() {
+        if(status!=AppointmentStatus.WAITING && status!=AppointmentStatus.CALLED)
+            throw new IllegalStateException("当前患者不能开始接诊");
+        status=AppointmentStatus.IN_VISIT;
+    }
+
     public void markCancelled(boolean refunded) {
         this.status = AppointmentStatus.CANCELLED;
         this.paymentStatus = refunded ? PaymentStatus.REFUNDED : PaymentStatus.CANCELLED;
         this.cancelledAt = LocalDateTime.now();
     }
 
-    public void skip(int positions) {
-        this.queueNumber += positions;
-        this.missedCount++;
-        this.status = AppointmentStatus.WAITING;
+    public void markPaymentExpired() {
+        this.status = AppointmentStatus.CANCELLED;
+        this.paymentStatus = PaymentStatus.FAILED;
+        this.cancelledAt = LocalDateTime.now();
     }
 
     public void restorePersistenceState(String paymentMethod, int missedCount) {

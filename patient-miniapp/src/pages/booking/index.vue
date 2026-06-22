@@ -8,8 +8,8 @@
     </view>
     <view v-for="schedule in schedules" :key="schedule.id" class="card schedule">
       <view><text class="doctor">{{ schedule.doctorName }}</text> · {{ schedule.workDate }} {{ schedule.period }}</view>
-      <view class="muted">剩余号源：{{ schedule.capacity - schedule.booked }}</view>
-      <button class="button" :disabled="schedule.booked >= schedule.capacity" @click="book(schedule)">锁号并支付</button>
+      <view class="muted">剩余号源：{{ schedule.available }}</view>
+      <button class="button" :disabled="schedule.available <= 0" @click="book(schedule)">0.01 元模拟支付</button>
     </view>
   </view>
 </template>
@@ -20,7 +20,7 @@ import { request } from '../../api/http';
 import { useAuthStore } from '../../stores/auth';
 
 interface Department { id: string; name: string }
-interface Schedule { id: string; doctorId: string; doctorName: string; departmentId: string; workDate: string; period: string; capacity: number; booked: number; status: string }
+interface Schedule { id: string; doctorId: string; doctorName: string; departmentId: string; workDate: string; period: string; capacity: number; booked: number; locked: number; available: number; status: string }
 interface Appointment { id: string }
 const auth = useAuthStore();
 const departments = ref<Department[]>([]);
@@ -49,7 +49,14 @@ async function book(schedule: Schedule) {
         visitDate: schedule.workDate, period: schedule.period, riskLevel: 'LOW'
       }
     });
-    await request({ url: `/appointments/${appointment.id}/pay`, method: 'POST', data: { paymentMethod: 'WECHAT', amount: 0, operatorId: auth.user.id } });
+    await request({ url: '/payments/orders', method: 'POST', data: {
+      businessType: 'APPOINTMENT', businessId: appointment.id, patientId: auth.user.id,
+      amount: 0.01, paymentMethod: 'WECHAT_TEST'
+    }});
+    await request({ url: '/payments/test-callback', method: 'POST', data: {
+      businessType: 'APPOINTMENT', businessId: appointment.id, patientId: auth.user.id,
+      channel: 'WECHAT', channelTradeNo: `wx-test-${appointment.id}-${Date.now()}`
+    }});
     uni.showToast({ title: '挂号成功', icon: 'success' });
     await loadSchedules();
   } catch (error) {
