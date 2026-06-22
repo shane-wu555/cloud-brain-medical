@@ -32,6 +32,7 @@ public class MedicalRecordController {
 
     @GetMapping("/internal/{appointmentId}/saved") public Map<String,Boolean> saved(@PathVariable String appointmentId,
             @RequestHeader(name="X-Internal-Api-Key",required=false) String key){checkKey(key);return Map.of("saved",service.isSaved(appointmentId));}
+    @PostMapping("/internal/{appointmentId}/reports") public void linkReport(@PathVariable String appointmentId,@RequestHeader(name="X-Internal-Api-Key",required=false)String key,@RequestBody ReportLink request){checkKey(key);service.linkReport(appointmentId,request.medicalOrderId(),request.reportId(),request.reportType(),request.conclusion(),request.confirmedBy(),request.confirmedAt());}
 
     @PostMapping("/doctor-note") @PreAuthorize("hasRole('OUTPATIENT_DOCTOR')")
     public MedicalRecord writeDoctorNote(@RequestBody WriteDoctorNoteRequest request,JwtAuthenticationToken auth){return service.writeDoctorNote(request,auth.getToken().getSubject());}
@@ -45,4 +46,5 @@ public class MedicalRecordController {
     public record WriteDoctorNoteRequest(String appointmentId,long version,String chiefComplaint,String presentIllness,String pastHistory,
             String allergyHistory,String physicalExamination,String preliminaryDiagnosis,String treatmentPlan,String doctorRevisionNote,
             String diagnosisCreatedByType,String diagnosisAiRecordId){}
+    public record ReportLink(String medicalOrderId,String reportId,String reportType,String conclusion,String confirmedBy,java.time.LocalDateTime confirmedAt){}
 }

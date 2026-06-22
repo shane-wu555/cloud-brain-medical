@@ -174,10 +174,11 @@ public class Appointment {
     }
 
     public void startVisit() {
-        if(status!=AppointmentStatus.WAITING && status!=AppointmentStatus.CALLED)
+        if(status!=AppointmentStatus.WAITING && status!=AppointmentStatus.CALLED && status!=AppointmentStatus.REVISIT_WAITING)
             throw new IllegalStateException("当前患者不能开始接诊");
         status=AppointmentStatus.IN_VISIT;
     }
+    public void waitForRevisit(int newQueueNumber){this.status=AppointmentStatus.REVISIT_WAITING;this.queueNumber=newQueueNumber;}
 
     public void markCancelled(boolean refunded) {
         this.status = AppointmentStatus.CANCELLED;

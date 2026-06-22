@@ -62,4 +62,5 @@ public class MedicalRecordService {
     @Transactional public MedicalRecord archive(String id,String doctorId){MedicalRecord record=repository.findById(id).orElseThrow(()->new IllegalArgumentException("病历不存在"));if(!record.getDoctorId().equals(doctorId))throw new AccessDeniedException("无权归档该病历");if(record.getStatus()==MedicalRecordStatus.DRAFT)throw new IllegalStateException("病历尚未保存，不能归档");long expected=record.getVersion();record.archive();return repository.save(record,expected);}
     public boolean isSaved(String appointmentId){return repository.findByAppointmentId(appointmentId).map(r->r.getStatus()!=MedicalRecordStatus.DRAFT).orElse(false);}
     public List<MedicalRecordRepository.AccessLog> accessLogs(String patientId){return repository.accessLogs(patientId);}
+    public void linkReport(String appointmentId,String orderId,String reportId,String type,String conclusion,String confirmer,java.time.LocalDateTime confirmedAt){repository.linkReport(appointmentId,orderId,reportId,type,conclusion,confirmer,confirmedAt);}
 }

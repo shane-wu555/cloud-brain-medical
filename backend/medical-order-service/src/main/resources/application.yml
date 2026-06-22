@@ -20,3 +20,19 @@ security:
   jwt:
     secret: ${JWT_SECRET:cloud-brain-medical-development-secret-change-me}
     issuer: ${JWT_ISSUER:cloud-brain-medical}
+
+internal:
+  api-key: ${INTERNAL_API_KEY:cloud-brain-medical-internal-development-key}
+services:
+  ai:
+    base-url: ${AI_SERVICE_URL:http://localhost:8000}
+  appointment:
+    base-url: ${APPOINTMENT_SERVICE_URL:http://localhost:8104}
+  medical-record:
+    base-url: ${MEDICAL_RECORD_SERVICE_URL:http://localhost:8105}
+storage:
+  minio:
+    endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+    access-key: ${MINIO_ACCESS_KEY:minioadmin}
+    secret-key: ${MINIO_SECRET_KEY:minioadmin}
+    bucket: ${MINIO_MEDICAL_BUCKET:medical-imaging}

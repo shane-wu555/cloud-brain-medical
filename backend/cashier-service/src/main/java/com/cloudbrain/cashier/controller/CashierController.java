@@ -2,6 +2,7 @@ package com.cloudbrain.cashier.controller;
 
 import com.cloudbrain.cashier.repository.CashierRepository;
 import com.cloudbrain.cashier.service.AppointmentPaymentClient;
+import com.cloudbrain.cashier.service.MedicalOrderPaymentClient;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
@@ -22,11 +23,14 @@ public class CashierController {
     private final CashierRepository repository;
     private final boolean testModeEnabled;
     private final AppointmentPaymentClient appointmentClient;
+    private final MedicalOrderPaymentClient medicalOrderClient;
     public CashierController(CashierRepository repository,
                              AppointmentPaymentClient appointmentClient,
+                             MedicalOrderPaymentClient medicalOrderClient,
                              @Value("${payment.test-mode-enabled:false}") boolean testModeEnabled) {
         this.repository=repository;
         this.appointmentClient=appointmentClient;
+        this.medicalOrderClient=medicalOrderClient;
         this.testModeEnabled=testModeEnabled;
     }
     @PostMapping("/payments/orders") @PreAuthorize("hasAnyRole('PATIENT','CASHIER')")
@@ -63,6 +67,7 @@ public class CashierController {
         if("APPOINTMENT".equals(request.businessType())) {
             appointmentClient.confirm(request.businessId(),patientId,payment.paymentMethod(),payment.id());
         }
+        if("MEDICAL_ORDER".equals(request.businessType())) medicalOrderClient.confirm(request.businessId(),patientId,payment.id());
         return payment;
     }
     @PostMapping("/payments/test-failure")

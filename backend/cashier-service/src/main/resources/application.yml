@@ -25,3 +25,5 @@ payment:
 services:
   appointment:
     base-url: ${APPOINTMENT_SERVICE_URL:http://localhost:8104}
+  medical-order:
+    base-url: ${MEDICAL_ORDER_SERVICE_URL:http://localhost:8112}

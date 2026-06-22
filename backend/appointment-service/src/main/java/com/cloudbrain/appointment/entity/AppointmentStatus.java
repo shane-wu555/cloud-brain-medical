@@ -5,6 +5,7 @@ public enum AppointmentStatus {
     WAITING,
     CALLED,
     IN_VISIT,
+    REVISIT_WAITING,
     FINISHED,
     CANCELLED
 }

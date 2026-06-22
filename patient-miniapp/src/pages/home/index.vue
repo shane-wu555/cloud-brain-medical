@@ -9,9 +9,9 @@
       <button class="entry" @click="go('/pages/consultation/index')">AI 智能问诊</button>
       <button class="entry" @click="go('/pages/booking/index')">线上挂号</button>
       <button class="entry" @click="go('/pages/appointments/index')">我的挂号</button>
-      <button class="entry">检查检验报告</button>
+      <button class="entry" @click="go('/pages/medical-orders/index')">检查检验报告</button>
       <button class="entry">电子病历</button>
-      <button class="entry">待缴费用</button>
+      <button class="entry" @click="go('/pages/medical-orders/index')">待缴费用</button>
       <button class="entry">取药状态</button>
     </view>
   </view>

@@ -81,6 +81,10 @@ public class MedicalRecordRepository {
                 """,(rs,row)->new AccessLog(rs.getObject(1,java.util.UUID.class),rs.getString(2),rs.getString(3),
                 rs.getString(4),rs.getString(5),rs.getString(6),rs.getString(7),rs.getTimestamp(8).toLocalDateTime()),patientId,patientId);
     }
+    public void linkReport(String appointmentId,String orderId,String reportId,String type,String conclusion,String confirmer,java.time.LocalDateTime confirmedAt){MedicalRecord record=findByAppointmentId(appointmentId).orElseThrow(()->new IllegalArgumentException("就诊病历不存在"));jdbcTemplate.update("""
+            insert into medical_record_report_link(id,medical_record_id,medical_order_id,report_id,report_type,conclusion,confirmed_by,confirmed_at)
+            values(?,?,?,?,?,?,?,?) on conflict(medical_order_id,report_id) do nothing
+            """,java.util.UUID.randomUUID(),record.getId(),orderId,reportId,type,conclusion,confirmer,confirmedAt);}
 
     public MedicalRecord createInitialIfAbsent(MedicalRecord record) {
         jdbcTemplate.update("""

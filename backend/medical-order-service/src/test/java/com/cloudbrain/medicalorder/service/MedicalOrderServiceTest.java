@@ -17,9 +17,10 @@ class MedicalOrderServiceTest {
         MedicalOrderRepository repository = Mockito.mock(MedicalOrderRepository.class);
         MedicalOrder order = new MedicalOrder(
                 "order", "appointment", "patient", "患者", "doctor", "LAB", "lab", "血常规",
-                null, null, BigDecimal.ZERO, "PAID", "WAITING", null, null, null, LocalDateTime.now(), null, null);
+                null, null, BigDecimal.ZERO, "PAID", "WAITING", null,null,null,null,1,"ROUTINE",null,null,0,
+                null, null, LocalDateTime.now(), null, null);
         when(repository.findById("order")).thenReturn(Optional.of(order));
-        MedicalOrderService service = new MedicalOrderService(repository);
+        MedicalOrderService service = new MedicalOrderService(repository,Mockito.mock(AiTriageClient.class));
         assertThrows(IllegalStateException.class, () -> service.start("order", "check-doctor", "CHECK_DOCTOR"));
     }
 }

@@ -27,6 +27,7 @@ public class InternalAppointmentController {
         if(!internalApiKey.equals(key)) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,"内部接口认证失败");
         return service.failPayment(id,request.patientId());
     }
+    @PostMapping("/{id}/revisit") public Appointment revisit(@PathVariable String id,@RequestHeader(name="X-Internal-Api-Key",required=false)String key){if(!internalApiKey.equals(key))throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);return service.enterRevisit(id);}
     public record PaymentConfirmation(String patientId,String paymentMethod,String paymentOrderId) {}
     public record PaymentFailure(String patientId,String paymentOrderId) {}
 }

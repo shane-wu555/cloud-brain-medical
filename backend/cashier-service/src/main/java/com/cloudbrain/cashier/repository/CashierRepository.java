@@ -68,7 +68,7 @@ public class CashierRepository {
         Payment existing=findByBusiness(businessType,businessId);
         if(!existing.patientId().equals(patientId)) throw new IllegalArgumentException("支付单患者不匹配");
         jdbc.update("""
-                update payment_order set status='PAID', amount=0.01, payment_method=?, operator_id=?,
+                update payment_order set status='PAID', payment_method=?, operator_id=?,
                     paid_at=coalesce(paid_at,now()), payment_scene='SANDBOX_0_01',
                     channel_trade_no=coalesce(channel_trade_no,?), callback_received_at=now()
                 where id=? and status='PENDING'

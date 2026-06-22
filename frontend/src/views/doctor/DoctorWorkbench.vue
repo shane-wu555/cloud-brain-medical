@@ -65,6 +65,25 @@
         </el-card>
 
         <el-card class="span-12" shadow="never">
+          <template #header>医技项目开单</template>
+          <div style="display:flex;gap:12px;margin-bottom:12px">
+            <el-input v-model="itemKeyword" clearable placeholder="搜索项目名称或编码" />
+            <el-select v-model="itemCategory" clearable placeholder="项目分类" style="width:180px">
+              <el-option label="检查" value="CHECK" /><el-option label="检验" value="LAB" /><el-option label="处置" value="DISPOSAL" />
+            </el-select>
+            <el-select v-model="orderUrgency" style="width:140px"><el-option label="常规" value="ROUTINE" /><el-option label="急诊" value="EMERGENCY" /></el-select>
+            <el-checkbox v-model="favoritesOnly">只看常用</el-checkbox>
+            <el-button type="primary" :disabled="!current || !selectedItems.length" @click="submitOrders">批量开单（{{ selectedItems.length }}）</el-button>
+          </div>
+          <el-table :data="filteredItems" @selection-change="selectedItems=$event">
+            <el-table-column type="selection" width="50" /><el-table-column prop="code" label="编码" width="130" />
+            <el-table-column prop="name" label="项目" /><el-table-column prop="category" label="分类" width="100" />
+            <el-table-column prop="price" label="价格（元）" width="120" />
+            <el-table-column label="常用" width="80"><template #default="{row}"><el-button link @click.stop="toggleFavorite(row.code)">{{ favoriteCodes.includes(row.code)?'★':'☆' }}</el-button></template></el-table-column>
+          </el-table>
+        </el-card>
+
+        <el-card class="span-12" shadow="never">
           <template #header>已保存病历</template>
           <el-table :data="records">
             <el-table-column prop="id" label="病历号" width="120" />
@@ -78,6 +97,9 @@
         <el-card class="span-12" shadow="never"><template #header>相关历史病历（访问将审计）</template>
           <div style="display:flex;gap:12px;margin-bottom:12px"><el-input v-model="historyReason" placeholder="访问原因" /><el-button :disabled="!current" @click="loadHistory">查看历史</el-button></div>
           <el-table :data="historyRecords"><el-table-column prop="visitDate" label="日期" width="120" /><el-table-column prop="departmentName" label="科室" width="120" /><el-table-column prop="chiefComplaint" label="主诉" /><el-table-column prop="preliminaryDiagnosis" label="诊断" /></el-table>
+        </el-card>
+        <el-card class="span-12" shadow="never"><template #header>已确认医技报告</template>
+          <el-table :data="formalReports"><el-table-column prop="reportType" label="类型" width="100" /><el-table-column prop="findings" label="所见/过程" /><el-table-column prop="conclusion" label="结论" /><el-table-column prop="advice" label="建议" /></el-table>
         </el-card>
           </section>
         </div>
@@ -135,6 +157,7 @@ import { useAuthStore } from '../../store/auth';
 import { callAppointment, getTodayQueue, skipAppointment, startAppointment, updateAppointmentStatus, type Appointment } from '../../api/appointment';
 import { getMedicalRecords, getPatientHistory, writeDoctorNote, type MedicalRecord } from '../../api/medical-record';
 import { getClinicalAssistance } from '../../api/ai';
+import { createMedicalOrder, getMedicalItems, getReports, type MedicalItem, type MedicalReport } from '../../api/medical-order';
 
 const router = useRouter();
 const auth = useAuthStore();
@@ -143,6 +166,9 @@ const queueKeyword=ref('');
 const filteredAppointments=computed(()=>{const keyword=queueKeyword.value.trim().toLowerCase();return keyword?appointments.value.filter(item=>item.patientName.toLowerCase().includes(keyword)||item.businessNo.toLowerCase().includes(keyword)):appointments.value});
 const records = ref<MedicalRecord[]>([]);
 const historyRecords=ref<MedicalRecord[]>([]);const historyReason=ref('复诊关联病史查阅');
+const medicalItems=ref<MedicalItem[]>([]);const selectedItems=ref<MedicalItem[]>([]);const itemKeyword=ref('');const itemCategory=ref('');const orderUrgency=ref('ROUTINE');const favoritesOnly=ref(false);const favoriteCodes=ref<string[]>(JSON.parse(localStorage.getItem('favorite-medical-items')||'[]'));
+const formalReports=ref<MedicalReport[]>([]);
+const filteredItems=computed(()=>medicalItems.value.filter(item=>(!favoritesOnly.value||favoriteCodes.value.includes(item.code))&&(!itemCategory.value||item.category===itemCategory.value)&&(!itemKeyword.value||`${item.code}${item.name}`.toLowerCase().includes(itemKeyword.value.toLowerCase()))));
 const recordVersion=ref<number>();const dirty=ref(false);let loadingRecord=false;
 const current = ref<Appointment>();
 const aiPrompt = ref('结合当前病历给出鉴别诊断方向和进一步检查建议');
@@ -218,6 +244,8 @@ async function saveRecord() {
 
 async function finishVisit(){if(!current.value)return;if(dirty.value||recordVersion.value===undefined){ElMessage.warning('请先保存当前病历');return}await updateAppointmentStatus(current.value.id,'FINISHED');ElMessage.success('接诊已结束');current.value=undefined;await loadQueue()}
 async function loadHistory(){if(!current.value)return;historyRecords.value=await getPatientHistory(current.value.patientId,current.value.id,historyReason.value)}
+async function submitOrders(){if(!current.value)return;await Promise.all(selectedItems.value.map(item=>createMedicalOrder({appointmentId:current.value!.id,patientId:current.value!.patientId,patientName:current.value!.patientName,orderType:item.category,projectCode:item.code,projectName:item.name,purpose:recordForm.diagnosis||recordForm.chiefComplaint,bodyPart:item.category==='CHECK'?'头部':'',amount:item.price,urgency:orderUrgency.value})));ElMessage.success(`已生成 ${selectedItems.value.length} 条待缴费医技申请`);selectedItems.value=[]}
+function toggleFavorite(code:string){favoriteCodes.value=favoriteCodes.value.includes(code)?favoriteCodes.value.filter(item=>item!==code):[...favoriteCodes.value,code];localStorage.setItem('favorite-medical-items',JSON.stringify(favoriteCodes.value))}
 
 async function generateAssistance() {
   if (!current.value) return;
@@ -256,6 +284,8 @@ function logout() {
 onMounted(async () => {
   await loadQueue();
   records.value = await getMedicalRecords({});
+  medicalItems.value=(await getMedicalItems()).filter(item=>item.category!=='DRUG');
+  formalReports.value=await getReports();
 });
 watch(recordForm,()=>{if(!loadingRecord)dirty.value=true},{deep:true});
 </script>
