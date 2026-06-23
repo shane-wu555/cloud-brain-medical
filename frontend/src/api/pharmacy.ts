@@ -56,6 +56,29 @@ export async function getPrescriptions(params: { patientId?: string; status?: st
   return data;
 }
 
+export async function createPrescription(payload: {
+  appointmentId: string;
+  medicalRecordId?: string;
+  patientId: string;
+  patientName?: string;
+  diagnosis: string;
+  aiAssistanceId?: string;
+  aiAdoptionStatus?: 'AI_ACCEPTED' | 'AI_MODIFIED' | 'AI_REJECTED' | 'HUMAN_ONLY';
+  aiRevisionNote?: string;
+  items: Array<{
+    drugId: string;
+    quantity: number;
+    dosage: string;
+    usage: string;
+    frequency: string;
+    days: number;
+    note?: string;
+  }>;
+}) {
+  const { data } = await http.post<Prescription>('/prescriptions', payload);
+  return data;
+}
+
 export async function dispensePrescription(id: string) {
   const { data } = await http.post<Prescription>(`/prescriptions/${id}/dispense`);
   return data;
