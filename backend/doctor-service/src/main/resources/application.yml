@@ -18,12 +18,13 @@ spring:
 
 internal:
   api-key: ${INTERNAL_API_KEY:cloud-brain-medical-internal-development-key}
+services:
+  appointment:
+    base-url: ${APPOINTMENT_SERVICE_URL:http://localhost:8104}
+  ai:
+    base-url: ${AI_SERVICE_URL:http://localhost:8000}
 
 security:
   jwt:
     secret: ${JWT_SECRET:cloud-brain-medical-development-secret-change-me}
     issuer: ${JWT_ISSUER:cloud-brain-medical}
-
-services:
-  appointment:
-    base-url: ${APPOINTMENT_SERVICE_URL:http://localhost:8104}

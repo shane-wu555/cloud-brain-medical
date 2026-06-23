@@ -3,6 +3,7 @@ package com.cloudbrain.cashier.controller;
 import com.cloudbrain.cashier.repository.CashierRepository;
 import com.cloudbrain.cashier.service.AppointmentPaymentClient;
 import com.cloudbrain.cashier.service.MedicalOrderPaymentClient;
+import com.cloudbrain.cashier.service.PrescriptionPaymentClient;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
@@ -24,13 +25,16 @@ public class CashierController {
     private final boolean testModeEnabled;
     private final AppointmentPaymentClient appointmentClient;
     private final MedicalOrderPaymentClient medicalOrderClient;
+    private final PrescriptionPaymentClient prescriptionClient;
     public CashierController(CashierRepository repository,
                              AppointmentPaymentClient appointmentClient,
                              MedicalOrderPaymentClient medicalOrderClient,
+                             PrescriptionPaymentClient prescriptionClient,
                              @Value("${payment.test-mode-enabled:false}") boolean testModeEnabled) {
         this.repository=repository;
         this.appointmentClient=appointmentClient;
         this.medicalOrderClient=medicalOrderClient;
+        this.prescriptionClient=prescriptionClient;
         this.testModeEnabled=testModeEnabled;
     }
     @PostMapping("/payments/orders") @PreAuthorize("hasAnyRole('PATIENT','CASHIER')")
@@ -68,6 +72,7 @@ public class CashierController {
             appointmentClient.confirm(request.businessId(),patientId,payment.paymentMethod(),payment.id());
         }
         if("MEDICAL_ORDER".equals(request.businessType())) medicalOrderClient.confirm(request.businessId(),patientId,payment.id());
+        if("PRESCRIPTION".equals(request.businessType())) prescriptionClient.confirm(request.businessId(),patientId,payment.id());
         return payment;
     }
     @PostMapping("/payments/test-failure")

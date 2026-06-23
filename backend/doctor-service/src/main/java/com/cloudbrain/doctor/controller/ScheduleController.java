@@ -15,11 +15,14 @@ import org.springframework.web.client.RestClient;
 public class ScheduleController {
     private final DoctorCatalogRepository repository;
     private final RestClient appointmentClient;
+    private final RestClient aiClient;
     private final String internalApiKey;
     public ScheduleController(DoctorCatalogRepository repository, @Value("${internal.api-key}") String internalApiKey,
-            @Value("${services.appointment.base-url:http://localhost:8104}") String appointmentUrl) {
+            @Value("${services.appointment.base-url:http://localhost:8104}") String appointmentUrl,
+            @Value("${services.ai.base-url:http://localhost:8000}") String aiUrl) {
         this.repository=repository; this.internalApiKey=internalApiKey;
         this.appointmentClient=RestClient.builder().baseUrl(appointmentUrl).build();
+        this.aiClient=RestClient.builder().baseUrl(aiUrl).build();
     }
     @GetMapping public List<ScheduleDto> list(@RequestParam(required=false) String doctorId,
             @RequestParam(required=false) String departmentId) {
@@ -32,6 +35,19 @@ public class ScheduleController {
     public ScheduleDto create(@RequestBody CreateScheduleRequest request) {
         var s=repository.createSchedule(request.doctorId(),request.departmentId(),LocalDate.parse(request.workDate()),request.period(),request.capacity());
         syncSlot(s.id(),s.capacity()); return dto(s,0,0);
+    }
+    @PostMapping("/ai-suggestions") @PreAuthorize("hasRole('ADMIN')")
+    public AiScheduleResponse aiSuggestions(@RequestBody AiScheduleRequest request) {
+        AiScheduleResponse response=aiClient.post().uri("/api/ai/schedule-suggestions").body(request)
+                .retrieve().body(AiScheduleResponse.class);
+        return response==null?new AiScheduleResponse(null,List.of()):response;
+    }
+    @PostMapping("/ai-suggestions/{suggestionId}/publish") @PreAuthorize("hasRole('ADMIN')")
+    public ScheduleDto publishAiSuggestion(@PathVariable String suggestionId,@RequestBody PublishAiScheduleRequest request) {
+        if(request.doctorId()==null||request.departmentId()==null||request.workDate()==null||request.period()==null) throw new IllegalArgumentException("AI 排班建议缺少必要字段");
+        var s=repository.createSchedule(request.doctorId(),request.departmentId(),LocalDate.parse(request.workDate()),request.period(),request.capacity());
+        syncSlot(s.id(),s.capacity());
+        return dto(s,0,0);
     }
     @PutMapping("/{id}/suspend") @PreAuthorize("hasRole('ADMIN')")
     public ScheduleDto suspend(@PathVariable String id,@RequestBody SuspendRequest request) {
@@ -55,4 +71,10 @@ public class ScheduleController {
     public record RescheduleRequest(String workDate,String period) {}
     public record ScheduleDto(String id,String doctorId,String doctorName,String departmentId,String workDate,String period,int capacity,int booked,int locked,int available,String status) {}
     public record SlotDto(String scheduleId,int capacity,int locked,int booked,int available) {}
+    public record AiScheduleRequest(List<AiDoctorCandidate> candidates,List<AiScheduleDemand> demands) {}
+    public record AiDoctorCandidate(String doctorId,String doctorName,String departmentId,String specialty,int weeklyCapacity,List<String> leaveDates) {}
+    public record AiScheduleDemand(String departmentId,String workDate,String period,int expectedVisits,String riskLevel) {}
+    public record AiScheduleResponse(String aiRecordId,List<AiScheduleSuggestion> suggestions) {}
+    public record AiScheduleSuggestion(String suggestionId,String doctorId,String doctorName,String departmentId,String workDate,String period,int capacity,String reason,boolean requiresAdminConfirmation) {}
+    public record PublishAiScheduleRequest(String aiRecordId,String doctorId,String departmentId,String workDate,String period,int capacity,String reason) {}
 }

@@ -33,6 +33,10 @@ spring:
           uri: http://localhost:8113
           predicates:
             - Path=/api/payments/**,/api/refunds/**
+        - id: pharmacy-service
+          uri: http://localhost:8107
+          predicates:
+            - Path=/api/drugs/**,/api/prescriptions/**
         - id: medical-record-service
           uri: http://localhost:8105
           predicates:

@@ -31,4 +31,13 @@
 - `appointment-service`：挂号、号源、门诊队列和业务事件。
 - `cashier-service`：支付、退款和窗口费用查询。
 - `medical-order-service`：检查、检验、处置统一医嘱。
-- `report-service`、`pharmacy-service`、`audit-service`：正式报告、药房和审计能力。
+- `pharmacy-service`：处方、药房待发药队列、发药退药、库存扣减回补和库存流水。
+- `report-service`、`audit-service`：正式报告和审计能力。
+
+## D9-D10 验证
+
+- 后端：`cd backend && mvn test`
+- 工作人员端：`cd frontend && npm run build`
+- 患者端微信小程序：`cd patient-miniapp && npm run build:mp-weixin`
+- AI 服务语法：`python -m compileall ai-service/app`
+- AI 服务测试：`$env:PYTHONPATH=(Resolve-Path ai-service).Path; python -m pytest ai-service/tests`

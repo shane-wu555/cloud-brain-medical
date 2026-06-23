@@ -27,3 +27,5 @@ services:
     base-url: ${APPOINTMENT_SERVICE_URL:http://localhost:8104}
   medical-order:
     base-url: ${MEDICAL_ORDER_SERVICE_URL:http://localhost:8112}
+  pharmacy:
+    base-url: ${PHARMACY_SERVICE_URL:http://localhost:8107}

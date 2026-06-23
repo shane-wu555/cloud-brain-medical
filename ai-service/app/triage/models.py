@@ -1,4 +1,8 @@
+from typing import Optional
+
 from pydantic import BaseModel, Field
+
+from app.clinical_assistance.models import ClinicalKnowledgeSource
 
 
 class ExecutorCandidate(BaseModel):
@@ -17,8 +21,8 @@ class ExecutorCandidate(BaseModel):
 class TriageRequest(BaseModel):
     order_id: str = Field(alias="orderId")
     project_type: str = Field(alias="projectType")
-    body_part: str | None = Field(default=None, alias="bodyPart")
-    required_specialty: str | None = Field(default=None, alias="requiredSpecialty")
+    body_part: Optional[str] = Field(default=None, alias="bodyPart")
+    required_specialty: Optional[str] = Field(default=None, alias="requiredSpecialty")
     urgency: str = "ROUTINE"
     candidates: list[ExecutorCandidate]
 
@@ -30,9 +34,10 @@ class TriageResponse(BaseModel):
     doctor_id: str = Field(alias="doctorId")
     doctor_name: str = Field(alias="doctorName")
     location: str
-    equipment_id: str | None = Field(default=None, alias="equipmentId")
+    equipment_id: Optional[str] = Field(default=None, alias="equipmentId")
     score: float
     reasons: list[str]
+    knowledge_sources: list[ClinicalKnowledgeSource] = Field(default_factory=list, alias="knowledgeSources")
     created_by_type: str = Field(default="AI", alias="createdByType")
     requires_human_confirmation: bool = Field(default=True, alias="requiresHumanConfirmation")
 

@@ -10,7 +10,7 @@ export const router = createRouter({
     { path: '/doctor/check', component: () => import('../views/medical-tech/MedicalTechWorkbench.vue'), meta: { roles: ['CHECK_DOCTOR'] } },
     { path: '/doctor/lab', component: () => import('../views/medical-tech/MedicalTechWorkbench.vue'), meta: { roles: ['LAB_DOCTOR'] } },
     { path: '/doctor/disposal', component: () => import('../views/medical-tech/MedicalTechWorkbench.vue'), meta: { roles: ['DISPOSAL_DOCTOR'] } },
-    { path: '/doctor/pharmacy', component: () => import('../views/staff/RoleWorkbench.vue'), props: { title: '药房医生工作台', description: '处方接收、发药、退药与库存管理' }, meta: { roles: ['PHARMACY_DOCTOR'] } },
+    { path: '/doctor/pharmacy', component: () => import('../views/pharmacy/PharmacyWorkbench.vue'), meta: { roles: ['PHARMACY_DOCTOR'] } },
     { path: '/cashier', component: () => import('../views/cashier/CashierWorkbench.vue'), meta: { roles: ['CASHIER'] } },
     { path: '/admin', component: () => import('../views/admin/AdminDashboard.vue'), meta: { roles: ['ADMIN'] } }
   ]

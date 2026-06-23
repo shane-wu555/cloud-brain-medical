@@ -1,0 +1,102 @@
+package com.cloudbrain.pharmacy.controller;
+
+import com.cloudbrain.pharmacy.entity.Prescription;
+import com.cloudbrain.pharmacy.repository.PharmacyRepository;
+import com.cloudbrain.pharmacy.service.PharmacyService;
+import java.util.List;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
+
+@RestController
+@RequestMapping("/api")
+public class PharmacyController {
+    private final PharmacyService service;
+    private final String internalApiKey;
+
+    public PharmacyController(PharmacyService service, @Value("${internal.api-key}") String internalApiKey) {
+        this.service = service;
+        this.internalApiKey = internalApiKey;
+    }
+
+    @GetMapping("/drugs")
+    @PreAuthorize("hasAnyRole('OUTPATIENT_DOCTOR','PHARMACY_DOCTOR','ADMIN')")
+    public List<PharmacyRepository.Drug> drugs(@RequestParam(required = false) String keyword) {
+        return service.drugs(keyword);
+    }
+
+    @PostMapping("/prescriptions")
+    @PreAuthorize("hasRole('OUTPATIENT_DOCTOR')")
+    public Prescription prescribe(@RequestBody CreatePrescriptionRequest request, JwtAuthenticationToken auth) {
+        return service.prescribe(request, auth.getToken().getSubject());
+    }
+
+    @GetMapping("/prescriptions")
+    @PreAuthorize("hasAnyRole('PATIENT','OUTPATIENT_DOCTOR','PHARMACY_DOCTOR','CASHIER','ADMIN')")
+    public List<Prescription> prescriptions(@RequestParam(required = false) String patientId,
+                                            @RequestParam(required = false) String status,
+                                            JwtAuthenticationToken auth) {
+        return service.list(patientId, status, auth.getToken().getSubject(), auth.getToken().getClaimAsString("role"));
+    }
+
+    @GetMapping("/prescriptions/{id}")
+    @PreAuthorize("hasAnyRole('PATIENT','OUTPATIENT_DOCTOR','PHARMACY_DOCTOR','CASHIER','ADMIN')")
+    public Prescription prescription(@PathVariable String id, JwtAuthenticationToken auth) {
+        return service.find(id, auth.getToken().getSubject(), auth.getToken().getClaimAsString("role"));
+    }
+
+    @PostMapping("/prescriptions/{id}/dispense")
+    @PreAuthorize("hasRole('PHARMACY_DOCTOR')")
+    public Prescription dispense(@PathVariable String id, JwtAuthenticationToken auth) {
+        return service.dispense(id, auth.getToken().getSubject());
+    }
+
+    @PostMapping("/prescriptions/{id}/return")
+    @PreAuthorize("hasRole('PHARMACY_DOCTOR')")
+    public Prescription returnDrugs(@PathVariable String id, @RequestBody ReturnRequest request, JwtAuthenticationToken auth) {
+        return service.returnDrugs(id, auth.getToken().getSubject(), request.reason());
+    }
+
+    @PostMapping("/internal/prescriptions/{id}/payment-confirmation")
+    public Prescription paymentConfirmation(@PathVariable String id,
+                                            @RequestBody PaymentConfirmation request,
+                                            @RequestHeader(name = "X-Internal-Api-Key", required = false) String key) {
+        checkKey(key);
+        return service.confirmPayment(id, request.patientId(), request.paymentOrderId());
+    }
+
+    private void checkKey(String key) {
+        if (!internalApiKey.equals(key)) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "内部接口认证失败");
+    }
+
+    public record CreatePrescriptionRequest(
+            String appointmentId,
+            String medicalRecordId,
+            String patientId,
+            String patientName,
+            String diagnosis,
+            String aiAssistanceId,
+            String aiAdoptionStatus,
+            String aiRevisionNote,
+            List<PrescriptionItemRequest> items) {
+    }
+
+    public record PrescriptionItemRequest(
+            String drugId,
+            int quantity,
+            String dosage,
+            String usage,
+            String frequency,
+            int days,
+            String note) {
+    }
+
+    public record ReturnRequest(String reason) {
+    }
+
+    public record PaymentConfirmation(String patientId, String paymentOrderId) {
+    }
+}
