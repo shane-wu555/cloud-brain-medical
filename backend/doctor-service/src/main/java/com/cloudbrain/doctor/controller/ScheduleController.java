@@ -24,8 +24,8 @@ public class ScheduleController {
         this.appointmentClient=RestClient.builder().baseUrl(appointmentUrl).build();
         this.aiClient=RestClient.builder().baseUrl(aiUrl).build();
     }
-    @GetMapping public List<ScheduleDto> list(@RequestParam(required=false) String doctorId,
-            @RequestParam(required=false) String departmentId) {
+    @GetMapping public List<ScheduleDto> list(@RequestParam(name="doctorId", required=false) String doctorId,
+            @RequestParam(name="departmentId", required=false) String departmentId) {
         Map<String,SlotDto> slots=slots().stream().collect(Collectors.toMap(SlotDto::scheduleId,Function.identity()));
         return repository.schedules(doctorId,departmentId).stream()
                 .filter(s -> !"SUSPENDED".equals(s.status()))
@@ -43,21 +43,21 @@ public class ScheduleController {
         return response==null?new AiScheduleResponse(null,List.of()):response;
     }
     @PostMapping("/ai-suggestions/{suggestionId}/publish") @PreAuthorize("hasRole('ADMIN')")
-    public ScheduleDto publishAiSuggestion(@PathVariable String suggestionId,@RequestBody PublishAiScheduleRequest request) {
+    public ScheduleDto publishAiSuggestion(@PathVariable("suggestionId") String suggestionId,@RequestBody PublishAiScheduleRequest request) {
         if(request.doctorId()==null||request.departmentId()==null||request.workDate()==null||request.period()==null) throw new IllegalArgumentException("AI 排班建议缺少必要字段");
         var s=repository.createSchedule(request.doctorId(),request.departmentId(),LocalDate.parse(request.workDate()),request.period(),request.capacity());
         syncSlot(s.id(),s.capacity());
         return dto(s,0,0);
     }
     @PutMapping("/{id}/suspend") @PreAuthorize("hasRole('ADMIN')")
-    public ScheduleDto suspend(@PathVariable String id,@RequestBody SuspendRequest request) {
+    public ScheduleDto suspend(@PathVariable("id") String id,@RequestBody SuspendRequest request) {
         SlotDto slot=slots().stream().filter(item->item.scheduleId().equals(id)).findFirst().orElse(null);
         var s=repository.suspendSchedule(id,request.reason());
         if(slot!=null) syncSlot(id,slot.booked()+slot.locked());
         return dto(s,slot==null?0:slot.booked(),slot==null?0:slot.locked());
     }
     @PutMapping("/{id}/reschedule") @PreAuthorize("hasRole('ADMIN')")
-    public ScheduleDto reschedule(@PathVariable String id,@RequestBody RescheduleRequest request) {
+    public ScheduleDto reschedule(@PathVariable("id") String id,@RequestBody RescheduleRequest request) {
         var s=repository.reschedule(id,LocalDate.parse(request.workDate()),request.period()); return dto(s,booked(id),0);
     }
     private void syncSlot(String id,int capacity) { appointmentClient.post().uri("/api/internal/appointment-slots")

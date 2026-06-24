@@ -24,7 +24,7 @@ public class PharmacyController {
 
     @GetMapping("/drugs")
     @PreAuthorize("hasAnyRole('OUTPATIENT_DOCTOR','PHARMACY_DOCTOR','ADMIN')")
-    public List<PharmacyRepository.Drug> drugs(@RequestParam(required = false) String keyword) {
+    public List<PharmacyRepository.Drug> drugs(@RequestParam(name = "keyword", required = false) String keyword) {
         return service.drugs(keyword);
     }
 
@@ -36,32 +36,32 @@ public class PharmacyController {
 
     @GetMapping("/prescriptions")
     @PreAuthorize("hasAnyRole('PATIENT','OUTPATIENT_DOCTOR','PHARMACY_DOCTOR','CASHIER','ADMIN')")
-    public List<Prescription> prescriptions(@RequestParam(required = false) String patientId,
-                                            @RequestParam(required = false) String status,
+    public List<Prescription> prescriptions(@RequestParam(name = "patientId", required = false) String patientId,
+                                            @RequestParam(name = "status", required = false) String status,
                                             JwtAuthenticationToken auth) {
         return service.list(patientId, status, auth.getToken().getSubject(), auth.getToken().getClaimAsString("role"));
     }
 
     @GetMapping("/prescriptions/{id}")
     @PreAuthorize("hasAnyRole('PATIENT','OUTPATIENT_DOCTOR','PHARMACY_DOCTOR','CASHIER','ADMIN')")
-    public Prescription prescription(@PathVariable String id, JwtAuthenticationToken auth) {
+    public Prescription prescription(@PathVariable("id") String id, JwtAuthenticationToken auth) {
         return service.find(id, auth.getToken().getSubject(), auth.getToken().getClaimAsString("role"));
     }
 
     @PostMapping("/prescriptions/{id}/dispense")
     @PreAuthorize("hasRole('PHARMACY_DOCTOR')")
-    public Prescription dispense(@PathVariable String id, JwtAuthenticationToken auth) {
+    public Prescription dispense(@PathVariable("id") String id, JwtAuthenticationToken auth) {
         return service.dispense(id, auth.getToken().getSubject());
     }
 
     @PostMapping("/prescriptions/{id}/return")
     @PreAuthorize("hasRole('PHARMACY_DOCTOR')")
-    public Prescription returnDrugs(@PathVariable String id, @RequestBody ReturnRequest request, JwtAuthenticationToken auth) {
+    public Prescription returnDrugs(@PathVariable("id") String id, @RequestBody ReturnRequest request, JwtAuthenticationToken auth) {
         return service.returnDrugs(id, auth.getToken().getSubject(), request.reason());
     }
 
     @PostMapping("/internal/prescriptions/{id}/payment-confirmation")
-    public Prescription paymentConfirmation(@PathVariable String id,
+    public Prescription paymentConfirmation(@PathVariable("id") String id,
                                             @RequestBody PaymentConfirmation request,
                                             @RequestHeader(name = "X-Internal-Api-Key", required = false) String key) {
         checkKey(key);

@@ -1,6 +1,7 @@
 package com.cloudbrain.doctor.repository;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -21,12 +22,19 @@ public class DoctorCatalogRepository {
         return new Department(id, name, description);
     }
     public List<Doctor> doctors(String departmentId) {
-        return jdbc.query("""
+        StringBuilder sql = new StringBuilder("""
                 select d.id,d.name,d.title,d.department_id,p.name,d.specialty,d.role_type
                 from doctor d join department p on p.id=d.department_id
-                where d.active and (? is null or d.department_id=?) order by d.name
-                """, (rs, row) -> new Doctor(rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4),
-                rs.getString(5), rs.getString(6), rs.getString(7)), departmentId, departmentId);
+                where d.active
+                """);
+        List<Object> args = new ArrayList<>();
+        if (departmentId != null && !departmentId.isBlank()) {
+            sql.append(" and d.department_id = ?");
+            args.add(departmentId);
+        }
+        sql.append(" order by d.name");
+        return jdbc.query(sql.toString(), (rs, row) -> new Doctor(rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4),
+                rs.getString(5), rs.getString(6), rs.getString(7)), args.toArray());
     }
     public Doctor createDoctor(String name, String title, String departmentId, String roleType, String specialty) {
         String id = "doctor-" + UUID.randomUUID();
@@ -35,12 +43,22 @@ public class DoctorCatalogRepository {
         return doctors(departmentId).stream().filter(d -> d.id().equals(id)).findFirst().orElseThrow();
     }
     public List<Schedule> schedules(String doctorId, String departmentId) {
-        return jdbc.query("""
+        StringBuilder sql = new StringBuilder("""
                 select s.id,s.doctor_id,d.name,s.department_id,s.work_date,s.period,s.capacity,s.status
                 from doctor_schedule s join doctor d on d.id=s.doctor_id
-                where (? is null or s.doctor_id=?) and (? is null or s.department_id=?)
-                order by s.work_date,s.period
-                """, (rs, row) -> mapSchedule(rs), doctorId, doctorId, departmentId, departmentId);
+                where 1 = 1
+                """);
+        List<Object> args = new ArrayList<>();
+        if (doctorId != null && !doctorId.isBlank()) {
+            sql.append(" and s.doctor_id = ?");
+            args.add(doctorId);
+        }
+        if (departmentId != null && !departmentId.isBlank()) {
+            sql.append(" and s.department_id = ?");
+            args.add(departmentId);
+        }
+        sql.append(" order by s.work_date,s.period");
+        return jdbc.query(sql.toString(), (rs, row) -> mapSchedule(rs), args.toArray());
     }
     public Schedule findSchedule(String id) {
         return jdbc.query("""

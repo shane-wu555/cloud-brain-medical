@@ -17,28 +17,28 @@ public class MedicalRecordController {
     public MedicalRecordController(MedicalRecordService service,@Value("${internal.api-key}") String key){this.service=service;this.internalApiKey=key;}
 
     @GetMapping @PreAuthorize("hasAnyRole('PATIENT','OUTPATIENT_DOCTOR')")
-    public List<MedicalRecord> list(@RequestParam(required=false) String patientId,@RequestParam(required=false) String appointmentId,
-            @RequestParam(required=false) String status,JwtAuthenticationToken auth){return service.listAuthorized(auth.getToken().getSubject(),auth.getToken().getClaimAsString("role"),patientId,appointmentId,status);}
+    public List<MedicalRecord> list(@RequestParam(name="patientId", required=false) String patientId,@RequestParam(name="appointmentId", required=false) String appointmentId,
+            @RequestParam(name="status", required=false) String status,JwtAuthenticationToken auth){return service.listAuthorized(auth.getToken().getSubject(),auth.getToken().getClaimAsString("role"),patientId,appointmentId,status);}
 
     @GetMapping("/history") @PreAuthorize("hasRole('OUTPATIENT_DOCTOR')")
-    public List<MedicalRecord> history(@RequestParam String patientId,@RequestParam String currentAppointmentId,
-            @RequestParam String reason,JwtAuthenticationToken auth){return service.history(patientId,currentAppointmentId,reason,auth.getToken().getSubject());}
+    public List<MedicalRecord> history(@RequestParam(name = "patientId") String patientId,@RequestParam(name = "currentAppointmentId") String currentAppointmentId,
+            @RequestParam(name = "reason") String reason,JwtAuthenticationToken auth){return service.history(patientId,currentAppointmentId,reason,auth.getToken().getSubject());}
 
     @GetMapping("/access-logs") @PreAuthorize("hasRole('ADMIN')")
-    public List<MedicalRecordRepository.AccessLog> accessLogs(@RequestParam(required=false) String patientId){return service.accessLogs(patientId);}
+    public List<MedicalRecordRepository.AccessLog> accessLogs(@RequestParam(name="patientId", required=false) String patientId){return service.accessLogs(patientId);}
 
     @PostMapping("/initial") public MedicalRecord createInitial(@RequestBody CreateInitialRecordRequest request,
             @RequestHeader(name="X-Internal-Api-Key",required=false) String key){checkKey(key);return service.createInitial(request);}
 
-    @GetMapping("/internal/{appointmentId}/saved") public Map<String,Boolean> saved(@PathVariable String appointmentId,
+    @GetMapping("/internal/{appointmentId}/saved") public Map<String,Boolean> saved(@PathVariable("appointmentId") String appointmentId,
             @RequestHeader(name="X-Internal-Api-Key",required=false) String key){checkKey(key);return Map.of("saved",service.isSaved(appointmentId));}
-    @PostMapping("/internal/{appointmentId}/reports") public void linkReport(@PathVariable String appointmentId,@RequestHeader(name="X-Internal-Api-Key",required=false)String key,@RequestBody ReportLink request){checkKey(key);service.linkReport(appointmentId,request.medicalOrderId(),request.reportId(),request.reportType(),request.conclusion(),request.confirmedBy(),request.confirmedAt());}
+    @PostMapping("/internal/{appointmentId}/reports") public void linkReport(@PathVariable("appointmentId") String appointmentId,@RequestHeader(name="X-Internal-Api-Key",required=false)String key,@RequestBody ReportLink request){checkKey(key);service.linkReport(appointmentId,request.medicalOrderId(),request.reportId(),request.reportType(),request.conclusion(),request.confirmedBy(),request.confirmedAt());}
 
     @PostMapping("/doctor-note") @PreAuthorize("hasRole('OUTPATIENT_DOCTOR')")
     public MedicalRecord writeDoctorNote(@RequestBody WriteDoctorNoteRequest request,JwtAuthenticationToken auth){return service.writeDoctorNote(request,auth.getToken().getSubject());}
 
     @PostMapping("/{id}/archive") @PreAuthorize("hasRole('OUTPATIENT_DOCTOR')")
-    public MedicalRecord archive(@PathVariable String id,JwtAuthenticationToken auth){return service.archive(id,auth.getToken().getSubject());}
+    public MedicalRecord archive(@PathVariable("id") String id,JwtAuthenticationToken auth){return service.archive(id,auth.getToken().getSubject());}
 
     private void checkKey(String key){if(!internalApiKey.equals(key))throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,"内部接口认证失败");}
     public record CreateInitialRecordRequest(String appointmentId,String patientId,String patientName,String doctorId,String doctorName,

@@ -21,31 +21,31 @@ public class LaboratoryWorkflowController {
 
     @PostMapping("/{orderId}/specimens")
     @PreAuthorize("hasRole('LAB_DOCTOR')")
-    public Specimen create(@PathVariable String orderId, @RequestBody CreateSpecimenRequest request) {
+    public Specimen create(@PathVariable("orderId") String orderId, @RequestBody CreateSpecimenRequest request) {
         return service.create(orderId, request.specimenType(), request.barcode());
     }
 
     @GetMapping("/{orderId}/specimens")
     @PreAuthorize("hasAnyRole('LAB_DOCTOR','OUTPATIENT_DOCTOR','ADMIN')")
-    public List<Specimen> specimens(@PathVariable String orderId) { return service.specimens(orderId); }
+    public List<Specimen> specimens(@PathVariable("orderId") String orderId) { return service.specimens(orderId); }
 
     @PostMapping("/specimens/{specimenId}/status")
     @PreAuthorize("hasRole('LAB_DOCTOR')")
-    public Specimen transition(@PathVariable String specimenId, @RequestBody StatusRequest request,
+    public Specimen transition(@PathVariable("specimenId") String specimenId, @RequestBody StatusRequest request,
                                JwtAuthenticationToken authentication) {
         return service.transition(specimenId, request.status(), authentication.getToken().getSubject(), request.reason());
     }
 
     @PostMapping("/{orderId}/laboratory-results")
     @PreAuthorize("hasRole('LAB_DOCTOR')")
-    public List<LaboratoryResultItem> saveResults(@PathVariable String orderId, @RequestBody SaveResultsRequest request,
+    public List<LaboratoryResultItem> saveResults(@PathVariable("orderId") String orderId, @RequestBody SaveResultsRequest request,
                                                   JwtAuthenticationToken authentication) {
         return service.saveResults(orderId, request.specimenId(), request.items(), authentication.getToken().getSubject());
     }
 
     @GetMapping("/{orderId}/laboratory-results")
     @PreAuthorize("hasAnyRole('LAB_DOCTOR','OUTPATIENT_DOCTOR','ADMIN')")
-    public List<LaboratoryResultItem> results(@PathVariable String orderId) { return service.results(orderId); }
+    public List<LaboratoryResultItem> results(@PathVariable("orderId") String orderId) { return service.results(orderId); }
 
     public record CreateSpecimenRequest(String specimenType, String barcode) {}
     public record StatusRequest(String status, String reason) {}

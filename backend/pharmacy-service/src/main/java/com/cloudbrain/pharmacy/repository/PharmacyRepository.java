@@ -7,6 +7,7 @@ import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -22,14 +23,21 @@ public class PharmacyRepository {
 
     public List<Drug> drugs(String keyword) {
         String like = keyword == null || keyword.isBlank() ? null : "%" + keyword.trim() + "%";
-        return jdbc.query("""
+        StringBuilder sql = new StringBuilder("""
                 select c.*, i.quantity, i.warning_threshold
                 from drug_catalog c join drug_inventory i on i.drug_id = c.id
-                where c.enabled = true and (? is null or c.drug_name like ? or c.drug_code like ?)
-                order by c.drug_code
-                """, (rs, row) -> new Drug(rs.getString("id"), rs.getString("drug_code"), rs.getString("drug_name"),
+                where c.enabled = true
+                """);
+        List<Object> args = new ArrayList<>();
+        if (like != null) {
+            sql.append(" and (c.drug_name like ? or c.drug_code like ?)");
+            args.add(like);
+            args.add(like);
+        }
+        sql.append(" order by c.drug_code");
+        return jdbc.query(sql.toString(), (rs, row) -> new Drug(rs.getString("id"), rs.getString("drug_code"), rs.getString("drug_name"),
                 rs.getString("specification"), rs.getString("unit"), rs.getBigDecimal("unit_price"),
-                rs.getInt("quantity"), rs.getInt("warning_threshold")), like, like, like);
+                rs.getInt("quantity"), rs.getInt("warning_threshold")), args.toArray());
     }
 
     public Drug drug(String drugId) {
@@ -81,14 +89,24 @@ public class PharmacyRepository {
     }
 
     public List<Prescription> list(String patientId, String status) {
-        return jdbc.query("""
+        StringBuilder sql = new StringBuilder("""
                 select * from prescription
-                where (? is null or patient_id = ?) and (? is null or status = ?)
-                order by created_at desc
-                """, (rs, row) -> {
+                where 1 = 1
+                """);
+        List<Object> args = new ArrayList<>();
+        if (patientId != null && !patientId.isBlank()) {
+            sql.append(" and patient_id = ?");
+            args.add(patientId);
+        }
+        if (status != null && !status.isBlank()) {
+            sql.append(" and status = ?");
+            args.add(status);
+        }
+        sql.append(" order by created_at desc");
+        return jdbc.query(sql.toString(), (rs, row) -> {
             Prescription base = prescription(rs);
             return findPrescription(base.id());
-        }, patientId, patientId, status, status);
+        }, args.toArray());
     }
 
     public boolean markPaid(String id, String patientId, String paymentOrderId) {

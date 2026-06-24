@@ -4,6 +4,7 @@ import com.cloudbrain.medicalrecord.entity.MedicalRecord;
 import com.cloudbrain.medicalrecord.entity.MedicalRecordStatus;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -75,11 +76,19 @@ public class MedicalRecordRepository {
     }
 
     public List<AccessLog> accessLogs(String patientId) {
-        return jdbcTemplate.query("""
+        StringBuilder sql = new StringBuilder("""
                 select id,medical_record_id,patient_id,actor_id,actor_role,access_scope,reason,accessed_at
-                from medical_record_access_log where (? is null or patient_id=?) order by accessed_at desc limit 200
-                """,(rs,row)->new AccessLog(rs.getObject(1,java.util.UUID.class),rs.getString(2),rs.getString(3),
-                rs.getString(4),rs.getString(5),rs.getString(6),rs.getString(7),rs.getTimestamp(8).toLocalDateTime()),patientId,patientId);
+                from medical_record_access_log
+                where 1 = 1
+                """);
+        List<Object> args = new ArrayList<>();
+        if (patientId != null && !patientId.isBlank()) {
+            sql.append(" and patient_id = ?");
+            args.add(patientId);
+        }
+        sql.append(" order by accessed_at desc limit 200");
+        return jdbcTemplate.query(sql.toString(),(rs,row)->new AccessLog(rs.getObject(1,java.util.UUID.class),rs.getString(2),rs.getString(3),
+                rs.getString(4),rs.getString(5),rs.getString(6),rs.getString(7),rs.getTimestamp(8).toLocalDateTime()),args.toArray());
     }
     public void linkReport(String appointmentId,String orderId,String reportId,String type,String conclusion,String confirmer,java.time.LocalDateTime confirmedAt){MedicalRecord record=findByAppointmentId(appointmentId).orElseThrow(()->new IllegalArgumentException("就诊病历不存在"));jdbcTemplate.update("""
             insert into medical_record_report_link(id,medical_record_id,medical_order_id,report_id,report_type,conclusion,confirmed_by,confirmed_at)

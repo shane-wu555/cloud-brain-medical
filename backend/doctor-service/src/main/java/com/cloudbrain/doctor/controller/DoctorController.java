@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.*;
 public class DoctorController {
     private final DoctorCatalogRepository repository;
     public DoctorController(DoctorCatalogRepository repository) { this.repository = repository; }
-    @GetMapping public List<DoctorDto> list(@RequestParam(required=false) String departmentId) {
+    @GetMapping public List<DoctorDto> list(@RequestParam(name="departmentId", required=false) String departmentId) {
         return repository.doctors(departmentId).stream().map(this::dto).toList();
     }
     @PostMapping @PreAuthorize("hasRole('ADMIN')")
