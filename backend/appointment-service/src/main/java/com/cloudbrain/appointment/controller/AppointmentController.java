@@ -106,10 +106,10 @@ public class AppointmentController {
     }
 
     @PostMapping("/{id}/call") @PreAuthorize("hasRole('OUTPATIENT_DOCTOR')")
-    public Appointment call(@PathVariable String id,JwtAuthenticationToken authentication){return appointmentService.call(id,authentication.getToken().getSubject());}
+    public Appointment call(@PathVariable("id") String id,JwtAuthenticationToken authentication){return appointmentService.call(id,authentication.getToken().getSubject());}
 
     @PostMapping("/{id}/start") @PreAuthorize("hasRole('OUTPATIENT_DOCTOR')")
-    public Appointment start(@PathVariable String id,JwtAuthenticationToken authentication){return appointmentService.startVisit(id,authentication.getToken().getSubject());}
+    public Appointment start(@PathVariable("id") String id,JwtAuthenticationToken authentication){return appointmentService.startVisit(id,authentication.getToken().getSubject());}
 
     @PatchMapping("/{id}/status")
     @PreAuthorize("hasRole('OUTPATIENT_DOCTOR')")

@@ -11,6 +11,6 @@ import org.springframework.web.server.ResponseStatusException;
 public class InternalMedicalOrderController {
     private final MedicalOrderService service;private final String key;
     public InternalMedicalOrderController(MedicalOrderService service,@Value("${internal.api-key}") String key){this.service=service;this.key=key;}
-    @PostMapping("/{id}/payment-confirmation") public MedicalOrder confirm(@PathVariable String id,@RequestHeader(name="X-Internal-Api-Key",required=false)String candidate,@RequestBody Command command){if(!key.equals(candidate))throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);return service.pay(id,command.patientId(),"PATIENT");}
+    @PostMapping("/{id}/payment-confirmation") public MedicalOrder confirm(@PathVariable("id") String id,@RequestHeader(name="X-Internal-Api-Key",required=false)String candidate,@RequestBody Command command){if(!key.equals(candidate))throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);return service.pay(id,command.patientId(),"PATIENT");}
     public record Command(String patientId,String paymentOrderId){}
 }

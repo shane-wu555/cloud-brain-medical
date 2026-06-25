@@ -3,6 +3,7 @@ package com.cloudbrain.medicalorder.repository;
 import com.cloudbrain.medicalorder.domain.MedicalOrder;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -29,12 +30,31 @@ public class MedicalOrderRepository {
     }
 
     public List<MedicalOrder> find(String type, String status, String patientId) {
-        return jdbcTemplate.query("""
+        StringBuilder sql = new StringBuilder("""
                 select * from medical_order
-                where (? is null or order_type = ?) and (? is null or status = ?) and (? is null or patient_id = ?)
+                where 1 = 1
+                """);
+        List<Object> args = new ArrayList<>();
+
+        if (type != null && !type.isBlank()) {
+            sql.append(" and order_type = ?");
+            args.add(type);
+        }
+        if (status != null && !status.isBlank()) {
+            sql.append(" and status = ?");
+            args.add(status);
+        }
+        if (patientId != null && !patientId.isBlank()) {
+            sql.append(" and patient_id = ?");
+            args.add(patientId);
+        }
+
+        sql.append("""
+                
                 order by case when urgency = 'EMERGENCY' then 0 else 1 end,
                          queue_number nulls last, created_at
-                """, mapper, type, type, status, status, patientId, patientId);
+                """);
+        return jdbcTemplate.query(sql.toString(), mapper, args.toArray());
     }
 
     public Optional<MedicalOrder> findById(String id) {

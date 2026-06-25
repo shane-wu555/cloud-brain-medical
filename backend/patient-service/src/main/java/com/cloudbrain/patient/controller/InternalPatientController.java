@@ -14,7 +14,7 @@ public class InternalPatientController {
         this.repository=repository; this.internalApiKey=key;
     }
     @GetMapping("/{id}/verification")
-    public Map<String,Boolean> verification(@PathVariable String id,
+    public Map<String,Boolean> verification(@PathVariable("id") String id,
             @RequestHeader(name="X-Internal-Api-Key",required=false) String key) {
         if(!internalApiKey.equals(key)) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,"内部接口认证失败");
         return Map.of("realNameVerified",repository.find(id).map(PatientRepository.PatientProfile::realNameVerified).orElse(false));

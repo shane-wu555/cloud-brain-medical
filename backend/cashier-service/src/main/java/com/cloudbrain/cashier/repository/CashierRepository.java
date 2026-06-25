@@ -2,6 +2,7 @@ package com.cloudbrain.cashier.repository;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -90,13 +91,30 @@ public class CashierRepository {
         return findByBusiness(type,businessId);
     }
 
-    public List<Payment> payments(String patientId, String businessId) {
-        return jdbc.query("""
+    public List<Payment> payments(String patientId, String businessId, String businessType, String status) {
+        StringBuilder sql = new StringBuilder("""
                 select * from payment_order
-                where (? is null or patient_id = ?) and (? is null or business_id = ?)
-                order by created_at desc
-                """, (rs, rowNum) -> payment(rs),
-                patientId, patientId, businessId, businessId);
+                where 1 = 1
+                """);
+        List<Object> args = new ArrayList<>();
+        if (patientId != null && !patientId.isBlank()) {
+            sql.append(" and patient_id = ?");
+            args.add(patientId);
+        }
+        if (businessId != null && !businessId.isBlank()) {
+            sql.append(" and business_id = ?");
+            args.add(businessId);
+        }
+        if (businessType != null && !businessType.isBlank()) {
+            sql.append(" and business_type = ?");
+            args.add(businessType);
+        }
+        if (status != null && !status.isBlank()) {
+            sql.append(" and status = ?");
+            args.add(status);
+        }
+        sql.append(" order by created_at desc");
+        return jdbc.query(sql.toString(), (rs, rowNum) -> payment(rs), args.toArray());
     }
 
     private Payment payment(java.sql.ResultSet rs) throws java.sql.SQLException {
@@ -107,15 +125,25 @@ public class CashierRepository {
     }
 
     public List<Refund> refunds(String patientId, String businessId) {
-        return jdbc.query("""
+        StringBuilder sql = new StringBuilder("""
                 select * from refund_order
-                where (? is null or patient_id = ?) and (? is null or business_id = ?)
-                order by created_at desc
-                """, (rs, rowNum) -> new Refund(
+                where 1 = 1
+                """);
+        List<Object> args = new ArrayList<>();
+        if (patientId != null && !patientId.isBlank()) {
+            sql.append(" and patient_id = ?");
+            args.add(patientId);
+        }
+        if (businessId != null && !businessId.isBlank()) {
+            sql.append(" and business_id = ?");
+            args.add(businessId);
+        }
+        sql.append(" order by created_at desc");
+        return jdbc.query(sql.toString(), (rs, rowNum) -> new Refund(
                 rs.getString("id"), rs.getString("business_type"), rs.getString("business_id"),
                 rs.getString("patient_id"), rs.getBigDecimal("amount"), rs.getString("reason"),
                 rs.getString("status"), rs.getString("operator_id"), time(rs.getTimestamp("refunded_at"))),
-                patientId, patientId, businessId, businessId);
+                args.toArray());
     }
 
     private static LocalDateTime time(java.sql.Timestamp value) {

@@ -10,12 +10,15 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Value;
 
 @Service
 public class AuthService {
+    private static final Logger log = LoggerFactory.getLogger(AuthService.class);
     private final UserAccountRepository repository;
     private final PasswordEncoder passwordEncoder;
     private final TokenService tokenService;
@@ -67,11 +70,22 @@ public class AuthService {
 
     public Map<String, Object> login(AuthController.LoginRequest request, ClientInfo client) {
         UserAccount account = repository.findByUsername(request.username()).orElse(null);
-        if (account == null || !passwordEncoder.matches(request.password(), account.getPassword())) {
+        boolean passwordMatched = account != null && passwordEncoder.matches(request.password(), account.getPassword());
+        if (account == null || !passwordMatched) {
+            log.warn("Login rejected: username={}, accountFound={}, passwordMatched={}, passwordLength={}, hashPrefix={}",
+                    request.username(),
+                    account != null,
+                    passwordMatched,
+                    request.password() == null ? null : request.password().length(),
+                    account == null || account.getPassword() == null
+                            ? null
+                            : account.getPassword().substring(0, Math.min(12, account.getPassword().length())));
             auditRepository.record("LOGIN", request.username(), account == null ? null : account.getId(), false,
                     "INVALID_CREDENTIALS", client.ip(), client.userAgent());
             throw new IllegalArgumentException("账号或密码错误");
         }
+        log.info("Login accepted: username={}, userId={}, role={}",
+                request.username(), account.getId(), account.getRole());
         Map<String, Object> result = issueLogin(account);
         auditRepository.record("LOGIN", request.username(), account.getId(), true, null, client.ip(), client.userAgent());
         return result;
@@ -141,6 +155,7 @@ public class AuthService {
                 "token", tokenService.issue(account),
                 "user", Map.of(
                         "id", account.getId(),
+                        "username", account.getUsername(),
                         "name", account.getName(),
                         "phone", account.getPhone(),
                         "role", account.getRole(),
