@@ -29,9 +29,9 @@ public class MedicalOrderController {
     @GetMapping
     @PreAuthorize("hasAnyRole('PATIENT','OUTPATIENT_DOCTOR','CHECK_DOCTOR','LAB_DOCTOR','DISPOSAL_DOCTOR','ADMIN')")
     public List<MedicalOrder> list(
-            @RequestParam(required = false) String type,
-            @RequestParam(required = false) String status,
-            @RequestParam(required = false) String patientId,
+            @RequestParam(name = "type", required = false) String type,
+            @RequestParam(name = "status", required = false) String status,
+            @RequestParam(name = "patientId", required = false) String patientId,
             JwtAuthenticationToken authentication) {
         if ("PATIENT".equals(authentication.getToken().getClaimAsString("role"))) {
             if (patientId != null && !patientId.equals(authentication.getToken().getSubject())) {
@@ -44,24 +44,24 @@ public class MedicalOrderController {
 
     @PostMapping("/{id}/pay")
     @PreAuthorize("hasRole('CASHIER')")
-    public MedicalOrder pay(@PathVariable String id, JwtAuthenticationToken authentication) {
+    public MedicalOrder pay(@PathVariable("id") String id, JwtAuthenticationToken authentication) {
         return service.pay(id, authentication.getToken().getSubject(), authentication.getToken().getClaimAsString("role"));
     }
 
     @PostMapping("/{id}/start")
     @PreAuthorize("hasAnyRole('CHECK_DOCTOR','LAB_DOCTOR','DISPOSAL_DOCTOR')")
-    public MedicalOrder start(@PathVariable String id, JwtAuthenticationToken authentication) {
+    public MedicalOrder start(@PathVariable("id") String id, JwtAuthenticationToken authentication) {
         return service.start(id, authentication.getToken().getSubject(), authentication.getToken().getClaimAsString("role"));
     }
 
     @PostMapping("/{id}/complete")
     @PreAuthorize("hasAnyRole('CHECK_DOCTOR','LAB_DOCTOR','DISPOSAL_DOCTOR')")
-    public MedicalOrder complete(@PathVariable String id, @RequestBody CompleteRequest request, JwtAuthenticationToken authentication) {
+    public MedicalOrder complete(@PathVariable("id") String id, @RequestBody CompleteRequest request, JwtAuthenticationToken authentication) {
         return service.complete(id, authentication.getToken().getSubject(), authentication.getToken().getClaimAsString("role"),
                 request.resultData(), request.summary(), request.createdByType(), request.aiRecordId());
     }
     @PostMapping("/{id}/miss") @PreAuthorize("hasAnyRole('CHECK_DOCTOR','LAB_DOCTOR','DISPOSAL_DOCTOR')")
-    public MedicalOrder miss(@PathVariable String id,JwtAuthenticationToken authentication){return service.miss(id,authentication.getToken().getSubject(),authentication.getToken().getClaimAsString("role"));}
+    public MedicalOrder miss(@PathVariable("id") String id,JwtAuthenticationToken authentication){return service.miss(id,authentication.getToken().getSubject(),authentication.getToken().getClaimAsString("role"));}
 
     public record CreateRequest(
             String appointmentId, String patientId, String patientName, String orderType,

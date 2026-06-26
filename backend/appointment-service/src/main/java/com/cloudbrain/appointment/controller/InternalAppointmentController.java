@@ -15,19 +15,19 @@ public class InternalAppointmentController {
         this.service=service; this.internalApiKey=key;
     }
     @PostMapping("/{id}/payment-confirmation")
-    public Appointment confirm(@PathVariable String id,@RequestHeader(name="X-Internal-Api-Key",required=false) String key,
+    public Appointment confirm(@PathVariable("id") String id,@RequestHeader(name="X-Internal-Api-Key",required=false) String key,
             @RequestBody PaymentConfirmation request) {
         if(!internalApiKey.equals(key)) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,"内部接口认证失败");
         service.validatePatientAccess(id,request.patientId(),"PATIENT");
         return service.pay(id,request.paymentMethod(),new BigDecimal("0.01"),request.patientId());
     }
     @PostMapping("/{id}/payment-failure")
-    public Appointment fail(@PathVariable String id,@RequestHeader(name="X-Internal-Api-Key",required=false) String key,
+    public Appointment fail(@PathVariable("id") String id,@RequestHeader(name="X-Internal-Api-Key",required=false) String key,
             @RequestBody PaymentFailure request) {
         if(!internalApiKey.equals(key)) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,"内部接口认证失败");
         return service.failPayment(id,request.patientId());
     }
-    @PostMapping("/{id}/revisit") public Appointment revisit(@PathVariable String id,@RequestHeader(name="X-Internal-Api-Key",required=false)String key){if(!internalApiKey.equals(key))throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);return service.enterRevisit(id);}
+    @PostMapping("/{id}/revisit") public Appointment revisit(@PathVariable("id") String id,@RequestHeader(name="X-Internal-Api-Key",required=false)String key){if(!internalApiKey.equals(key))throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);return service.enterRevisit(id);}
     public record PaymentConfirmation(String patientId,String paymentMethod,String paymentOrderId) {}
     public record PaymentFailure(String patientId,String paymentOrderId) {}
 }

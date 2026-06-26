@@ -60,7 +60,7 @@ public class AuthController {
 
     @PutMapping("/internal/users/{id}/real-name")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void markRealName(@PathVariable String id,
+    public void markRealName(@PathVariable("id") String id,
             @RequestHeader(name="X-Internal-Api-Key", required=false) String apiKey) {
         if (!internalApiKey.equals(apiKey)) throw new org.springframework.web.server.ResponseStatusException(HttpStatus.UNAUTHORIZED);
         accounts.markRealNameVerified(id);

@@ -46,11 +46,15 @@ public class CashierController {
                 request.paymentMethod()==null?"WECHAT":request.paymentMethod(),auth.getToken().getSubject());
     }
     @GetMapping("/payments") @PreAuthorize("hasAnyRole('PATIENT','CASHIER','ADMIN')")
-    public List<CashierRepository.Payment> payments(@RequestParam(required=false) String patientId,@RequestParam(required=false) String businessId,JwtAuthenticationToken auth) {
-        return repository.payments(restrict(patientId,auth),businessId);
+    public List<CashierRepository.Payment> payments(@RequestParam(name="patientId", required=false) String patientId,
+                                                    @RequestParam(name="businessId", required=false) String businessId,
+                                                    @RequestParam(name="businessType", required=false) String businessType,
+                                                    @RequestParam(name="status", required=false) String status,
+                                                    JwtAuthenticationToken auth) {
+        return repository.payments(restrict(patientId,auth),businessId,businessType,status);
     }
     @GetMapping("/refunds") @PreAuthorize("hasAnyRole('PATIENT','CASHIER','ADMIN')")
-    public List<CashierRepository.Refund> refunds(@RequestParam(required=false) String patientId,@RequestParam(required=false) String businessId,JwtAuthenticationToken auth) {
+    public List<CashierRepository.Refund> refunds(@RequestParam(name="patientId", required=false) String patientId,@RequestParam(name="businessId", required=false) String businessId,JwtAuthenticationToken auth) {
         return repository.refunds(restrict(patientId,auth),businessId);
     }
     @PostMapping("/payments/test-callback")
