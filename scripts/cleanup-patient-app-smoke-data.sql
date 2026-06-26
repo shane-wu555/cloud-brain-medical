@@ -186,8 +186,22 @@ where id in (
 delete from doctor.department
 where id = 'dept-rehab';
 
+delete from patient.account_patient_binding
+where account_id in (
+    'patient-test-verified-001',
+    'patient-test-unverified-001'
+);
+
 delete from patient.patient_profile
-where user_id in (
+where id in (
+    'patient-profile-test-self-001',
+    'patient-profile-test-family-001',
+    'patient-test-verified-001',
+    'patient-test-unverified-001'
+)
+or user_id in (
+    'patient-profile-test-self-001',
+    'patient-profile-test-family-001',
     'patient-test-verified-001',
     'patient-test-unverified-001'
 );

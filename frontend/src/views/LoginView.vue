@@ -24,7 +24,6 @@
         </el-form-item>
         <el-button type="primary" class="full" :loading="loading" @click="handleLogin">登录</el-button>
       </el-form>
-
     </section>
   </main>
 </template>
@@ -47,9 +46,18 @@ async function handleLogin() {
     const path = await auth.signIn(username.value, password.value);
     ElMessage.success('登录成功');
     router.push(path);
+  } catch (error) {
+    const responseMessage =
+      typeof error === 'object' &&
+      error !== null &&
+      'response' in error &&
+      typeof (error as { response?: { data?: { message?: string } } }).response?.data?.message === 'string'
+        ? (error as { response?: { data?: { message?: string } } }).response?.data?.message
+        : '';
+    auth.signOut();
+    ElMessage.error(responseMessage || '登录失败，请检查账号和密码');
   } finally {
     loading.value = false;
   }
 }
-
 </script>

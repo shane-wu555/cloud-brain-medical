@@ -19,10 +19,11 @@ import org.mockito.junit.jupiter.MockitoExtension;
 @ExtendWith(MockitoExtension.class)
 class MedicalRecordServiceTest {
     @Mock MedicalRecordRepository repository;
+    @Mock PatientAccessClient patientAccessClient;
     @Test void duplicateInitialEventReturnsExistingRecordWithoutOverwritingDoctorContent(){
         MedicalRecord existing=new MedicalRecord("r","a","p","患者","d","医生","神经内科","2026-06-23","上午","摘要","LOW");
         when(repository.findByAppointmentId("a")).thenReturn(Optional.of(existing));
-        MedicalRecord result=new MedicalRecordService(repository).createInitial(request());
+        MedicalRecord result=service().createInitial(request());
         assertThat(result).isSameAs(existing);
         verify(repository,never()).createInitialIfAbsent(any());
     }
@@ -31,7 +32,7 @@ class MedicalRecordServiceTest {
         when(repository.findByAppointmentId("a")).thenReturn(Optional.of(existing));
         var request=new MedicalRecordController.WriteDoctorNoteRequest("a",1,"主诉","现病史","既往史","无",
                 "体检","初步诊断","方案","","HUMAN",null);
-        assertThatThrownBy(()->new MedicalRecordService(repository).writeDoctorNote(request,"d"))
+        assertThatThrownBy(()->service().writeDoctorNote(request,"d"))
                 .isInstanceOf(org.springframework.dao.OptimisticLockingFailureException.class);
         verify(repository,never()).save(any(),any(Long.class));
     }
@@ -39,11 +40,12 @@ class MedicalRecordServiceTest {
         MedicalRecord current=record("current");MedicalRecord old=record("old");
         when(repository.findByAppointmentId("current")).thenReturn(Optional.of(current));
         when(repository.findByPatientId("p")).thenReturn(java.util.List.of(current,old));
-        var result=new MedicalRecordService(repository).history("p","current","复诊查阅","d");
+        var result=service().history("p","current","复诊查阅","d");
         assertThat(result).containsExactly(old);
         verify(repository).recordAccess(old.getId(),"p","d","OUTPATIENT_DOCTOR","HISTORY","复诊查阅");
     }
     private MedicalRecord record(String appointmentId){return new MedicalRecord("r-"+appointmentId,appointmentId,"p","患者","d","医生","神经内科","2026-06-23","上午","摘要","LOW");}
+    private MedicalRecordService service(){return new MedicalRecordService(repository,patientAccessClient);}
     private MedicalRecordController.CreateInitialRecordRequest request(){
         return new MedicalRecordController.CreateInitialRecordRequest("a","p","患者","d","医生","神经内科","2026-06-23","上午","摘要","LOW");
     }

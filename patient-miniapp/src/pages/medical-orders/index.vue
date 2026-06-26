@@ -21,6 +21,7 @@
 import { onShow } from '@dcloudio/uni-app';
 import { ref } from 'vue';
 import { request } from '../../api/http';
+import { useAuthStore } from '../../stores/auth';
 
 interface Report {
   id: string;
@@ -33,8 +34,17 @@ interface Report {
 
 const reports = ref<Report[]>([]);
 const labels = { CHECK: '检查', LAB: '检验' } as const;
+const auth = useAuthStore();
 
 onShow(async () => {
+  await auth.loadProfile();
+  try {
+    auth.requireBoundPatient();
+  } catch (error) {
+    uni.showToast({ title: (error as Error).message, icon: 'none' });
+    uni.navigateTo({ url: '/pages/real-name/index' });
+    return;
+  }
   const response = await request<Report[]>({ url: '/medical-orders/reports', method: 'GET' });
   reports.value = response.filter((item) => item.reportType === 'CHECK' || item.reportType === 'LAB');
 });

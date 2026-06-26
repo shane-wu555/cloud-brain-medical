@@ -2,7 +2,7 @@ server:
   port: 8101
 
 internal:
-  api-key: ${INTERNAL_API_KEY:cloud-brain-internal-development-key}
+  api-key: ${INTERNAL_API_KEY:cloud-brain-medical-internal-development-key}
 
 spring:
   application:
@@ -26,4 +26,20 @@ security:
     ttl-seconds: ${JWT_TTL_SECONDS:7200}
   verification-code:
     ttl-seconds: ${VERIFICATION_CODE_TTL_SECONDS:300}
-    expose-in-response: ${EXPOSE_VERIFICATION_CODE:true}
+    expose-in-response: ${EXPOSE_VERIFICATION_CODE:false}
+
+sms:
+  provider: ${SMS_PROVIDER:aliyun}
+  aliyun:
+    endpoint: ${ALIYUN_SMS_ENDPOINT:dypnsapi.aliyuncs.com}
+    region-id: ${ALIYUN_SMS_REGION_ID:cn-hangzhou}
+    access-key-id: ${ALIYUN_SMS_ACCESS_KEY_ID}
+    access-key-secret: ${ALIYUN_SMS_ACCESS_KEY_SECRET}
+    sign-name: ${ALIYUN_SMS_SIGN_NAME:云渚科技验证平台}
+    template-code: ${ALIYUN_SMS_TEMPLATE_CODE:}
+    template-code-login: ${ALIYUN_SMS_TEMPLATE_CODE_LOGIN:100001}
+    template-code-register: ${ALIYUN_SMS_TEMPLATE_CODE_REGISTER:100001}
+    template-code-reset-password: ${ALIYUN_SMS_TEMPLATE_CODE_RESET_PASSWORD:100003}
+    scheme-name-login: ${ALIYUN_SMS_SCHEME_NAME_LOGIN:LOGIN}
+    scheme-name-register: ${ALIYUN_SMS_SCHEME_NAME_REGISTER:REGISTER}
+    scheme-name-reset-password: ${ALIYUN_SMS_SCHEME_NAME_RESET_PASSWORD:RESET_PASSWORD}

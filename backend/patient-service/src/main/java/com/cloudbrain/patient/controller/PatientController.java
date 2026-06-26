@@ -4,7 +4,9 @@ import com.cloudbrain.patient.repository.PatientRepository;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
-import org.springframework.beans.factory.annotation.Value;
+import java.time.LocalDate;
+import java.util.List;
+import java.util.Set;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
@@ -15,60 +17,95 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.client.RestClient;
 
 @RestController
 @RequestMapping("/api/patients")
 public class PatientController {
+    private static final Set<String> ID_TYPES = Set.of("ID_CARD", "PASSPORT", "HK_MACAO_TAIWAN", "OTHER");
+    private static final Set<String> GENDERS = Set.of("MALE", "FEMALE", "UNKNOWN");
     private final PatientRepository repository;
-    private final RestClient authClient;
-    private final String internalApiKey;
 
-    public PatientController(PatientRepository repository, @Value("${services.auth.base-url}") String authUrl,
-            @Value("${internal.api-key}") String internalApiKey) {
+    public PatientController(PatientRepository repository) {
         this.repository = repository;
-        this.internalApiKey = internalApiKey;
-        this.authClient = RestClient.builder().baseUrl(authUrl).build();
     }
 
     @GetMapping("/me")
-    public PatientRepository.PatientProfile me(JwtAuthenticationToken authentication) {
+    public PatientRepository.PatientAccountState me(JwtAuthenticationToken authentication) {
+        return repository.accountState(authentication.getToken().getSubject());
+    }
+
+    @PostMapping("/me/profiles")
+    public PatientRepository.PatientProfile addProfile(@Valid @RequestBody AddPatientRequest request,
+            JwtAuthenticationToken authentication) {
         Jwt jwt = authentication.getToken();
-        return repository.ensure(jwt.getSubject(), jwt.getClaimAsString("phone"), jwt.getClaimAsString("name"));
+        return repository.createForAccount(
+                jwt.getSubject(),
+                jwt.getClaimAsString("phone"),
+                request.name().trim(),
+                normalizeIdType(request.idType()),
+                request.idNumber().trim().toUpperCase(),
+                normalizeGender(request.gender()),
+                request.birthDate());
+    }
+
+    @PutMapping("/me/bound-patient")
+    public PatientRepository.PatientProfile bind(@Valid @RequestBody BindPatientRequest request,
+            JwtAuthenticationToken authentication) {
+        return repository.bind(authentication.getToken().getSubject(), request.patientId());
     }
 
     @GetMapping
     @PreAuthorize("hasAnyRole('CASHIER','ADMIN')")
-    public java.util.List<PatientRepository.PatientProfile> search(@RequestParam(name = "phone") String phone) {
-        return repository.findByPhone(phone).stream().toList();
+    public List<PatientRepository.PatientProfile> search(@RequestParam(name = "phone") String phone) {
+        return repository.findByPhone(phone);
     }
 
     @PostMapping("/offline")
     @PreAuthorize("hasRole('CASHIER')")
     public PatientRepository.PatientProfile createOffline(@Valid @RequestBody OfflinePatientRequest request) {
-        return repository.findByPhone(request.phone())
+        return repository.findByPhone(request.phone()).stream().findFirst()
                 .orElseGet(() -> repository.createOffline(request.phone(), request.name()));
     }
 
     @PutMapping("/me/real-name")
-    public PatientRepository.PatientProfile verify(@Valid @RequestBody RealNameRequest request,
+    public PatientRepository.PatientProfile legacyVerify(@Valid @RequestBody LegacyRealNameRequest request,
             JwtAuthenticationToken authentication) {
         Jwt jwt = authentication.getToken();
-        repository.ensure(jwt.getSubject(), jwt.getClaimAsString("phone"), jwt.getClaimAsString("name"));
-        PatientRepository.PatientProfile profile = repository.verify(
+        return repository.createForAccount(
                 jwt.getSubject(),
+                jwt.getClaimAsString("phone"),
                 request.name().trim(),
-                request.idCard() == null || request.idCard().isBlank() ? null : request.idCard().trim().toUpperCase(),
-                null,
+                "ID_CARD",
+                request.idCard() == null || request.idCard().isBlank() ? "UNKNOWN-" + System.currentTimeMillis()
+                        : request.idCard().trim().toUpperCase(),
+                "UNKNOWN",
                 null);
-        authClient.put().uri("/api/auth/internal/users/{id}/real-name", jwt.getSubject())
-                .header("X-Internal-Api-Key", internalApiKey)
-                .retrieve()
-                .toBodilessEntity();
-        return profile;
     }
 
-    public record RealNameRequest(@NotBlank String name, String idCard) {
+    private String normalizeIdType(String idType) {
+        String value = idType == null ? "" : idType.trim().toUpperCase();
+        if (!ID_TYPES.contains(value)) throw new IllegalArgumentException("不支持的证件类型");
+        return value;
+    }
+
+    private String normalizeGender(String gender) {
+        String value = gender == null ? "" : gender.trim().toUpperCase();
+        if (!GENDERS.contains(value)) throw new IllegalArgumentException("不支持的性别");
+        return value;
+    }
+
+    public record AddPatientRequest(
+            @NotBlank String name,
+            @NotBlank String idType,
+            @NotBlank String idNumber,
+            @NotBlank String gender,
+            LocalDate birthDate) {
+    }
+
+    public record BindPatientRequest(@NotBlank String patientId) {
+    }
+
+    public record LegacyRealNameRequest(@NotBlank String name, String idCard) {
     }
 
     public record OfflinePatientRequest(

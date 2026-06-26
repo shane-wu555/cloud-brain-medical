@@ -18,6 +18,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import { request } from '../../api/http';
+import { useAuthStore } from '../../stores/auth';
 
 interface ConsultationResponse {
   aiRecordId: string;
@@ -34,8 +35,17 @@ interface ConsultationResponse {
 
 const description = ref('');
 const result = ref<ConsultationResponse>();
+const auth = useAuthStore();
 
 async function consult() {
+  await auth.loadProfile();
+  try {
+    auth.requireBoundPatient();
+  } catch (error) {
+    uni.showToast({ title: (error as Error).message, icon: 'none' });
+    uni.navigateTo({ url: '/pages/real-name/index' });
+    return;
+  }
   result.value = await request<ConsultationResponse>({
     url: '/ai/consultations',
     method: 'POST',

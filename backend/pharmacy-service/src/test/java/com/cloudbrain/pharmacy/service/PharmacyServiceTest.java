@@ -14,7 +14,8 @@ import org.junit.jupiter.api.Test;
 
 class PharmacyServiceTest {
     private final PharmacyRepository repository = mock(PharmacyRepository.class);
-    private final PharmacyService service = new PharmacyService(repository);
+    private final PatientAccessClient patientAccessClient = mock(PatientAccessClient.class);
+    private final PharmacyService service = new PharmacyService(repository, patientAccessClient);
 
     @Test
     void unpaidPrescriptionCannotBeDispensed() {

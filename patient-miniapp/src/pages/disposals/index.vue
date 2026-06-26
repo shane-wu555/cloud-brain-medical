@@ -44,6 +44,7 @@
 import { computed, ref } from 'vue';
 import { onShow } from '@dcloudio/uni-app';
 import { request } from '../../api/http';
+import { useAuthStore } from '../../stores/auth';
 
 interface Appointment {
   id: string;
@@ -70,6 +71,7 @@ interface MedicalOrder {
 
 const orders = ref<MedicalOrder[]>([]);
 const appointments = ref<Appointment[]>([]);
+const auth = useAuthStore();
 
 const appointmentMap = computed(() => new Map(appointments.value.map((item) => [item.id, item])));
 const disposals = computed(() =>
@@ -115,6 +117,14 @@ function statusClass(status: MedicalOrder['status'], paymentStatus: MedicalOrder
 }
 
 async function load() {
+  await auth.loadProfile();
+  try {
+    auth.requireBoundPatient();
+  } catch (error) {
+    uni.showToast({ title: (error as Error).message, icon: 'none' });
+    uni.navigateTo({ url: '/pages/real-name/index' });
+    return;
+  }
   const [orderList, appointmentList] = await Promise.all([
     request<MedicalOrder[]>({ url: '/medical-orders?type=DISPOSAL', method: 'GET' }),
     request<Appointment[]>({ url: '/appointments', method: 'GET' })

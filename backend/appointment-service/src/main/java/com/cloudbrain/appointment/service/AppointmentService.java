@@ -206,6 +206,10 @@ public class AppointmentService {
     }
     @Transactional public Appointment enterRevisit(String id){Appointment snapshot=get(id);int next=appointmentRepository.nextQueueNumber(snapshot.getDoctorId(),snapshot.getVisitDate().toString());Appointment a=appointmentRepository.findByIdForUpdate(id).orElseThrow(()->new IllegalArgumentException("挂号记录不存在"));if(a.getStatus()==AppointmentStatus.REVISIT_WAITING)return a;if(a.getStatus()!=AppointmentStatus.FINISHED&&a.getStatus()!=AppointmentStatus.IN_VISIT)throw new IllegalStateException("当前就诊状态不能进入复诊队列");a.waitForRevisit(next);return appointmentRepository.save(a);}
 
+    public Appointment find(String id) {
+        return get(id);
+    }
+
     private Appointment get(String id) {
         return appointmentRepository.findById(id).orElseThrow(() -> new IllegalArgumentException("挂号记录不存在"));
     }

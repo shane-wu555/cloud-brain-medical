@@ -13,6 +13,7 @@ import com.cloudbrain.auth.entity.UserAccount;
 import com.cloudbrain.auth.repository.AuthAuditRepository;
 import com.cloudbrain.auth.repository.UserAccountRepository;
 import com.cloudbrain.auth.repository.VerificationCodeRepository;
+import com.cloudbrain.auth.sms.SmsSender;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -29,13 +30,14 @@ class AuthServiceTest {
     @Mock private TokenService tokenService;
     @Mock private AuthAuditRepository auditRepository;
     @Mock private VerificationCodeRepository verificationCodes;
+    @Mock private SmsSender smsSender;
 
     private AuthService service;
 
     @BeforeEach
     void setUp() {
         service = new AuthService(repository, new BCryptPasswordEncoder(), tokenService, auditRepository,
-                verificationCodes, 300, true);
+                verificationCodes, smsSender, 300, true);
     }
 
     @Test
@@ -58,6 +60,31 @@ class AuthServiceTest {
                         && new BCryptPasswordEncoder().matches("abc12345", account.getPassword())));
         verify(auditRepository).record(eq("REGISTER"), eq("13800000000"), any(), eq(true),
                 eq(null), eq("127.0.0.1"), eq("test"));
+    }
+
+    @Test
+    void sendCodeExposesDevCodeOnlyWhenSmsIsMocked() {
+        when(repository.findByPhone("13800000000")).thenReturn(Optional.of(account("$2a$10$7NukEsugMLsxrPkaBLnhuOHHhSQg2RjHt4RiGYxJNx7pq9cyG6bL.")));
+        when(smsSender.isLive()).thenReturn(false);
+
+        Map<String, Object> result = service.sendCode(
+                new AuthController.SendCodeRequest("13800000000", "LOGIN"),
+                new AuthService.ClientInfo("127.0.0.1", "test"));
+
+        assertThat(result).containsKey("devCode");
+        verify(smsSender).sendVerificationCode(eq("13800000000"), eq("LOGIN"), any());
+    }
+
+    @Test
+    void sendCodeDoesNotExposeDevCodeWhenSmsIsLive() {
+        when(repository.findByPhone("13800000000")).thenReturn(Optional.of(account("$2a$10$7NukEsugMLsxrPkaBLnhuOHHhSQg2RjHt4RiGYxJNx7pq9cyG6bL.")));
+        when(smsSender.isLive()).thenReturn(true);
+
+        Map<String, Object> result = service.sendCode(
+                new AuthController.SendCodeRequest("13800000000", "LOGIN"),
+                new AuthService.ClientInfo("127.0.0.1", "test"));
+
+        assertThat(result).doesNotContainKey("devCode");
     }
 
     @Test
