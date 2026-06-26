@@ -38,12 +38,14 @@ public class PatientController {
     public PatientRepository.PatientProfile addProfile(@Valid @RequestBody AddPatientRequest request,
             JwtAuthenticationToken authentication) {
         Jwt jwt = authentication.getToken();
+        String idType = normalizeIdType(request.idType());
+        String idNumber = normalizeIdNumber(idType, request.idNumber());
         return repository.createForAccount(
                 jwt.getSubject(),
                 jwt.getClaimAsString("phone"),
                 request.name().trim(),
-                normalizeIdType(request.idType()),
-                request.idNumber().trim().toUpperCase(),
+                idType,
+                idNumber,
                 normalizeGender(request.gender()),
                 request.birthDate());
     }
@@ -71,13 +73,16 @@ public class PatientController {
     public PatientRepository.PatientProfile legacyVerify(@Valid @RequestBody LegacyRealNameRequest request,
             JwtAuthenticationToken authentication) {
         Jwt jwt = authentication.getToken();
+        String idType = request.idCard() == null || request.idCard().isBlank() ? "OTHER" : "ID_CARD";
+        String idNumber = request.idCard() == null || request.idCard().isBlank()
+                ? "UNKNOWN-" + System.currentTimeMillis()
+                : normalizeIdNumber(idType, request.idCard());
         return repository.createForAccount(
                 jwt.getSubject(),
                 jwt.getClaimAsString("phone"),
                 request.name().trim(),
-                "ID_CARD",
-                request.idCard() == null || request.idCard().isBlank() ? "UNKNOWN-" + System.currentTimeMillis()
-                        : request.idCard().trim().toUpperCase(),
+                idType,
+                idNumber,
                 "UNKNOWN",
                 null);
     }
@@ -85,6 +90,18 @@ public class PatientController {
     private String normalizeIdType(String idType) {
         String value = idType == null ? "" : idType.trim().toUpperCase();
         if (!ID_TYPES.contains(value)) throw new IllegalArgumentException("不支持的证件类型");
+        return value;
+    }
+
+    private String normalizeIdNumber(String idType, String idNumber) {
+        String value = idNumber == null ? "" : idNumber.trim().toUpperCase();
+        if (value.isBlank()) throw new IllegalArgumentException("证件号码不能为空");
+        if ("ID_CARD".equals(idType) && !value.matches("^\\d{17}[0-9X]$")) {
+            throw new IllegalArgumentException("身份证号格式不正确");
+        }
+        if (!"ID_CARD".equals(idType) && value.length() > 64) {
+            throw new IllegalArgumentException("证件号码最多 64 位");
+        }
         return value;
     }
 

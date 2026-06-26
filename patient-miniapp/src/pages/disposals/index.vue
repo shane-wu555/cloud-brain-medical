@@ -29,10 +29,10 @@
 
       <button
         v-if="item.paymentStatus === 'UNPAID'"
-        class="button"
+        class="button compact-action"
         @click="goToPendingPayments()"
       >
-        去待缴费项目处理
+        去待缴费页面处理
       </button>
     </view>
 
@@ -200,5 +200,17 @@ onShow(load);
 .muted-tag {
   background: #f1f5f9;
   color: #64748b;
+}
+
+.compact-action {
+  align-self: flex-start;
+  width: auto;
+  min-width: 0;
+  height: 64rpx;
+  margin: 10rpx 0 0;
+  padding: 0 22rpx;
+  border-radius: 10rpx;
+  font-size: 26rpx;
+  line-height: 64rpx;
 }
 </style>

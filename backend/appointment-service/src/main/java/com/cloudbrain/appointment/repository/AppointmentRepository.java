@@ -44,14 +44,25 @@ public class AppointmentRepository {
                 """,(rs,row)->rs.getString(1));
     }
 
+    public boolean existsActiveInPeriod(String patientId, String visitDate, String period) {
+        Integer count = jdbcTemplate.queryForObject("""
+                select count(*) from appointment
+                where patient_id = ?
+                  and visit_date = ?::date
+                  and period = ?
+                  and status <> 'CANCELLED'
+                """, Integer.class, patientId, visitDate, period);
+        return count != null && count > 0;
+    }
+
     public Appointment save(Appointment appointment) {
         jdbcTemplate.update("""
                 insert into appointment (
                     id, schedule_id, patient_id, patient_name, doctor_id, doctor_name, department_id, department_name,
-                    visit_date, period, source, status, payment_status, payment_method, triage_summary, risk_level,
+                    visit_date, period, start_time, source, status, payment_status, payment_method, triage_summary, risk_level,
                     recommended_department_id, queue_number, missed_count, paid_at, cancelled_at, lock_expires_at
                 )
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                         case when ? = 'PENDING_PAYMENT' then now() + interval '15 minutes' else null end)
                 on conflict (id) do update set
                     status = excluded.status,
@@ -72,6 +83,7 @@ public class AppointmentRepository {
                 appointment.getDepartmentName(),
                 appointment.getVisitDate(),
                 appointment.getPeriod(),
+                appointment.getStartTime(),
                 appointment.getSource().name(),
                 appointment.getStatus().name(),
                 appointment.getPaymentStatus().name(),
@@ -84,7 +96,7 @@ public class AppointmentRepository {
                 appointment.getPaidAt(),
                 appointment.getCancelledAt(),
                 appointment.getStatus().name());
-        appointment.restoreBusinessNo(jdbcTemplate.queryForObject(
+            appointment.restoreBusinessNo(jdbcTemplate.queryForObject(
                 "select business_no from appointment where id=?",String.class,appointment.getId()));
         return appointment;
     }
@@ -153,6 +165,7 @@ public class AppointmentRepository {
                     rs.getString("department_name"),
                     rs.getDate("visit_date").toLocalDate(),
                     rs.getString("period"),
+                    rs.getObject("start_time", java.time.LocalTime.class),
                     AppointmentSource.valueOf(rs.getString("source")),
                     AppointmentStatus.valueOf(rs.getString("status")),
                     PaymentStatus.valueOf(rs.getString("payment_status")),

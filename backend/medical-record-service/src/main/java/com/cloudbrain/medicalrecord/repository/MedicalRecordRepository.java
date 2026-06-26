@@ -24,6 +24,17 @@ public class MedicalRecordRepository {
         return jdbcTemplate.query("select * from medical_record order by created_at desc", rowMapper);
     }
 
+    public List<MedicalRecord> findAllExcludingCancelledAppointments() {
+        return jdbcTemplate.query("""
+                select mr.* from medical_record mr
+                where not exists (
+                    select 1 from appointment.appointment a
+                    where a.id = mr.appointment_id and a.status = 'CANCELLED'
+                )
+                order by mr.created_at desc
+                """, rowMapper);
+    }
+
     public Optional<MedicalRecord> findById(String id) {
         List<MedicalRecord> result = jdbcTemplate.query("select * from medical_record where id = ?", rowMapper, id);
         return result.stream().findFirst();
@@ -65,6 +76,18 @@ public class MedicalRecordRepository {
 
     public List<MedicalRecord> findByPatientId(String patientId) {
         return jdbcTemplate.query("select * from medical_record where patient_id=? order by visit_date desc,created_at desc",rowMapper,patientId);
+    }
+
+    public List<MedicalRecord> findByPatientIdExcludingCancelledAppointments(String patientId) {
+        return jdbcTemplate.query("""
+                select mr.* from medical_record mr
+                where mr.patient_id = ?
+                  and not exists (
+                      select 1 from appointment.appointment a
+                      where a.id = mr.appointment_id and a.status = 'CANCELLED'
+                  )
+                order by mr.visit_date desc, mr.created_at desc
+                """, rowMapper, patientId);
     }
 
     public void recordAccess(String recordId,String patientId,String actorId,String actorRole,String scope,String reason) {

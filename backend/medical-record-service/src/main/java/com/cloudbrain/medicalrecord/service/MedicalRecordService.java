@@ -24,12 +24,12 @@ public class MedicalRecordService {
             if(scopedPatientId==null||scopedPatientId.isBlank()) scopedPatientId=patientAccessClient.boundPatientId(actorId);
             if(scopedPatientId==null||scopedPatientId.isBlank()) throw new AccessDeniedException("请先添加并绑定就诊人");
             if(!patientAccessClient.owns(actorId,scopedPatientId)) throw new AccessDeniedException("无权访问该就诊人的病历");
-            records=repository.findByPatientId(scopedPatientId);
+            records=repository.findByPatientIdExcludingCancelledAppointments(scopedPatientId);
             patientId=scopedPatientId;
         }
         else if("OUTPATIENT_DOCTOR".equals(role)) records=appointmentId!=null
                 ? repository.findByAppointmentId(appointmentId).stream().toList()
-                : repository.findAll().stream().filter(r->r.getDoctorId().equals(actorId)).toList();
+                : repository.findAllExcludingCancelledAppointments().stream().filter(r->r.getDoctorId().equals(actorId)).toList();
         else throw new AccessDeniedException("无权访问病历");
         String finalPatientId=patientId;
         return records.stream()
@@ -45,7 +45,7 @@ public class MedicalRecordService {
         MedicalRecord current=repository.findByAppointmentId(currentAppointmentId)
                 .orElseThrow(()->new IllegalArgumentException("本次病历不存在"));
         if(!current.getDoctorId().equals(doctorId)||!current.getPatientId().equals(patientId))throw new AccessDeniedException("无权查看该患者历史病历");
-        List<MedicalRecord> history=repository.findByPatientId(patientId).stream()
+        List<MedicalRecord> history=repository.findByPatientIdExcludingCancelledAppointments(patientId).stream()
                 .filter(r->!r.getAppointmentId().equals(currentAppointmentId)).toList();
         history.forEach(r->repository.recordAccess(r.getId(),patientId,doctorId,"OUTPATIENT_DOCTOR","HISTORY",reason));
         return history;

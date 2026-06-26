@@ -186,6 +186,7 @@ const registrationItems = ref<PendingItem[]>([]);
 const medicalOrderItems = ref<PendingItem[]>([]);
 const prescriptionItems = ref<PendingItem[]>([]);
 const loadWarning = ref('');
+const registeredAppointmentStatuses = new Set(['WAITING', 'CALLED', 'IN_VISIT', 'REVISIT_WAITING']);
 
 const checkItems = computed(() => medicalOrderItems.value.filter((item) => item.feeType === 'CHECK'));
 const labItems = computed(() => medicalOrderItems.value.filter((item) => item.feeType === 'LAB'));
@@ -216,6 +217,15 @@ function summarizeCategory(key: string, label: string, items: PendingItem[]) {
 
 function amountText(value: number) {
   return Number(value ?? 0).toFixed(2);
+}
+
+function appointmentStatusLabel(item: Appointment) {
+  if (item.paymentStatus === 'REFUNDED') return '已退号';
+  if (item.status === 'PENDING_PAYMENT') return '待支付';
+  if (registeredAppointmentStatuses.has(item.status)) return '已挂号';
+  if (item.status === 'CANCELLED') return '已取消';
+  if (item.status === 'FINISHED') return '已完成';
+  return item.status;
 }
 
 function orderTypeLabel(type: MedicalOrder['orderType']) {
@@ -280,7 +290,7 @@ async function load() {
       feeType: 'REGISTRATION' as const,
       title: `${item.departmentName} · ${item.doctorName}`,
       description: `${item.visitDate} ${item.period}`,
-      note: `当前状态：${item.status}，挂号后需完成缴费才能正常就诊`,
+      note: `当前状态：${appointmentStatusLabel(item)}，挂号后需完成缴费才能正常就诊`,
       amount: paymentByBusinessId.get(item.id)?.amount ?? 0.01
     }));
 

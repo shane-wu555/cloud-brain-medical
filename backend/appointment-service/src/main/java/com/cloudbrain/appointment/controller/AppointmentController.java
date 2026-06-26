@@ -139,6 +139,7 @@ public class AppointmentController {
             String departmentName,
             String visitDate,
             String period,
+            String startTime,
             String triageSummary,
             String riskLevel,
             String recommendedDepartmentId) {
