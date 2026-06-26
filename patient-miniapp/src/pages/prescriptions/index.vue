@@ -125,11 +125,24 @@ function canPay(prescription: Prescription) {
 }
 
 async function load() {
+  await auth.loadProfile();
+  try {
+    auth.requireBoundPatient();
+  } catch (error) {
+    uni.showToast({ title: (error as Error).message, icon: 'none' });
+    uni.navigateTo({ url: '/pages/real-name/index' });
+    return;
+  }
   prescriptions.value = await request<Prescription[]>({ url: '/prescriptions', method: 'GET' });
 }
 
 async function pay(prescription: Prescription) {
-  if (!auth.user) {
+  let patient;
+  try {
+    patient = auth.requireBoundPatient();
+  } catch (error) {
+    uni.showToast({ title: (error as Error).message, icon: 'none' });
+    uni.navigateTo({ url: '/pages/real-name/index' });
     return;
   }
   try {
@@ -139,7 +152,7 @@ async function pay(prescription: Prescription) {
       data: {
         businessType: 'PRESCRIPTION',
         businessId: prescription.id,
-        patientId: auth.user.id,
+        patientId: patient.id,
         amount: prescription.totalAmount,
         paymentMethod: 'WECHAT_TEST'
       }
@@ -150,7 +163,7 @@ async function pay(prescription: Prescription) {
       data: {
         businessType: 'PRESCRIPTION',
         businessId: prescription.id,
-        patientId: auth.user.id,
+        patientId: patient.id,
         channel: 'WECHAT',
         channelTradeNo: `wx-rx-${prescription.id}-${Date.now()}`
       }

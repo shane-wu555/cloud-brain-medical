@@ -2,7 +2,7 @@
   <view class="page">
     <view class="card">
       <view class="title">患者微信小程序</view>
-      <view class="muted">注册、登录后进行 AI 智能问诊和线上挂号</view>
+      <view class="muted">注册、登录后可继续使用 AI 问诊和线上挂号</view>
 
       <view class="tabs">
         <text
@@ -15,7 +15,10 @@
         </text>
       </view>
 
-      <input v-model="phone" class="input" type="number" placeholder="手机号" />
+      <view class="phone-row">
+        <text class="phone-prefix">+86</text>
+        <input v-model="phone" class="input phone-input" type="number" placeholder="请输入手机号" />
+      </view>
 
       <input
         v-if="mode === 'PASSWORD' || mode === 'REGISTER' || mode === 'RESET'"
@@ -29,7 +32,7 @@
         v-if="mode === 'REGISTER'"
         v-model="name"
         class="input"
-        placeholder="姓名"
+        placeholder="请输入姓名"
       />
 
       <view v-if="mode !== 'PASSWORD'" class="code-row">
@@ -37,7 +40,7 @@
           v-model="smsCode"
           class="input code-input"
           type="number"
-          placeholder="短信验证码"
+          placeholder="请输入短信验证码"
         />
       </view>
 
@@ -52,7 +55,7 @@
         </text>
       </view>
 
-      <view v-if="devCode" class="muted">开发环境验证码：{{ devCode }}</view>
+      <view v-if="devCode" class="muted">开发模式验证码：{{ devCode }}</view>
       <view class="muted">接口地址：{{ apiBaseUrl }}</view>
       <view class="debug">调试状态：{{ debugMessage }}</view>
     </view>
@@ -119,13 +122,27 @@ function switchMode(nextMode: Mode) {
 function handleAction(action: ActionType) {
   console.log('login handleAction', { action, mode: mode.value });
   if (action === 'SEND_CODE') {
-    debugMessage.value = '已触发获取验证码点击事件';
+    debugMessage.value = '已触发获取验证码操作';
     void sendCode();
     return;
   }
 
-  debugMessage.value = `已触发${submitLabel.value}点击事件`;
+  debugMessage.value = `已触发${submitLabel.value}操作`;
   void submit();
+}
+
+function normalizePhone(rawPhone: string) {
+  const digits = rawPhone.replace(/[^\d]/g, '');
+  if (digits.length === 13 && digits.startsWith('86')) {
+    return digits.slice(2);
+  }
+  return digits;
+}
+
+function currentPhone() {
+  const normalized = normalizePhone(phone.value);
+  phone.value = normalized;
+  return normalized;
 }
 
 function navigateToHome(successMessage: string) {
@@ -138,8 +155,9 @@ function navigateToHome(successMessage: string) {
 }
 
 async function sendCode() {
-  debugMessage.value = `开始请求验证码，模式=${mode.value}，手机号=${phone.value}`;
-  console.log('login sendCode start', { mode: mode.value, phone: phone.value });
+  const normalizedPhone = currentPhone();
+  debugMessage.value = `开始请求验证码，模式=${mode.value}，手机号=${normalizedPhone}`;
+  console.log('login sendCode start', { mode: mode.value, phone: normalizedPhone });
 
   try {
     const purpose: SmsPurpose =
@@ -148,7 +166,7 @@ async function sendCode() {
         : mode.value === 'RESET'
           ? 'RESET_PASSWORD'
           : 'LOGIN';
-    const result = await auth.sendCode(phone.value, purpose);
+    const result = await auth.sendCode(normalizedPhone, purpose);
     devCode.value = result.devCode ?? '';
     if (result.devCode) {
       smsCode.value = result.devCode;
@@ -161,28 +179,29 @@ async function sendCode() {
 }
 
 async function submit() {
+  const normalizedPhone = currentPhone();
   debugMessage.value = `开始请求，模式=${mode.value}`;
 
   try {
     if (mode.value === 'PASSWORD') {
-      await auth.login(phone.value, password.value);
+      await auth.login(normalizedPhone, password.value);
       navigateToHome('密码登录成功');
       return;
     }
 
     if (mode.value === 'SMS') {
-      await auth.smsLogin(phone.value, smsCode.value);
+      await auth.smsLogin(normalizedPhone, smsCode.value);
       navigateToHome('验证码登录成功');
       return;
     }
 
     if (mode.value === 'REGISTER') {
-      await auth.register(phone.value, password.value, name.value, smsCode.value);
+      await auth.register(normalizedPhone, password.value, name.value, smsCode.value);
       navigateToHome('注册成功');
       return;
     }
 
-    await auth.resetPassword(phone.value, smsCode.value, password.value);
+    await auth.resetPassword(normalizedPhone, smsCode.value, password.value);
     debugMessage.value = '密码重置成功，请使用新密码登录';
     uni.showToast({ title: '密码已重置', icon: 'success' });
     mode.value = 'PASSWORD';
@@ -210,12 +229,24 @@ async function submit() {
   font-weight: 700;
 }
 
+.phone-row,
 .code-row {
   display: flex;
   align-items: center;
   gap: 12rpx;
 }
 
+.phone-prefix {
+  min-width: 88rpx;
+  padding: 24rpx 18rpx;
+  border-radius: 16rpx;
+  background: #f8fafc;
+  color: #0f172a;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.phone-input,
 .code-input {
   flex: 1;
 }

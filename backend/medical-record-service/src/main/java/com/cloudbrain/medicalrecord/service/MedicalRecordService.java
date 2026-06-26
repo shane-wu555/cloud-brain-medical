@@ -11,17 +11,29 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class MedicalRecordService {
     private final MedicalRecordRepository repository;
-    public MedicalRecordService(MedicalRecordRepository repository){this.repository=repository;}
+    private final PatientAccessClient patientAccessClient;
+    public MedicalRecordService(MedicalRecordRepository repository, PatientAccessClient patientAccessClient){
+        this.repository=repository;
+        this.patientAccessClient=patientAccessClient;
+    }
 
     public List<MedicalRecord> listAuthorized(String actorId,String role,String patientId,String appointmentId,String status){
         List<MedicalRecord> records;
-        if("PATIENT".equals(role)) records=repository.findByPatientId(actorId);
+        if("PATIENT".equals(role)) {
+            String scopedPatientId=patientId;
+            if(scopedPatientId==null||scopedPatientId.isBlank()) scopedPatientId=patientAccessClient.boundPatientId(actorId);
+            if(scopedPatientId==null||scopedPatientId.isBlank()) throw new AccessDeniedException("请先添加并绑定就诊人");
+            if(!patientAccessClient.owns(actorId,scopedPatientId)) throw new AccessDeniedException("无权访问该就诊人的病历");
+            records=repository.findByPatientId(scopedPatientId);
+            patientId=scopedPatientId;
+        }
         else if("OUTPATIENT_DOCTOR".equals(role)) records=appointmentId!=null
                 ? repository.findByAppointmentId(appointmentId).stream().toList()
                 : repository.findAll().stream().filter(r->r.getDoctorId().equals(actorId)).toList();
         else throw new AccessDeniedException("无权访问病历");
+        String finalPatientId=patientId;
         return records.stream()
-                .filter(r->patientId==null||r.getPatientId().equals(patientId))
+                .filter(r->finalPatientId==null||r.getPatientId().equals(finalPatientId))
                 .filter(r->appointmentId==null||r.getAppointmentId().equals(appointmentId))
                 .filter(r->status==null||r.getStatus().name().equals(status))
                 .peek(r->{if("OUTPATIENT_DOCTOR".equals(role)&&!r.getDoctorId().equals(actorId))throw new AccessDeniedException("无权访问该病历");})

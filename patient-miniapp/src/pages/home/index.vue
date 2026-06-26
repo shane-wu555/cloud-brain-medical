@@ -4,16 +4,20 @@
       <view class="hero-top">
         <view>
           <view class="title">你好，{{ auth.user?.username || auth.user?.phone || auth.user?.name }}</view>
-          <view class="hero-subtitle">{{ auth.user?.name || '未实名用户' }}</view>
+          <view class="hero-subtitle">{{ auth.boundPatient ? `当前就诊人：${auth.boundPatient.name}` : '未绑定就诊人' }}</view>
         </view>
-        <view :class="['verify-chip', auth.user?.realNameVerified ? 'verified' : 'unverified']">
-          {{ auth.user?.realNameVerified ? '已实名' : '待实名' }}
+        <view :class="['verify-chip', auth.boundPatient ? 'verified' : 'unverified']">
+          {{ auth.boundPatient ? '已绑定' : '待绑定' }}
         </view>
       </view>
 
-      <view v-if="!auth.user?.realNameVerified" class="verify-panel">
-        <view class="muted">线上挂号前需要先完成实名认证。</view>
-        <button class="button verify-button" @tap="go('/pages/real-name/index')">立即认证</button>
+      <view v-if="!auth.boundPatient" class="verify-panel">
+        <view class="muted">添加并绑定就诊人后才能使用问诊、挂号、缴费和病历等业务。</view>
+        <button class="button verify-button" @tap="go('/pages/real-name/index')">添加就诊人</button>
+      </view>
+      <view v-else class="verify-panel">
+        <view class="muted">{{ auth.boundPatient.name }} · {{ auth.boundPatient.idNumber }}</view>
+        <button class="button verify-button" @tap="go('/pages/real-name/index')">切换就诊人</button>
       </view>
     </view>
 
@@ -101,8 +105,9 @@ onShow(async () => {
 });
 
 function go(url: string) {
-  if (url === '/pages/booking/index' && !auth.user?.realNameVerified) {
-    uni.showToast({ title: '请先完成实名认证', icon: 'none' });
+  if (url !== '/pages/real-name/index' && !auth.boundPatient) {
+    uni.showToast({ title: '请先添加并绑定就诊人', icon: 'none' });
+    uni.navigateTo({ url: '/pages/real-name/index' });
     return;
   }
   uni.navigateTo({ url });

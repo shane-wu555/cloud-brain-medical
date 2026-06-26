@@ -18,4 +18,30 @@ public class PatientVerificationClient {
                 .body(new ParameterizedTypeReference<Map<String,Boolean>>(){});
         return result!=null && Boolean.TRUE.equals(result.get("realNameVerified"));
     }
+
+    public boolean owns(String accountId,String patientId) {
+        Map<String,Boolean> result=client.get().uri(uriBuilder -> uriBuilder
+                        .path("/api/internal/patients/{id}/ownership")
+                        .queryParam("accountId",accountId)
+                        .build(patientId))
+                .header("X-Internal-Api-Key",internalApiKey).retrieve()
+                .body(new ParameterizedTypeReference<Map<String,Boolean>>(){});
+        return result!=null && Boolean.TRUE.equals(result.get("owned"));
+    }
+
+    public boolean hasBoundPatient(String accountId) {
+        Map<String,Object> result=client.get().uri("/api/internal/patients/accounts/{accountId}/binding",accountId)
+                .header("X-Internal-Api-Key",internalApiKey).retrieve()
+                .body(new ParameterizedTypeReference<Map<String,Object>>(){});
+        return result!=null && Boolean.TRUE.equals(result.get("hasBoundPatient"));
+    }
+
+    public String boundPatientId(String accountId) {
+        Map<String,Object> result=client.get().uri("/api/internal/patients/accounts/{accountId}/binding",accountId)
+                .header("X-Internal-Api-Key",internalApiKey).retrieve()
+                .body(new ParameterizedTypeReference<Map<String,Object>>(){});
+        if(result==null || !Boolean.TRUE.equals(result.get("hasBoundPatient"))) return null;
+        Object id=result.get("boundPatientId");
+        return id==null?null:id.toString();
+    }
 }

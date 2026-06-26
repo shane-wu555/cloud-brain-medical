@@ -22,4 +22,4 @@ security:
     issuer: ${JWT_ISSUER:cloud-brain-medical}
 
 internal:
-  api-key: ${INTERNAL_API_KEY:cloud-brain-internal-development-key}
+  api-key: ${INTERNAL_API_KEY:cloud-brain-medical-internal-development-key}

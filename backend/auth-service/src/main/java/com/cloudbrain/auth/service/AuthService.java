@@ -5,6 +5,7 @@ import com.cloudbrain.auth.entity.UserAccount;
 import com.cloudbrain.auth.repository.UserAccountRepository;
 import com.cloudbrain.auth.repository.AuthAuditRepository;
 import com.cloudbrain.auth.repository.VerificationCodeRepository;
+import com.cloudbrain.auth.sms.SmsSender;
 import java.security.SecureRandom;
 import java.time.Instant;
 import java.util.List;
@@ -24,6 +25,7 @@ public class AuthService {
     private final TokenService tokenService;
     private final AuthAuditRepository auditRepository;
     private final VerificationCodeRepository verificationCodes;
+    private final SmsSender smsSender;
     private final long verificationCodeTtlSeconds;
     private final boolean exposeVerificationCode;
     private final SecureRandom random = new SecureRandom();
@@ -31,6 +33,7 @@ public class AuthService {
     public AuthService(UserAccountRepository repository, PasswordEncoder passwordEncoder, TokenService tokenService,
             AuthAuditRepository auditRepository,
             VerificationCodeRepository verificationCodes,
+            SmsSender smsSender,
             @Value("${security.verification-code.ttl-seconds:300}") long verificationCodeTtlSeconds,
             @Value("${security.verification-code.expose-in-response:false}") boolean exposeVerificationCode) {
         this.repository = repository;
@@ -38,6 +41,7 @@ public class AuthService {
         this.tokenService = tokenService;
         this.auditRepository = auditRepository;
         this.verificationCodes = verificationCodes;
+        this.smsSender = smsSender;
         this.verificationCodeTtlSeconds = verificationCodeTtlSeconds;
         this.exposeVerificationCode = exposeVerificationCode;
     }
@@ -102,10 +106,11 @@ public class AuthService {
         String code = String.format("%06d", random.nextInt(1_000_000));
         verificationCodes.create(request.phone(), purpose, passwordEncoder.encode(code),
                 Instant.now().plusSeconds(verificationCodeTtlSeconds));
+        smsSender.sendVerificationCode(request.phone(), purpose, code);
         auditRepository.record("SEND_SMS_CODE", request.phone(), null, true, null, client.ip(), client.userAgent());
         java.util.HashMap<String, Object> response = new java.util.HashMap<>();
         response.put("expiresIn", verificationCodeTtlSeconds);
-        if (exposeVerificationCode) response.put("devCode", code);
+        if (exposeVerificationCode && !smsSender.isLive()) response.put("devCode", code);
         return response;
     }
 

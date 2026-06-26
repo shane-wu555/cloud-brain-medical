@@ -9,14 +9,14 @@
 
     <view class="card">
       <view class="title">选择科室</view>
-      <picker :range="departments" range-key="name" @change="selectDepartment">
+      <picker :range="departments" range-key="name" :value="selectedDepartmentIndex" @change="onDepartmentChange($event)">
         <view class="input">{{ selectedDepartment?.name ?? '请选择科室' }}</view>
       </picker>
     </view>
 
     <view v-if="availableDates.length" class="card">
       <view class="title">选择日期</view>
-      <picker :range="availableDates" @change="selectDate">
+      <picker :range="availableDates" :value="selectedDateIndex" @change="onDateChange($event)">
         <view class="input">{{ selectedDate || '请选择日期' }}</view>
       </picker>
     </view>
@@ -45,7 +45,6 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
-import { onShow } from '@dcloudio/uni-app';
 import { request } from '../../api/http';
 import { useAuthStore } from '../../stores/auth';
 
@@ -99,10 +98,38 @@ const aiConsultation = ref<AiConsultation>();
 
 const selectedDepartment = computed(() => departments.value.find((item) => item.id === selectedDepartmentId.value));
 const recommendedDoctorIds = computed(() => aiConsultation.value?.recommendedDoctors.map((item) => item.doctorId) ?? []);
-const availableDates = computed(() => Array.from(new Set(schedules.value.map((item) => item.workDate))).sort());
+const BOOKABLE_DAY_SPAN = 7;
+
+function formatDateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function addDays(date: Date, days: number) {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
+function isWithinBookingWindow(workDate: string) {
+  if (!workDate) {
+    return false;
+  }
+  const today = new Date();
+  const startDate = formatDateKey(today);
+  const endDate = formatDateKey(addDays(today, BOOKABLE_DAY_SPAN - 1));
+  return workDate >= startDate && workDate <= endDate;
+}
+
+const bookableSchedules = computed(() =>
+  schedules.value.filter((item) => isWithinBookingWindow(item.workDate))
+);
+const availableDates = computed(() => Array.from(new Set(bookableSchedules.value.map((item) => item.workDate))).sort());
 const doctorMap = computed(() => new Map(doctors.value.map((item) => [item.id, item])));
 const filteredSchedules = computed(() =>
-  schedules.value
+  bookableSchedules.value
     .filter((item) => !selectedDate.value || item.workDate === selectedDate.value)
     .sort((a, b) => {
       const ar = recommendedDoctorIds.value.includes(a.doctorId) ? 0 : 1;
@@ -113,6 +140,8 @@ const filteredSchedules = computed(() =>
       return a.period.localeCompare(b.period, 'zh-CN');
     })
 );
+const selectedDepartmentIndex = computed(() => optionIndexById(departments.value, selectedDepartmentId.value));
+const selectedDateIndex = computed(() => optionIndexByValue(availableDates.value, selectedDate.value));
 
 function doctorInfo(doctorId: string) {
   const doctor = doctorMap.value.get(doctorId);
@@ -121,6 +150,71 @@ function doctorInfo(doctorId: string) {
   }
   const extra = [doctor.title, doctor.specialty].filter(Boolean).join(' · ');
   return extra || '门诊医生';
+}
+
+function normalizeText(value: unknown) {
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (typeof value === 'number') {
+    return String(value);
+  }
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    const year = record.year;
+    const month = record.monthValue ?? record.month;
+    const day = record.dayOfMonth ?? record.day;
+    if (typeof year === 'number' && typeof month === 'number' && typeof day === 'number') {
+      return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    }
+    if (typeof record.name === 'string') {
+      return record.name;
+    }
+  }
+  return '';
+}
+
+function toDepartment(item: Record<string, unknown>): Department {
+  return {
+    id: normalizeText(item.id),
+    name: normalizeText(item.name)
+  };
+}
+
+function toDoctor(item: Record<string, unknown>): Doctor {
+  return {
+    id: normalizeText(item.id),
+    name: normalizeText(item.name),
+    title: normalizeText(item.title),
+    departmentId: normalizeText(item.departmentId),
+    specialty: normalizeText(item.specialty)
+  };
+}
+
+function toSchedule(item: Record<string, unknown>): Schedule {
+  return {
+    id: normalizeText(item.id),
+    doctorId: normalizeText(item.doctorId),
+    doctorName: normalizeText(item.doctorName),
+    departmentId: normalizeText(item.departmentId),
+    workDate: normalizeText(item.workDate),
+    period: normalizeText(item.period),
+    capacity: Number(item.capacity ?? 0),
+    booked: Number(item.booked ?? 0),
+    locked: Number(item.locked ?? 0),
+    available: Number(item.available ?? 0),
+    status: normalizeText(item.status)
+  };
+}
+
+function optionIndexById(options: Array<{ id: string }>, value: string) {
+  const index = options.findIndex((item) => item.id === value);
+  return index >= 0 ? index : 0;
+}
+
+function optionIndexByValue(options: string[], value: string) {
+  const index = options.findIndex((item) => item === value);
+  return index >= 0 ? index : 0;
 }
 
 function syncSelectedDate() {
@@ -142,27 +236,31 @@ async function loadDepartmentResources() {
   }
 
   const [doctorList, scheduleList] = await Promise.all([
-    request<Doctor[]>({ url: `/doctors?departmentId=${selectedDepartmentId.value}`, method: 'GET' }),
-    request<Schedule[]>({ url: `/schedules?departmentId=${selectedDepartmentId.value}`, method: 'GET' })
+    request<Record<string, unknown>[]>({ url: `/doctors?departmentId=${selectedDepartmentId.value}`, method: 'GET' }),
+    request<Record<string, unknown>[]>({ url: `/schedules?departmentId=${selectedDepartmentId.value}`, method: 'GET' })
   ]);
 
-  doctors.value = doctorList;
-  schedules.value = scheduleList;
+  doctors.value = doctorList.map(toDoctor);
+  schedules.value = scheduleList.map(toSchedule);
   syncSelectedDate();
 }
 
-async function selectDepartment(event: { detail: { value: string } }) {
+async function onDepartmentChange(event: { detail: { value: string } }) {
   selectedDepartmentId.value = departments.value[Number(event.detail.value)]?.id ?? '';
   await loadDepartmentResources();
 }
 
-function selectDate(event: { detail: { value: string } }) {
+function onDateChange(event: { detail: { value: string } }) {
   selectedDate.value = availableDates.value[Number(event.detail.value)] ?? '';
 }
 
 async function book(schedule: Schedule) {
-  if (!auth.user?.realNameVerified) {
-    uni.showToast({ title: '请先完成实名认证', icon: 'none' });
+  let patient;
+  try {
+    patient = auth.requireBoundPatient();
+  } catch (error) {
+    uni.showToast({ title: (error as Error).message, icon: 'none' });
+    uni.navigateTo({ url: '/pages/real-name/index' });
     return;
   }
 
@@ -172,8 +270,8 @@ async function book(schedule: Schedule) {
       method: 'POST',
       data: {
         scheduleId: schedule.id,
-        patientId: auth.user.id,
-        patientName: auth.user.name,
+        patientId: patient.id,
+        patientName: patient.name,
         doctorId: schedule.doctorId,
         doctorName: schedule.doctorName,
         departmentId: schedule.departmentId,
@@ -193,7 +291,7 @@ async function book(schedule: Schedule) {
       data: {
         businessType: 'APPOINTMENT',
         businessId: appointment.id,
-        patientId: auth.user.id,
+        patientId: patient.id,
         amount: 0.01,
         paymentMethod: 'WECHAT_TEST'
       }
@@ -206,7 +304,7 @@ async function book(schedule: Schedule) {
         data: {
           businessType: 'APPOINTMENT',
           businessId: appointment.id,
-          patientId: auth.user.id,
+          patientId: patient.id,
           channel: 'WECHAT',
           channelTradeNo: `wx-test-${appointment.id}-${Date.now()}`
         }
@@ -228,7 +326,8 @@ async function book(schedule: Schedule) {
 
 async function initialize() {
   aiConsultation.value = uni.getStorageSync('last_ai_consultation') || undefined;
-  departments.value = await request<Department[]>({ url: '/departments', method: 'GET' });
+  const departmentList = await request<Record<string, unknown>[]>({ url: '/departments', method: 'GET' });
+  departments.value = departmentList.map(toDepartment);
   selectedDepartmentId.value = aiConsultation.value?.recommendedDepartmentId || departments.value[0]?.id || '';
   if (!departments.value.some((item) => item.id === selectedDepartmentId.value)) {
     selectedDepartmentId.value = departments.value[0]?.id ?? '';
@@ -237,11 +336,6 @@ async function initialize() {
 }
 
 onMounted(initialize);
-onShow(async () => {
-  if (selectedDepartmentId.value) {
-    await loadDepartmentResources();
-  }
-});
 </script>
 
 <style scoped>

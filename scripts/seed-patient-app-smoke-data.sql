@@ -1,9 +1,11 @@
 begin;
 
+drop index if exists patient.uk_patient_profile_phone;
+
 -- This script is intended for local/manual QA after Flyway has created schemas.
 -- It seeds a repeatable dataset for:
 -- 1. patient password login / sms login / registration
--- 2. real-name verification gate
+-- 2. multi-patient profile binding gate
 -- 3. richer doctor / department / schedule browsing
 -- 4. AI consultation -> recommended department -> online appointment booking
 -- 5. pending payments / check-lab reports / disposal flow / prescriptions
@@ -101,13 +103,18 @@ set password = excluded.password,
     real_name_verified = excluded.real_name_verified;
 
 insert into patient.patient_profile (
-    user_id, phone, name, id_card, gender, birth_date, real_name_verified, verified_at, created_at, updated_at
+    id, user_id, account_id, phone, name, id_type, id_number, id_card,
+    gender, birth_date, real_name_verified, verified_at, created_at, updated_at
 )
 values
     (
+        'patient-profile-test-self-001',
+        'patient-profile-test-self-001',
         'patient-test-verified-001',
         '13800000011',
         'Patient Verified',
+        'ID_CARD',
+        '110101199003074512',
         '110101199003074512',
         'MALE',
         date '1990-03-07',
@@ -117,26 +124,39 @@ values
         now()
     ),
     (
-        'patient-test-unverified-001',
-        '13800000012',
-        'Patient Unverified',
-        null,
-        null,
-        null,
-        false,
-        null,
+        'patient-profile-test-family-001',
+        'patient-profile-test-family-001',
+        'patient-test-verified-001',
+        '13800000011',
+        'Patient Family',
+        'ID_CARD',
+        '110101201505014526',
+        '110101201505014526',
+        'FEMALE',
+        date '2015-05-01',
+        true,
+        now(),
         now(),
         now()
     )
-on conflict (user_id) do update
-set phone = excluded.phone,
+on conflict (id) do update
+set account_id = excluded.account_id,
+    phone = excluded.phone,
     name = excluded.name,
+    id_type = excluded.id_type,
+    id_number = excluded.id_number,
     id_card = excluded.id_card,
     gender = excluded.gender,
     birth_date = excluded.birth_date,
     real_name_verified = excluded.real_name_verified,
     verified_at = excluded.verified_at,
     updated_at = now();
+
+insert into patient.account_patient_binding (account_id, patient_id, bound_at)
+values ('patient-test-verified-001', 'patient-profile-test-self-001', now())
+on conflict (account_id) do update
+set patient_id = excluded.patient_id,
+    bound_at = excluded.bound_at;
 
 insert into doctor.department (id, name, description, active)
 values
@@ -235,7 +255,7 @@ values
     (
         'appt-test-future-001',
         'schedule-002',
-        'patient-test-verified-001',
+        'patient-profile-test-self-001',
         'Patient Verified',
         'doctor-001',
         'Doctor Neuro',
@@ -261,7 +281,7 @@ values
     (
         'appt-test-future-002',
         'schedule-test-neuro-001',
-        'patient-test-verified-001',
+        'patient-profile-test-self-001',
         'Patient Verified',
         'doctor-001',
         'Doctor Neuro',
@@ -287,7 +307,7 @@ values
     (
         'appt-test-history-001',
         'schedule-test-neuro-history-001',
-        'patient-test-verified-001',
+        'patient-profile-test-self-001',
         'Patient Verified',
         'doctor-001',
         'Doctor Neuro',
@@ -313,7 +333,7 @@ values
     (
         'appt-test-pending-payment-001',
         'schedule-test-rehab-001-am',
-        'patient-test-verified-001',
+        'patient-profile-test-self-001',
         'Patient Verified',
         'doctor-test-rehab-001',
         'Doctor Rehab Zhou',
@@ -364,19 +384,19 @@ insert into cashier.payment_order (
     id, business_type, business_id, patient_id, amount, payment_method, status, operator_id, created_at, paid_at, payment_scene
 )
 values
-    ('pay-test-appt-future-001', 'APPOINTMENT', 'appt-test-future-001', 'patient-test-verified-001', 0.01, 'WECHAT_TEST', 'PAID', 'patient-test-verified-001', now() - interval '1 day', now() - interval '1 day', 'BUSINESS'),
-    ('pay-test-appt-future-002', 'APPOINTMENT', 'appt-test-future-002', 'patient-test-verified-001', 0.01, 'WECHAT_TEST', 'PAID', 'patient-test-verified-001', now(), now(), 'BUSINESS'),
-    ('pay-test-appt-history-001', 'APPOINTMENT', 'appt-test-history-001', 'patient-test-verified-001', 0.01, 'WECHAT_TEST', 'PAID', 'patient-test-verified-001', now() - interval '7 day', now() - interval '7 day', 'BUSINESS'),
-    ('pay-test-appt-pending-001', 'APPOINTMENT', 'appt-test-pending-payment-001', 'patient-test-verified-001', 0.01, 'WECHAT_TEST', 'PENDING', 'patient-test-verified-001', now(), null, 'BUSINESS'),
-    ('pay-test-order-check-paid-001', 'MEDICAL_ORDER', 'order-test-check-report-001', 'patient-test-verified-001', 260.00, 'WECHAT_TEST', 'PAID', 'staff-cashier-001', now() - interval '7 day', now() - interval '7 day', 'BUSINESS'),
-    ('pay-test-order-lab-paid-001', 'MEDICAL_ORDER', 'order-test-lab-report-001', 'patient-test-verified-001', 35.00, 'WECHAT_TEST', 'PAID', 'staff-cashier-001', now() - interval '7 day', now() - interval '7 day', 'BUSINESS'),
-    ('pay-test-order-disposal-paid-001', 'MEDICAL_ORDER', 'order-test-disposal-done-001', 'patient-test-verified-001', 25.00, 'WECHAT_TEST', 'PAID', 'staff-cashier-001', now() - interval '7 day', now() - interval '7 day', 'BUSINESS'),
-    ('pay-test-order-check-pending-001', 'MEDICAL_ORDER', 'order-test-check-unpaid-001', 'patient-test-verified-001', 680.00, 'WECHAT_TEST', 'PENDING', 'patient-test-verified-001', now(), null, 'BUSINESS'),
-    ('pay-test-order-lab-pending-001', 'MEDICAL_ORDER', 'order-test-lab-unpaid-001', 'patient-test-verified-001', 75.00, 'WECHAT_TEST', 'PENDING', 'patient-test-verified-001', now(), null, 'BUSINESS'),
-    ('pay-test-order-disposal-pending-001', 'MEDICAL_ORDER', 'order-test-disposal-unpaid-001', 'patient-test-verified-001', 25.00, 'WECHAT_TEST', 'PENDING', 'patient-test-verified-001', now(), null, 'BUSINESS'),
-    ('pay-test-rx-dispensed-001', 'PRESCRIPTION', 'rx-test-dispensed-001', 'patient-test-verified-001', 47.50, 'WECHAT_TEST', 'PAID', 'staff-cashier-001', now() - interval '7 day', now() - interval '7 day', 'BUSINESS'),
-    ('pay-test-rx-pending-001', 'PRESCRIPTION', 'rx-test-pending-001', 'patient-test-verified-001', 18.50, 'WECHAT_TEST', 'PENDING', 'patient-test-verified-001', now(), null, 'BUSINESS'),
-    ('pay-test-rx-waiting-001', 'PRESCRIPTION', 'rx-test-waiting-001', 'patient-test-verified-001', 29.00, 'WECHAT_TEST', 'PAID', 'staff-cashier-001', now() - interval '1 day', now() - interval '1 day', 'BUSINESS')
+    ('pay-test-appt-future-001', 'APPOINTMENT', 'appt-test-future-001', 'patient-profile-test-self-001', 0.01, 'WECHAT_TEST', 'PAID', 'patient-test-verified-001', now() - interval '1 day', now() - interval '1 day', 'BUSINESS'),
+    ('pay-test-appt-future-002', 'APPOINTMENT', 'appt-test-future-002', 'patient-profile-test-self-001', 0.01, 'WECHAT_TEST', 'PAID', 'patient-test-verified-001', now(), now(), 'BUSINESS'),
+    ('pay-test-appt-history-001', 'APPOINTMENT', 'appt-test-history-001', 'patient-profile-test-self-001', 0.01, 'WECHAT_TEST', 'PAID', 'patient-test-verified-001', now() - interval '7 day', now() - interval '7 day', 'BUSINESS'),
+    ('pay-test-appt-pending-001', 'APPOINTMENT', 'appt-test-pending-payment-001', 'patient-profile-test-self-001', 0.01, 'WECHAT_TEST', 'PENDING', 'patient-test-verified-001', now(), null, 'BUSINESS'),
+    ('pay-test-order-check-paid-001', 'MEDICAL_ORDER', 'order-test-check-report-001', 'patient-profile-test-self-001', 260.00, 'WECHAT_TEST', 'PAID', 'staff-cashier-001', now() - interval '7 day', now() - interval '7 day', 'BUSINESS'),
+    ('pay-test-order-lab-paid-001', 'MEDICAL_ORDER', 'order-test-lab-report-001', 'patient-profile-test-self-001', 35.00, 'WECHAT_TEST', 'PAID', 'staff-cashier-001', now() - interval '7 day', now() - interval '7 day', 'BUSINESS'),
+    ('pay-test-order-disposal-paid-001', 'MEDICAL_ORDER', 'order-test-disposal-done-001', 'patient-profile-test-self-001', 25.00, 'WECHAT_TEST', 'PAID', 'staff-cashier-001', now() - interval '7 day', now() - interval '7 day', 'BUSINESS'),
+    ('pay-test-order-check-pending-001', 'MEDICAL_ORDER', 'order-test-check-unpaid-001', 'patient-profile-test-self-001', 680.00, 'WECHAT_TEST', 'PENDING', 'patient-test-verified-001', now(), null, 'BUSINESS'),
+    ('pay-test-order-lab-pending-001', 'MEDICAL_ORDER', 'order-test-lab-unpaid-001', 'patient-profile-test-self-001', 75.00, 'WECHAT_TEST', 'PENDING', 'patient-test-verified-001', now(), null, 'BUSINESS'),
+    ('pay-test-order-disposal-pending-001', 'MEDICAL_ORDER', 'order-test-disposal-unpaid-001', 'patient-profile-test-self-001', 25.00, 'WECHAT_TEST', 'PENDING', 'patient-test-verified-001', now(), null, 'BUSINESS'),
+    ('pay-test-rx-dispensed-001', 'PRESCRIPTION', 'rx-test-dispensed-001', 'patient-profile-test-self-001', 47.50, 'WECHAT_TEST', 'PAID', 'staff-cashier-001', now() - interval '7 day', now() - interval '7 day', 'BUSINESS'),
+    ('pay-test-rx-pending-001', 'PRESCRIPTION', 'rx-test-pending-001', 'patient-profile-test-self-001', 18.50, 'WECHAT_TEST', 'PENDING', 'patient-test-verified-001', now(), null, 'BUSINESS'),
+    ('pay-test-rx-waiting-001', 'PRESCRIPTION', 'rx-test-waiting-001', 'patient-profile-test-self-001', 29.00, 'WECHAT_TEST', 'PAID', 'staff-cashier-001', now() - interval '1 day', now() - interval '1 day', 'BUSINESS')
 on conflict (business_type, business_id) do update
 set patient_id = excluded.patient_id,
     amount = excluded.amount,
@@ -421,7 +441,7 @@ values
     (
         'record-test-history-001',
         'appt-test-history-001',
-        'patient-test-verified-001',
+        'patient-profile-test-self-001',
         'Patient Verified',
         'doctor-001',
         'Doctor Neuro',
@@ -488,7 +508,7 @@ values
     (
         'order-test-check-report-001',
         'appt-test-history-001',
-        'patient-test-verified-001',
+        'patient-profile-test-self-001',
         'Patient Verified',
         'doctor-001',
         'CHECK',
@@ -517,7 +537,7 @@ values
     (
         'order-test-lab-report-001',
         'appt-test-history-001',
-        'patient-test-verified-001',
+        'patient-profile-test-self-001',
         'Patient Verified',
         'doctor-001',
         'LAB',
@@ -546,7 +566,7 @@ values
     (
         'order-test-disposal-done-001',
         'appt-test-history-001',
-        'patient-test-verified-001',
+        'patient-profile-test-self-001',
         'Patient Verified',
         'doctor-001',
         'DISPOSAL',
@@ -575,7 +595,7 @@ values
     (
         'order-test-disposal-wait-001',
         'appt-test-future-001',
-        'patient-test-verified-001',
+        'patient-profile-test-self-001',
         'Patient Verified',
         'doctor-001',
         'DISPOSAL',
@@ -604,7 +624,7 @@ values
     (
         'order-test-check-unpaid-001',
         'appt-test-future-001',
-        'patient-test-verified-001',
+        'patient-profile-test-self-001',
         'Patient Verified',
         'doctor-001',
         'CHECK',
@@ -633,7 +653,7 @@ values
     (
         'order-test-lab-unpaid-001',
         'appt-test-future-002',
-        'patient-test-verified-001',
+        'patient-profile-test-self-001',
         'Patient Verified',
         'doctor-001',
         'LAB',
@@ -662,7 +682,7 @@ values
     (
         'order-test-disposal-unpaid-001',
         'appt-test-future-002',
-        'patient-test-verified-001',
+        'patient-profile-test-self-001',
         'Patient Verified',
         'doctor-001',
         'DISPOSAL',
@@ -812,7 +832,7 @@ values
         'RX-QA-001',
         'appt-test-history-001',
         'record-test-history-001',
-        'patient-test-verified-001',
+        'patient-profile-test-self-001',
         'Patient Verified',
         'doctor-001',
         'Primary headache, stable after treatment',
@@ -836,7 +856,7 @@ values
         'RX-QA-002',
         'appt-test-future-001',
         null,
-        'patient-test-verified-001',
+        'patient-profile-test-self-001',
         'Patient Verified',
         'doctor-001',
         'Headache follow-up medication',
@@ -860,7 +880,7 @@ values
         'RX-QA-003',
         'appt-test-future-002',
         null,
-        'patient-test-verified-001',
+        'patient-profile-test-self-001',
         'Patient Verified',
         'doctor-001',
         'Lipid control medication',

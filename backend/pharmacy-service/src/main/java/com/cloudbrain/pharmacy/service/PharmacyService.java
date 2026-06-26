@@ -14,9 +14,11 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class PharmacyService {
     private final PharmacyRepository repository;
+    private final PatientAccessClient patientAccessClient;
 
-    public PharmacyService(PharmacyRepository repository) {
+    public PharmacyService(PharmacyRepository repository, PatientAccessClient patientAccessClient) {
         this.repository = repository;
+        this.patientAccessClient = patientAccessClient;
     }
 
     public List<PharmacyRepository.Drug> drugs(String keyword) {
@@ -51,14 +53,23 @@ public class PharmacyService {
 
     public Prescription find(String id, String patientId, String role) {
         Prescription prescription = repository.findPrescription(id);
-        if ("PATIENT".equals(role) && !prescription.patientId().equals(patientId)) {
+        if ("PATIENT".equals(role) && !patientAccessClient.owns(patientId, prescription.patientId())) {
             throw new org.springframework.security.access.AccessDeniedException("患者只能查看自己的处方");
         }
         return prescription;
     }
 
     public List<Prescription> list(String patientId, String status, String requesterId, String role) {
-        String scopedPatientId = "PATIENT".equals(role) ? requesterId : patientId;
+        String scopedPatientId = patientId;
+        if ("PATIENT".equals(role)) {
+            if (scopedPatientId == null || scopedPatientId.isBlank()) scopedPatientId = patientAccessClient.boundPatientId(requesterId);
+            if (scopedPatientId == null || scopedPatientId.isBlank()) {
+                throw new org.springframework.security.access.AccessDeniedException("请先添加并绑定就诊人");
+            }
+            if (!patientAccessClient.owns(requesterId, scopedPatientId)) {
+                throw new org.springframework.security.access.AccessDeniedException("患者只能查看自己账号名下就诊人的处方");
+            }
+        }
         return repository.list(scopedPatientId, status);
     }
 

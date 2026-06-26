@@ -23,3 +23,7 @@ security:
   jwt:
     secret: ${JWT_SECRET:cloud-brain-medical-development-secret-change-me}
     issuer: ${JWT_ISSUER:cloud-brain-medical}
+
+services:
+  patient:
+    base-url: ${PATIENT_SERVICE_URL:http://localhost:8102}

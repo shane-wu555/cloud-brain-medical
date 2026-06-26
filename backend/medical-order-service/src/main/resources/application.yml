@@ -30,6 +30,8 @@ services:
     base-url: ${APPOINTMENT_SERVICE_URL:http://localhost:8104}
   medical-record:
     base-url: ${MEDICAL_RECORD_SERVICE_URL:http://localhost:8105}
+  patient:
+    base-url: ${PATIENT_SERVICE_URL:http://localhost:8102}
 storage:
   minio:
     endpoint: ${MINIO_ENDPOINT:http://localhost:9000}

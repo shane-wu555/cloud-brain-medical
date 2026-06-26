@@ -41,6 +41,7 @@
 import { onShow } from '@dcloudio/uni-app';
 import { ref } from 'vue';
 import { request } from '../../api/http';
+import { useAuthStore } from '../../stores/auth';
 
 interface MedicalRecord {
   id: string;
@@ -68,6 +69,7 @@ interface MedicalRecord {
 }
 
 const records = ref<MedicalRecord[]>([]);
+const auth = useAuthStore();
 
 function statusLabel(status: MedicalRecord['status']) {
   return {
@@ -78,6 +80,14 @@ function statusLabel(status: MedicalRecord['status']) {
 }
 
 onShow(async () => {
+  await auth.loadProfile();
+  try {
+    auth.requireBoundPatient();
+  } catch (error) {
+    uni.showToast({ title: (error as Error).message, icon: 'none' });
+    uni.navigateTo({ url: '/pages/real-name/index' });
+    return;
+  }
   records.value = await request<MedicalRecord[]>({ url: '/medical-records', method: 'GET' });
 });
 </script>

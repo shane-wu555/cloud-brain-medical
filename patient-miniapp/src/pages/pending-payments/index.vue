@@ -244,6 +244,14 @@ function prescriptionStatusLabel(status: Prescription['status']) {
 }
 
 async function load() {
+  await auth.loadProfile();
+  try {
+    auth.requireBoundPatient();
+  } catch (error) {
+    uni.showToast({ title: (error as Error).message, icon: 'none' });
+    uni.navigateTo({ url: '/pages/real-name/index' });
+    return;
+  }
   loadWarning.value = '';
   const warnings: string[] = [];
   const [appointmentsResult, paymentsResult, medicalOrdersResult, prescriptionsResult] = await Promise.allSettled([
@@ -311,7 +319,12 @@ async function load() {
 }
 
 async function pay(item: PendingItem) {
-  if (!auth.user) {
+  let patient;
+  try {
+    patient = auth.requireBoundPatient();
+  } catch (error) {
+    uni.showToast({ title: (error as Error).message, icon: 'none' });
+    uni.navigateTo({ url: '/pages/real-name/index' });
     return;
   }
   try {
@@ -321,7 +334,7 @@ async function pay(item: PendingItem) {
       data: {
         businessType: item.businessType,
         businessId: item.businessId,
-        patientId: auth.user.id,
+        patientId: patient.id,
         amount: item.amount,
         paymentMethod: 'WECHAT_TEST'
       }
@@ -332,7 +345,7 @@ async function pay(item: PendingItem) {
       data: {
         businessType: item.businessType,
         businessId: item.businessId,
-        patientId: auth.user.id,
+        patientId: patient.id,
         channel: 'WECHAT',
         channelTradeNo: `wx-${item.businessType.toLowerCase()}-${item.businessId}-${Date.now()}`
       }
