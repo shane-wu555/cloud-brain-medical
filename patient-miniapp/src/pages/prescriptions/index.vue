@@ -32,10 +32,10 @@
 
       <button
         v-if="canPay(prescription)"
-        class="button"
-        @click="pay(prescription)"
+        class="button compact-action"
+        @click="goToPendingPayments()"
       >
-        处方缴费 ¥{{ amountText(prescription.totalAmount) }}
+        去待缴费页面处理
       </button>
     </view>
 
@@ -136,43 +136,8 @@ async function load() {
   prescriptions.value = await request<Prescription[]>({ url: '/prescriptions', method: 'GET' });
 }
 
-async function pay(prescription: Prescription) {
-  let patient;
-  try {
-    patient = auth.requireBoundPatient();
-  } catch (error) {
-    uni.showToast({ title: (error as Error).message, icon: 'none' });
-    uni.navigateTo({ url: '/pages/real-name/index' });
-    return;
-  }
-  try {
-    await request({
-      url: '/payments/orders',
-      method: 'POST',
-      data: {
-        businessType: 'PRESCRIPTION',
-        businessId: prescription.id,
-        patientId: patient.id,
-        amount: prescription.totalAmount,
-        paymentMethod: 'WECHAT_TEST'
-      }
-    });
-    await request({
-      url: '/payments/test-callback',
-      method: 'POST',
-      data: {
-        businessType: 'PRESCRIPTION',
-        businessId: prescription.id,
-        patientId: patient.id,
-        channel: 'WECHAT',
-        channelTradeNo: `wx-rx-${prescription.id}-${Date.now()}`
-      }
-    });
-    uni.showToast({ title: '处方缴费成功', icon: 'success' });
-    await load();
-  } catch (error) {
-    uni.showToast({ title: (error as Error).message, icon: 'none' });
-  }
+function goToPendingPayments() {
+  uni.navigateTo({ url: '/pages/pending-payments/index' });
 }
 
 onShow(load);
@@ -261,5 +226,17 @@ onShow(load);
 .cancelled {
   background: #f1f5f9;
   color: #64748b;
+}
+
+.compact-action {
+  align-self: flex-start;
+  width: auto;
+  min-width: 0;
+  height: 64rpx;
+  margin: 10rpx 0 0;
+  padding: 0 22rpx;
+  border-radius: 10rpx;
+  font-size: 26rpx;
+  line-height: 64rpx;
 }
 </style>

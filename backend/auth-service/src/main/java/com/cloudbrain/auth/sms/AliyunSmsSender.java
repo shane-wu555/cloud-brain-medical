@@ -70,14 +70,21 @@ public class AliyunSmsSender implements SmsSender {
                 .build();
 
         try {
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            HttpResponse<String> response =
+                    httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            JsonNode body = parseBody(response.body());
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                throw new IllegalStateException("SMS provider request failed with HTTP " + response.statusCode());
+                String providerError = buildProviderErrorMessage(response.statusCode(), body, response.body());
+                log.warn("Aliyun SMS request rejected purpose={} phone={} error={}",
+                        purpose, maskPhone(phone), providerError);
+                throw new IllegalArgumentException(toUserFacingMessage(body, response.statusCode(), providerError));
             }
-            JsonNode body = objectMapper.readTree(response.body());
             String resultCode = body.path("Code").asText();
             if (!"OK".equals(resultCode)) {
-                throw new IllegalStateException("SMS provider rejected request: " + body.path("Message").asText(resultCode));
+                String providerError = buildProviderErrorMessage(response.statusCode(), body, response.body());
+                log.warn("Aliyun SMS provider business failure purpose={} phone={} error={}",
+                        purpose, maskPhone(phone), providerError);
+                throw new IllegalArgumentException(toUserFacingMessage(body, response.statusCode(), providerError));
             }
             log.info("SMS sent via Aliyun purpose={} phone={} requestId={}",
                     purpose, maskPhone(phone), body.path("RequestId").asText());
@@ -169,6 +176,52 @@ public class AliyunSmsSender implements SmsSender {
 
     private String firstNonBlank(String primary, String fallback) {
         return primary != null && !primary.isBlank() ? primary : fallback;
+    }
+
+    private JsonNode parseBody(String body) throws IOException {
+        if (body == null || body.isBlank()) {
+            return objectMapper.createObjectNode();
+        }
+        return objectMapper.readTree(body);
+    }
+
+    private String buildProviderErrorMessage(int httpStatus, JsonNode body, String rawBody) {
+        String code = body.path("Code").asText("");
+        String message = body.path("Message").asText("");
+        String detail = body.path("AccessDeniedDetail").asText("");
+        if (!code.isBlank() || !message.isBlank() || !detail.isBlank()) {
+            StringBuilder builder = new StringBuilder("SMS provider request failed");
+            if (!code.isBlank()) {
+                builder.append(": ").append(code);
+            }
+            if (!message.isBlank()) {
+                builder.append(" - ").append(message);
+            }
+            if (!detail.isBlank()) {
+                builder.append(" (").append(detail).append(")");
+            }
+            builder.append(" [HTTP ").append(httpStatus).append("]");
+            return builder.toString();
+        }
+        return "SMS provider request failed with HTTP " + httpStatus + ": " + rawBody;
+    }
+
+    private String toUserFacingMessage(JsonNode body, int httpStatus, String fallback) {
+        String code = body.path("Code").asText("").trim();
+        String message = body.path("Message").asText("").trim();
+        if ("biz.FREQUENCY".equalsIgnoreCase(code)) {
+            return "获取验证码太频繁，请稍后再试";
+        }
+        if ("UNKNOWN".equalsIgnoreCase(code) && "UNKNOWN".equalsIgnoreCase(message)) {
+            return "该手机号暂时无法接收短信，请稍后重试或更换手机号";
+        }
+        if ("Forbidden.NoPermission".equalsIgnoreCase(code)) {
+            return "短信服务尚未授权，请联系管理员检查阿里云 RAM 权限";
+        }
+        if (httpStatus >= 500) {
+            return "短信服务暂时不可用，请稍后再试";
+        }
+        return fallback;
     }
 
     private String maskPhone(String phone) {

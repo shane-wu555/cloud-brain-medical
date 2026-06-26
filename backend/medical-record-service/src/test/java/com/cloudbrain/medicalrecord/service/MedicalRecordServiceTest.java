@@ -39,7 +39,7 @@ class MedicalRecordServiceTest {
     @Test void historicalAccessRequiresReasonAndWritesAudit(){
         MedicalRecord current=record("current");MedicalRecord old=record("old");
         when(repository.findByAppointmentId("current")).thenReturn(Optional.of(current));
-        when(repository.findByPatientId("p")).thenReturn(java.util.List.of(current,old));
+        when(repository.findByPatientIdExcludingCancelledAppointments("p")).thenReturn(java.util.List.of(current,old));
         var result=service().history("p","current","复诊查阅","d");
         assertThat(result).containsExactly(old);
         verify(repository).recordAccess(old.getId(),"p","d","OUTPATIENT_DOCTOR","HISTORY","复诊查阅");

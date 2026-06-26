@@ -46,7 +46,7 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue';
-import { onShow } from '@dcloudio/uni-app';
+import { onLoad, onShow } from '@dcloudio/uni-app';
 import { useAuthStore } from '../../stores/auth';
 
 const auth = useAuthStore();
@@ -75,6 +75,14 @@ const form = reactive({
 
 const selectedIdTypeIndex = computed(() => optionIndex(idTypeOptions, form.idType));
 const selectedGenderIndex = computed(() => optionIndex(genderOptions, form.gender));
+
+onLoad((options) => {
+  if (options?.prompt === 'needPatient') {
+    setTimeout(() => {
+      uni.showToast({ title: '请先添加并绑定就诊人', icon: 'none', duration: 3000 });
+    }, 300);
+  }
+});
 
 onShow(async () => {
   await auth.loadProfile();
@@ -119,12 +127,21 @@ async function submit() {
     uni.showToast({ title: '请完整填写就诊人信息', icon: 'none' });
     return;
   }
+  const idNumber = form.idNumber.trim();
+  if (form.idType === 'ID_CARD' && !/^\d{17}[\dXx]$/.test(idNumber)) {
+    uni.showToast({ title: '身份证号格式不正确', icon: 'none' });
+    return;
+  }
+  if (form.idType !== 'ID_CARD' && idNumber.length > 64) {
+    uni.showToast({ title: '证件号码最多64位', icon: 'none' });
+    return;
+  }
   loading.value = true;
   try {
     await auth.addPatient({
       name: form.name.trim(),
       idType: form.idType,
-      idNumber: form.idNumber.trim(),
+      idNumber,
       gender: form.gender,
       birthDate: form.birthDate
     });

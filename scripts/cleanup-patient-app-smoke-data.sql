@@ -138,13 +138,14 @@ where id in (
     'appt-test-pending-payment-001'
 );
 
-update appointment.slot_inventory
-set capacity = 18,
-    locked = 0,
-    booked = 4
-where schedule_id = 'schedule-002';
+delete from appointment.slot_inventory
+where schedule_id in ('schedule-001', 'schedule-002', 'schedule-003', 'schedule-004');
 
 delete from appointment.slot_inventory
+where schedule_id like 'schedule-test-%'
+   or schedule_id like 'schedule-002-%';
+
+delete from doctor.doctor_schedule_time_slot
 where schedule_id in (
     'schedule-test-general-001',
     'schedule-test-general-002-am',

@@ -106,8 +106,8 @@ onShow(async () => {
 
 function go(url: string) {
   if (url !== '/pages/real-name/index' && !auth.boundPatient) {
-    uni.showToast({ title: '请先添加并绑定就诊人', icon: 'none' });
-    uni.navigateTo({ url: '/pages/real-name/index' });
+    uni.showToast({ title: '请先添加并绑定就诊人', icon: 'none', duration: 3000 });
+    uni.navigateTo({ url: '/pages/real-name/index?prompt=needPatient' });
     return;
   }
   uni.navigateTo({ url });

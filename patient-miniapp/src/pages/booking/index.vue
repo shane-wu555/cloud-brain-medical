@@ -21,7 +21,29 @@
       </picker>
     </view>
 
-    <view v-for="schedule in filteredSchedules" :key="schedule.id" class="card schedule">
+    <view v-if="selectedSchedule" class="card schedule-detail">
+      <view class="schedule-head">
+        <view>
+          <view class="doctor">{{ selectedSchedule.doctorName }}</view>
+          <view class="muted">{{ doctorInfo(selectedSchedule.doctorId) }}</view>
+        </view>
+        <button size="mini" @click="selectedSchedule = null">返回</button>
+      </view>
+      <view>{{ selectedSchedule.workDate }} · {{ selectedSchedule.period }}</view>
+      <view class="time-list">
+        <view v-for="slot in selectedSchedule.timeSlots" :key="slot.id" class="time-row">
+          <view>
+            <view class="time-value">{{ slot.startTime }}</view>
+            <view class="muted">余号 {{ slot.available }} / {{ slot.capacity }}</view>
+          </view>
+          <button class="button time-button" :disabled="slot.available <= 0" @click="book(selectedSchedule, slot)">
+            {{ slot.available > 0 ? '挂号并缴费' : '满号' }}
+          </button>
+        </view>
+      </view>
+    </view>
+
+    <view v-for="schedule in filteredSchedules" v-else :key="schedule.id" class="card schedule">
       <view class="schedule-head">
         <view>
           <view class="doctor">{{ schedule.doctorName }}</view>
@@ -33,8 +55,8 @@
       </view>
 
       <view>{{ schedule.workDate }} · {{ schedule.period }}</view>
-      <view class="muted">剩余号源：{{ schedule.available }} / {{ schedule.capacity }}</view>
-      <button class="button" :disabled="schedule.available <= 0" @click="book(schedule)">挂号并缴费</button>
+      <view class="muted">{{ schedule.available > 0 ? '有号' : '满号' }} · 余号 {{ schedule.available }} / {{ schedule.capacity }}</view>
+      <button class="button" :disabled="!schedule.timeSlots.length" @click="selectedSchedule = schedule">查看可约时间</button>
     </view>
 
     <view v-if="selectedDepartmentId && !filteredSchedules.length" class="card muted">
@@ -73,6 +95,16 @@ interface Schedule {
   locked: number;
   available: number;
   status: string;
+  timeSlots: TimeSlot[];
+}
+
+interface TimeSlot {
+  id: string;
+  startTime: string;
+  capacity: number;
+  booked: number;
+  locked: number;
+  available: number;
 }
 
 interface Appointment {
@@ -94,6 +126,7 @@ const doctors = ref<Doctor[]>([]);
 const selectedDepartmentId = ref('');
 const schedules = ref<Schedule[]>([]);
 const selectedDate = ref('');
+const selectedSchedule = ref<Schedule | null>(null);
 const aiConsultation = ref<AiConsultation>();
 
 const selectedDepartment = computed(() => departments.value.find((item) => item.id === selectedDepartmentId.value));
@@ -203,7 +236,21 @@ function toSchedule(item: Record<string, unknown>): Schedule {
     booked: Number(item.booked ?? 0),
     locked: Number(item.locked ?? 0),
     available: Number(item.available ?? 0),
-    status: normalizeText(item.status)
+    status: normalizeText(item.status),
+    timeSlots: Array.isArray(item.timeSlots)
+      ? item.timeSlots.map((slot) => toTimeSlot(slot as Record<string, unknown>))
+      : []
+  };
+}
+
+function toTimeSlot(item: Record<string, unknown>): TimeSlot {
+  return {
+    id: normalizeText(item.id),
+    startTime: normalizeText(item.startTime).slice(0, 5),
+    capacity: Number(item.capacity ?? 0),
+    booked: Number(item.booked ?? 0),
+    locked: Number(item.locked ?? 0),
+    available: Number(item.available ?? 0)
   };
 }
 
@@ -246,15 +293,17 @@ async function loadDepartmentResources() {
 }
 
 async function onDepartmentChange(event: { detail: { value: string } }) {
+  selectedSchedule.value = null;
   selectedDepartmentId.value = departments.value[Number(event.detail.value)]?.id ?? '';
   await loadDepartmentResources();
 }
 
 function onDateChange(event: { detail: { value: string } }) {
+  selectedSchedule.value = null;
   selectedDate.value = availableDates.value[Number(event.detail.value)] ?? '';
 }
 
-async function book(schedule: Schedule) {
+async function book(schedule: Schedule, slot: TimeSlot) {
   let patient;
   try {
     patient = auth.requireBoundPatient();
@@ -269,7 +318,7 @@ async function book(schedule: Schedule) {
       url: '/appointments',
       method: 'POST',
       data: {
-        scheduleId: schedule.id,
+        scheduleId: slot.id,
         patientId: patient.id,
         patientName: patient.name,
         doctorId: schedule.doctorId,
@@ -278,6 +327,7 @@ async function book(schedule: Schedule) {
         departmentName: selectedDepartment.value?.name,
         visitDate: schedule.workDate,
         period: schedule.period,
+        startTime: slot.startTime,
         source: 'AI',
         triageSummary: aiConsultation.value?.recordDraft || aiConsultation.value?.summary || '',
         riskLevel: aiConsultation.value?.riskLevel || 'LOW',
@@ -364,5 +414,36 @@ onMounted(initialize);
   background: #ecfdf5;
   color: #047857;
   font-size: 24rpx;
+}
+
+.time-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+  margin-top: 16rpx;
+}
+
+.time-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 18rpx;
+  padding: 18rpx 0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.time-row:last-child {
+  border-bottom: none;
+}
+
+.time-value {
+  color: #0f172a;
+  font-size: 32rpx;
+  font-weight: 700;
+}
+
+.time-button {
+  width: 220rpx;
+  margin: 0;
 }
 </style>

@@ -2,6 +2,7 @@ package com.cloudbrain.appointment.entity;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 
 public class Appointment {
     private final String id;
@@ -15,6 +16,7 @@ public class Appointment {
     private final String departmentName;
     private final LocalDate visitDate;
     private final String period;
+    private final LocalTime startTime;
     private final AppointmentSource source;
     private AppointmentStatus status;
     private PaymentStatus paymentStatus;
@@ -39,6 +41,7 @@ public class Appointment {
             String departmentName,
             LocalDate visitDate,
             String period,
+            LocalTime startTime,
             AppointmentSource source,
             AppointmentStatus status,
             PaymentStatus paymentStatus,
@@ -56,6 +59,7 @@ public class Appointment {
         this.departmentName = departmentName;
         this.visitDate = visitDate;
         this.period = period;
+        this.startTime = startTime;
         this.source = source;
         this.status = status;
         this.paymentStatus = paymentStatus;
@@ -107,6 +111,10 @@ public class Appointment {
 
     public String getPeriod() {
         return period;
+    }
+
+    public LocalTime getStartTime() {
+        return startTime;
     }
 
     public AppointmentSource getSource() {

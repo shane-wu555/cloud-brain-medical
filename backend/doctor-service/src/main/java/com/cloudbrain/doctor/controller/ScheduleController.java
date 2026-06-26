@@ -27,14 +27,25 @@ public class ScheduleController {
     @GetMapping public List<ScheduleDto> list(@RequestParam(name="doctorId", required=false) String doctorId,
             @RequestParam(name="departmentId", required=false) String departmentId) {
         Map<String,SlotDto> slots=slots().stream().collect(Collectors.toMap(SlotDto::scheduleId,Function.identity()));
-        return repository.schedules(doctorId,departmentId).stream()
+        List<DoctorCatalogRepository.Schedule> schedules = repository.schedules(doctorId,departmentId).stream()
                 .filter(s -> !"SUSPENDED".equals(s.status()))
-                .map(s -> { SlotDto slot=slots.get(s.id()); return dto(s,slot==null?0:slot.booked(),slot==null?0:slot.locked()); }).toList();
+                .toList();
+        List<DoctorCatalogRepository.ScheduleTimeSlot> allTimeSlots = repository.timeSlots(
+                        schedules.stream().map(DoctorCatalogRepository.Schedule::id).toList());
+        for (DoctorCatalogRepository.ScheduleTimeSlot slot : allTimeSlots) {
+            if (!slots.containsKey(slot.id())) {
+                syncSlot(slot.id(), slot.capacity());
+            }
+        }
+        Map<String,List<DoctorCatalogRepository.ScheduleTimeSlot>> timeSlots = allTimeSlots.stream()
+                .collect(Collectors.groupingBy(DoctorCatalogRepository.ScheduleTimeSlot::scheduleId));
+        return schedules.stream()
+                .map(s -> dto(s,timeSlots.getOrDefault(s.id(),List.of()),slots)).toList();
     }
     @PostMapping @PreAuthorize("hasRole('ADMIN')")
     public ScheduleDto create(@RequestBody CreateScheduleRequest request) {
         var s=repository.createSchedule(request.doctorId(),request.departmentId(),LocalDate.parse(request.workDate()),request.period(),request.capacity());
-        syncSlot(s.id(),s.capacity()); return dto(s,0,0);
+        syncSlots(repository.timeSlots(s.id()), Map.of()); return dto(s,repository.timeSlots(s.id()),Map.of());
     }
     @PostMapping("/ai-suggestions") @PreAuthorize("hasRole('ADMIN')")
     public AiScheduleResponse aiSuggestions(@RequestBody AiScheduleRequest request) {
@@ -46,30 +57,63 @@ public class ScheduleController {
     public ScheduleDto publishAiSuggestion(@PathVariable("suggestionId") String suggestionId,@RequestBody PublishAiScheduleRequest request) {
         if(request.doctorId()==null||request.departmentId()==null||request.workDate()==null||request.period()==null) throw new IllegalArgumentException("AI 排班建议缺少必要字段");
         var s=repository.createSchedule(request.doctorId(),request.departmentId(),LocalDate.parse(request.workDate()),request.period(),request.capacity());
-        syncSlot(s.id(),s.capacity());
-        return dto(s,0,0);
+        syncSlots(repository.timeSlots(s.id()), Map.of());
+        return dto(s,repository.timeSlots(s.id()),Map.of());
     }
     @PutMapping("/{id}/suspend") @PreAuthorize("hasRole('ADMIN')")
     public ScheduleDto suspend(@PathVariable("id") String id,@RequestBody SuspendRequest request) {
-        SlotDto slot=slots().stream().filter(item->item.scheduleId().equals(id)).findFirst().orElse(null);
+        Map<String,SlotDto> slots=slots().stream().collect(Collectors.toMap(SlotDto::scheduleId,Function.identity()));
+        List<DoctorCatalogRepository.ScheduleTimeSlot> timeSlots=repository.timeSlots(id);
         var s=repository.suspendSchedule(id,request.reason());
-        if(slot!=null) syncSlot(id,slot.booked()+slot.locked());
-        return dto(s,slot==null?0:slot.booked(),slot==null?0:slot.locked());
+        syncSlots(timeSlots,timeSlots.stream().collect(Collectors.toMap(DoctorCatalogRepository.ScheduleTimeSlot::id,
+                slot -> {
+                    SlotDto current=slots.get(slot.id());
+                    int reserved=current==null?0:current.booked()+current.locked();
+                    return new SlotDto(slot.id(),reserved,current==null?0:current.locked(),current==null?0:current.booked(),0);
+                })));
+        return dto(s,timeSlots,slots);
     }
     @PutMapping("/{id}/reschedule") @PreAuthorize("hasRole('ADMIN')")
     public ScheduleDto reschedule(@PathVariable("id") String id,@RequestBody RescheduleRequest request) {
-        var s=repository.reschedule(id,LocalDate.parse(request.workDate()),request.period()); return dto(s,booked(id),0);
+        var s=repository.reschedule(id,LocalDate.parse(request.workDate()),request.period());
+        Map<String,SlotDto> slots=slots().stream().collect(Collectors.toMap(SlotDto::scheduleId,Function.identity()));
+        return dto(s,repository.timeSlots(id),slots);
     }
     private void syncSlot(String id,int capacity) { appointmentClient.post().uri("/api/internal/appointment-slots")
             .header("X-Internal-Api-Key",internalApiKey).body(Map.of("scheduleId",id,"capacity",capacity)).retrieve().toBodilessEntity(); }
-    private int booked(String id) { return slots().stream().filter(s->s.scheduleId().equals(id)).findFirst().map(SlotDto::booked).orElse(0); }
+    private void syncSlots(List<DoctorCatalogRepository.ScheduleTimeSlot> timeSlots, Map<String,SlotDto> overrides) {
+        for (DoctorCatalogRepository.ScheduleTimeSlot slot : timeSlots) {
+            SlotDto override=overrides.get(slot.id());
+            syncSlot(slot.id(),override==null?slot.capacity():override.capacity());
+        }
+    }
     private List<SlotDto> slots() { var result=appointmentClient.get().uri("/api/internal/appointment-slots")
             .header("X-Internal-Api-Key",internalApiKey).retrieve().body(new ParameterizedTypeReference<List<SlotDto>>(){}); return result==null?List.of():result; }
-    private ScheduleDto dto(DoctorCatalogRepository.Schedule s,int booked,int locked) { return new ScheduleDto(s.id(),s.doctorId(),s.doctorName(),s.departmentId(),s.workDate().toString(),s.period(),s.capacity(),booked,locked,Math.max(0,s.capacity()-booked-locked),s.status()); }
+    private ScheduleDto dto(DoctorCatalogRepository.Schedule s,List<DoctorCatalogRepository.ScheduleTimeSlot> timeSlots,Map<String,SlotDto> slots) {
+        List<TimeSlotDto> items=timeSlots.stream().map(slot -> {
+            SlotDto inventory=slots.get(slot.id());
+            int booked=inventory==null?0:inventory.booked();
+            int locked=inventory==null?0:inventory.locked();
+            int capacity=inventory==null?slot.capacity():inventory.capacity();
+            return new TimeSlotDto(slot.id(),slot.startTime().toString(),capacity,booked,locked,Math.max(0,capacity-booked-locked));
+        }).toList();
+        int capacity=items.stream().mapToInt(TimeSlotDto::capacity).sum();
+        int booked=items.stream().mapToInt(TimeSlotDto::booked).sum();
+        int locked=items.stream().mapToInt(TimeSlotDto::locked).sum();
+        int available=items.stream().mapToInt(TimeSlotDto::available).sum();
+        return new ScheduleDto(s.id(),s.doctorId(),s.doctorName(),s.departmentId(),s.workDate().toString(),periodLabel(s.period()),capacity,booked,locked,available,s.status(),items);
+    }
+    private String periodLabel(String period) {
+        String value=period==null?"":period.trim().toUpperCase();
+        if("MORNING".equals(value)||"上午".equals(period)) return "上午";
+        if("AFTERNOON".equals(value)||"下午".equals(period)) return "下午";
+        return "全天";
+    }
     public record CreateScheduleRequest(String doctorId,String departmentId,String workDate,String period,int capacity) {}
     public record SuspendRequest(String reason) {}
     public record RescheduleRequest(String workDate,String period) {}
-    public record ScheduleDto(String id,String doctorId,String doctorName,String departmentId,String workDate,String period,int capacity,int booked,int locked,int available,String status) {}
+    public record ScheduleDto(String id,String doctorId,String doctorName,String departmentId,String workDate,String period,int capacity,int booked,int locked,int available,String status,List<TimeSlotDto> timeSlots) {}
+    public record TimeSlotDto(String id,String startTime,int capacity,int booked,int locked,int available) {}
     public record SlotDto(String scheduleId,int capacity,int locked,int booked,int available) {}
     public record AiScheduleRequest(List<AiDoctorCandidate> candidates,List<AiScheduleDemand> demands) {}
     public record AiDoctorCandidate(String doctorId,String doctorName,String departmentId,String specialty,int weeklyCapacity,List<String> leaveDates) {}

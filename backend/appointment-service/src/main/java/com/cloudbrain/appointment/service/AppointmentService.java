@@ -11,9 +11,11 @@ import com.cloudbrain.appointment.repository.MedicalRecordEventRepository;
 import java.math.BigDecimal;
 import com.cloudbrain.appointment.repository.SlotInventoryRepository;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -64,13 +66,15 @@ public class AppointmentService {
         validateRequired(request.doctorId(), "doctorId");
         validateRequired(request.visitDate(), "visitDate");
         validateRequired(request.period(), "period");
+        LocalTime startTime = parseStartTime(request);
+        validateNoRepeatedAppointment(request);
 
         if (!slotInventoryRepository.tryLock(request.scheduleId())) {
             throw new IllegalStateException("当前号源已约满或排班不存在");
         }
 
-        Appointment appointment = buildAppointment(request, AppointmentSource.ONLINE, AppointmentStatus.PENDING_PAYMENT, PaymentStatus.UNPAID);
-        return appointmentRepository.save(appointment);
+        Appointment appointment = buildAppointment(request, AppointmentSource.ONLINE, AppointmentStatus.PENDING_PAYMENT, PaymentStatus.UNPAID, startTime);
+        return saveNewAppointment(appointment);
     }
 
     @Transactional
@@ -79,12 +83,15 @@ public class AppointmentService {
         validateRequired(request.patientId(), "patientId");
         validateRequired(request.doctorId(), "doctorId");
         validateRequired(request.visitDate(), "visitDate");
+        validateRequired(request.period(), "period");
+        LocalTime startTime = parseStartTime(request);
+        validateNoRepeatedAppointment(request);
         if (!slotInventoryRepository.bookOffline(request.scheduleId())) {
             throw new IllegalStateException("当前号源已约满或排班不存在");
         }
-        Appointment appointment = buildAppointment(request, AppointmentSource.OFFLINE, AppointmentStatus.WAITING, PaymentStatus.PAID);
+        Appointment appointment = buildAppointment(request, AppointmentSource.OFFLINE, AppointmentStatus.WAITING, PaymentStatus.PAID, startTime);
         appointment.markPaid("OFFLINE_WINDOW");
-        appointmentRepository.save(appointment);
+        saveNewAppointment(appointment);
         integrationEventRepository.enqueuePayment(appointment, new BigDecimal("0.01"), "cashier");
         integrationEventRepository.enqueueMedicalRecord(appointment);
         return appointment;
@@ -218,7 +225,8 @@ public class AppointmentService {
             AppointmentController.CreateAppointmentRequest request,
             AppointmentSource source,
             AppointmentStatus status,
-            PaymentStatus paymentStatus) {
+            PaymentStatus paymentStatus,
+            LocalTime startTime) {
         int queueNumber = appointmentRepository.nextQueueNumber(request.doctorId(), request.visitDate());
         return new Appointment(
                 "appt-" + UUID.randomUUID(),
@@ -231,6 +239,7 @@ public class AppointmentService {
                 request.departmentName(),
                 LocalDate.parse(request.visitDate()),
                 request.period(),
+                startTime,
                 source,
                 status,
                 paymentStatus,
@@ -243,6 +252,30 @@ public class AppointmentService {
     private void validateRequired(String value, String fieldName) {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException(fieldName + " 不能为空");
+        }
+    }
+
+    private LocalTime parseStartTime(AppointmentController.CreateAppointmentRequest request) {
+        if (request.startTime() != null && !request.startTime().isBlank()) {
+            return LocalTime.parse(request.startTime());
+        }
+        return switch (request.period()) {
+            case "下午", "AFTERNOON" -> LocalTime.of(14, 0);
+            default -> LocalTime.of(8, 0);
+        };
+    }
+
+    private void validateNoRepeatedAppointment(AppointmentController.CreateAppointmentRequest request) {
+        if (appointmentRepository.existsActiveInPeriod(request.patientId(), request.visitDate(), request.period())) {
+            throw new IllegalStateException("同一就诊人同一时段不能重复预约");
+        }
+    }
+
+    private Appointment saveNewAppointment(Appointment appointment) {
+        try {
+            return appointmentRepository.save(appointment);
+        } catch (DuplicateKeyException exception) {
+            throw new IllegalStateException("同一就诊人同一时段不能重复预约");
         }
     }
 
