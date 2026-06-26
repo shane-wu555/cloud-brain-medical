@@ -10,3 +10,10 @@ __pycache__/
 .idea/
 .vscode/
 
+# 训练中间产物（不提交）
+ai-service/training/__pycache__/
+/tmp/ct_models/
+
+# 模型文件提交到 git（小文件，团队共享）
+# ai-service/models/*.onnx  ← 不忽略，直接提交
+

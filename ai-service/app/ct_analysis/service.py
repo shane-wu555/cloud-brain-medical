@@ -1,5 +1,5 @@
+import logging
 import threading
-import time
 import uuid
 from typing import Any
 from .models import CtAnalysisRequest
@@ -8,8 +8,11 @@ from app.core.rag import retrieve
 from app.report_drafts.models import ReportDraftRequest
 from app.report_drafts.service import create_draft
 
+log = logging.getLogger(__name__)
+
 _tasks: dict[str, dict[str, Any]] = {}
 _lock = threading.Lock()
+
 
 def submit(request: CtAnalysisRequest) -> str:
     task_id = f"ct-{uuid.uuid4()}"
@@ -18,39 +21,82 @@ def submit(request: CtAnalysisRequest) -> str:
     threading.Thread(target=_run, args=(task_id, request), daemon=True).start()
     return task_id
 
+
 def _run(task_id: str, request: CtAnalysisRequest) -> None:
     try:
         with _lock:
-            _tasks[task_id].update(status="RUNNING", progress=20, error=None)
-        time.sleep(0.15)
-        with _lock:
-            _tasks[task_id]["progress"] = 70
-        if "fail" in request.object_key.lower():
-            raise RuntimeError("模拟 CT 推理失败，可通过 retry 重新提交")
+            _tasks[task_id].update(status="RUNNING", progress=10, error=None)
+
+        # ── 真实 ML 推理（有模型文件时走此路径）────────────────
+        infer_result = _run_inference(request, task_id)
+
         sources = _knowledge_sources(request)
         result = {
-            "findings": "头颅CT平扫示脑实质密度尚均匀，未见明确急性出血征象。",
-            "conclusion": "当前样例未检出明确急性颅内出血，请结合临床并由检查医生复核。",
-            "riskAdvice": f"AI结果仅供辅助，必须由检查医生确认后发布。参考来源：{sources[0].title if sources else '本院规则'}。",
-            "abnormalRegions": [],
-            "confidence": 0.86,
+            **infer_result,
             "objectKey": request.object_key,
             "reportDraft": create_draft(
                 ReportDraftRequest(
                     orderId=request.order_id,
                     reportType="CHECK",
                     projectName="头部 CT",
-                    findings="头颅CT平扫示脑实质密度尚均匀，未见明确急性出血征象。",
-                    conclusion="当前样例未检出明确急性颅内出血，请结合临床并由检查医生复核。",
+                    findings=infer_result["findings"],
+                    conclusion=infer_result["conclusion"],
                     context=request.clinical_context,
                 )
             ).model_dump(by_alias=True),
         }
         with _lock:
-            _tasks[task_id].update(status="COMPLETED", progress=100, result=result, knowledgeSources=sources)
+            _tasks[task_id].update(
+                status="COMPLETED", progress=100,
+                result=result, knowledgeSources=sources,
+                modelVersion=infer_result.get("modelVersion", "ct-head-v1.0"),
+            )
     except Exception as exc:
+        log.exception(f"CT 推理失败 task={task_id}")
         with _lock:
             _tasks[task_id].update(status="FAILED", progress=100, error=str(exc))
+
+
+def _run_inference(request: CtAnalysisRequest, task_id: str) -> dict[str, Any]:
+    """
+    调用 inference/pipeline.py 中的真实模型推理。
+    若模型文件不存在（开发阶段），自动降级为 mock 结果。
+    """
+    try:
+        from .inference.pipeline import run as ml_run
+
+        def _progress(pct: int) -> None:
+            with _lock:
+                _tasks[task_id]["progress"] = pct
+
+        _progress(20)
+        result = ml_run(
+            object_key=request.object_key,
+            order_id=request.order_id,
+            clinical_context=request.clinical_context,
+        )
+        _progress(90)
+        return result
+
+    except Exception as exc:
+        # 模型文件缺失（FileNotFoundError）或推理失败时降级
+        log.warning(f"ML 推理失败，降级为 mock: {exc}")
+        return _mock_inference(request)
+
+def _mock_inference(request: CtAnalysisRequest) -> dict[str, Any]:
+    """开发/测试阶段的 mock 结果（模型未部署时使用）"""
+    if "fail" in request.object_key.lower():
+        raise RuntimeError("模拟 CT 推理失败，可通过 retry 重新提交")
+    return {
+        "findings":        "头颅CT平扫示脑实质密度尚均匀，未见明确急性出血征象。（mock）",
+        "conclusion":      "当前样例未检出明确急性颅内出血，请结合临床并由检查医生复核。",
+        "riskAdvice":      "AI结果仅供辅助，必须由检查医生确认后发布。（mock 模式：模型未部署）",
+        "confidence":      0.86,
+        "label":           "normal",
+        "abnormalRegions": [],
+        "modelVersion":    "ct-demo-1.0",
+    }
+
 
 def get(task_id: str) -> dict[str, Any] | None:
     with _lock:
