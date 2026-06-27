@@ -12,19 +12,16 @@ where schedule_id like 'sched-smoke-%'
 delete from doctor.doctor_schedule
 where id like 'sched-smoke-%';
 
+-- outpatient_doctor 是扩展表，用 doctor_id 关联
 delete from doctor.outpatient_doctor
+where doctor_id like 'doc-smoke-%';
+
+-- doctor.doctor 是基础档案表
+delete from doctor.doctor
 where id like 'doc-smoke-%';
 
 delete from auth.user_account
-where id like 'doc-smoke-%'
-   or username like 'doctor-card-%'
-   or username like 'doctor-resp-%'
-   or username like 'doctor-endo-%'
-   or username like 'doctor-dige-%'
-   or username like 'doctor-orth-%'
-   or username like 'doctor-derm-%'
-   or username like 'doctor-pedi-%'
-   or username like 'doctor-ent-%';
+where id like 'doc-smoke-%';
 
 do $$
 begin

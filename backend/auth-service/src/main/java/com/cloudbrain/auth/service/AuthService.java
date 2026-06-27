@@ -66,14 +66,18 @@ public class AuthService {
                 request.name(),
                 "PATIENT",
                 List.of("appointment:create", "appointment:cancel", "medical-record:read"),
-                false);
+                false,
+                null);
         repository.save(account);
         auditRepository.record("REGISTER", request.phone(), account.getId(), true, null, client.ip(), client.userAgent());
         return issueLogin(account);
     }
 
     public Map<String, Object> login(AuthController.LoginRequest request, ClientInfo client) {
-        UserAccount account = repository.findByUsername(request.username()).orElse(null);
+        // 工号优先（医护人员）；降级用 username（admin 统一账号）
+        UserAccount account = repository.findByEmployeeNo(request.username())
+                .or(() -> repository.findByUsername(request.username()))
+                .orElse(null);
         boolean passwordMatched = account != null && passwordEncoder.matches(request.password(), account.getPassword());
         if (account == null || !passwordMatched) {
             log.warn("Login rejected: username={}, accountFound={}, passwordMatched={}, passwordLength={}, hashPrefix={}",

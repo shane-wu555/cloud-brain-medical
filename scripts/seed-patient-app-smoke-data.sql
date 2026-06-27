@@ -13,95 +13,27 @@ drop index if exists patient.uk_patient_profile_phone;
 -- Known password for all seeded accounts below: abc12345
 -- BCrypt hash below matches abc12345.
 
+-- 患者账号：无工号（employee_no = NULL）
+-- 测试医生账号：username = id，employee_no 为 8 位工号（0001xxxx/0004xxxx/0005xxxx 段，序号从 0010 起避免与主 seed 冲突）
 insert into auth.user_account (
-    id, username, password, phone, name, role, permissions, real_name_verified, created_at
+    id, username, password, phone, name, role, permissions, real_name_verified, employee_no, created_at
 )
 values
-    (
-        'patient-test-verified-001',
-        '13800000011',
-        '$2a$10$7NukEsugMLsxrPkaBLnhuOHHhSQg2RjHt4RiGYxJNx7pq9cyG6bL.',
-        '13800000011',
-        '测试患者本人',
-        'PATIENT',
-        'appointment:create,appointment:cancel,medical-record:read',
-        true,
-        now()
-    ),
-    (
-        'patient-test-unverified-001',
-        '13800000012',
-        '$2a$10$7NukEsugMLsxrPkaBLnhuOHHhSQg2RjHt4RiGYxJNx7pq9cyG6bL.',
-        '13800000012',
-        '未实名测试患者',
-        'PATIENT',
-        'appointment:create,appointment:cancel,medical-record:read',
-        false,
-        now()
-    ),
-    (
-        'doctor-test-neuro-002',
-        'D1002',
-        '$2a$10$7NukEsugMLsxrPkaBLnhuOHHhSQg2RjHt4RiGYxJNx7pq9cyG6bL.',
-        '13700000021',
-        '李神内医生',
-        'OUTPATIENT_DOCTOR',
-        'appointment:read,appointment:skip,medical-record:read,medical-record:write,medical-order:create,prescription:create',
-        true,
-        now()
-    ),
-    (
-        'doctor-test-neuro-003',
-        'D1003',
-        '$2a$10$7NukEsugMLsxrPkaBLnhuOHHhSQg2RjHt4RiGYxJNx7pq9cyG6bL.',
-        '13700000022',
-        '王神内医生',
-        'OUTPATIENT_DOCTOR',
-        'appointment:read,appointment:skip,medical-record:read,medical-record:write,medical-order:create,prescription:create',
-        true,
-        now()
-    ),
-    (
-        'doctor-test-general-002',
-        'D2002',
-        '$2a$10$7NukEsugMLsxrPkaBLnhuOHHhSQg2RjHt4RiGYxJNx7pq9cyG6bL.',
-        '13700000023',
-        '赵全科医生',
-        'OUTPATIENT_DOCTOR',
-        'appointment:read,appointment:skip,medical-record:read,medical-record:write,medical-order:create,prescription:create',
-        true,
-        now()
-    ),
-    (
-        'doctor-test-general-003',
-        'D2003',
-        '$2a$10$7NukEsugMLsxrPkaBLnhuOHHhSQg2RjHt4RiGYxJNx7pq9cyG6bL.',
-        '13700000024',
-        '孙全科医生',
-        'OUTPATIENT_DOCTOR',
-        'appointment:read,appointment:skip,medical-record:read,medical-record:write,medical-order:create,prescription:create',
-        true,
-        now()
-    ),
-    (
-        'doctor-test-rehab-001',
-        'D3001',
-        '$2a$10$7NukEsugMLsxrPkaBLnhuOHHhSQg2RjHt4RiGYxJNx7pq9cyG6bL.',
-        '13700000025',
-        '周康复医生',
-        'OUTPATIENT_DOCTOR',
-        'appointment:read,appointment:skip,medical-record:read,medical-record:write,medical-order:create,prescription:create',
-        true,
-        now()
-    )
-on conflict (id) do update
-set password = excluded.password,
-    username = excluded.username,
-    phone = excluded.phone,
-    name = excluded.name,
-    role = excluded.role,
-    permissions = excluded.permissions,
-    real_name_verified = excluded.real_name_verified;
+    ('patient-test-verified-001',   '13800000011', '$2a$10$7NukEsugMLsxrPkaBLnhuOHHhSQg2RjHt4RiGYxJNx7pq9cyG6bL.', '13800000011', '测试患者本人',   'PATIENT',          'appointment:create,appointment:cancel,medical-record:read', true,  null,       now()),
+    ('patient-test-unverified-001', '13800000012', '$2a$10$7NukEsugMLsxrPkaBLnhuOHHhSQg2RjHt4RiGYxJNx7pq9cyG6bL.', '13800000012', '未实名测试患者', 'PATIENT',          'appointment:create,appointment:cancel,medical-record:read', false, null,       now()),
+    ('doctor-test-neuro-002',       'doctor-test-neuro-002',    '$2a$10$7NukEsugMLsxrPkaBLnhuOHHhSQg2RjHt4RiGYxJNx7pq9cyG6bL.', '13700000021', '李神内医生', 'OUTPATIENT_DOCTOR', 'appointment:read,appointment:skip,medical-record:read,medical-record:write,medical-order:create,prescription:create', true, '00010010', now()),
+    ('doctor-test-neuro-003',       'doctor-test-neuro-003',    '$2a$10$7NukEsugMLsxrPkaBLnhuOHHhSQg2RjHt4RiGYxJNx7pq9cyG6bL.', '13700000022', '王神内医生', 'OUTPATIENT_DOCTOR', 'appointment:read,appointment:skip,medical-record:read,medical-record:write,medical-order:create,prescription:create', true, '00010011', now()),
+    ('doctor-test-general-002',     'doctor-test-general-002',  '$2a$10$7NukEsugMLsxrPkaBLnhuOHHhSQg2RjHt4RiGYxJNx7pq9cyG6bL.', '13700000023', '赵全科医生', 'OUTPATIENT_DOCTOR', 'appointment:read,appointment:skip,medical-record:read,medical-record:write,medical-order:create,prescription:create', true, '00040010', now()),
+    ('doctor-test-general-003',     'doctor-test-general-003',  '$2a$10$7NukEsugMLsxrPkaBLnhuOHHhSQg2RjHt4RiGYxJNx7pq9cyG6bL.', '13700000024', '孙全科医生', 'OUTPATIENT_DOCTOR', 'appointment:read,appointment:skip,medical-record:read,medical-record:write,medical-order:create,prescription:create', true, '00040011', now()),
+    ('doctor-test-rehab-001',       'doctor-test-rehab-001',    '$2a$10$7NukEsugMLsxrPkaBLnhuOHHhSQg2RjHt4RiGYxJNx7pq9cyG6bL.', '13700000025', '周康复医生', 'OUTPATIENT_DOCTOR', 'appointment:read,appointment:skip,medical-record:read,medical-record:write,medical-order:create,prescription:create', true, '00050010', now())
+on conflict (username) do update
+    set password           = excluded.password,
+        phone              = excluded.phone,
+        name               = excluded.name,
+        role               = excluded.role,
+        permissions        = excluded.permissions,
+        real_name_verified = excluded.real_name_verified,
+        employee_no        = excluded.employee_no;
 
 insert into patient.patient_profile (
     id, user_id, account_id, phone, name, id_type, id_number, id_card,
@@ -167,21 +99,40 @@ set name = excluded.name,
     description = excluded.description,
     active = excluded.active;
 
-insert into doctor.outpatient_doctor (id, employee_no, name, title, department_id, role_type, specialty, active)
+-- 医生档案写入基础表 doctor.doctor
+insert into doctor.doctor (id, name, title, department_id, role_type, specialty, employee_no, active)
 values
-    ('doctor-test-neuro-002', 'D1002', '李神内医生', '副主任医师', 'dept-neuro', 'OUTPATIENT_DOCTOR', '眩晕、偏头痛、脑血管病随访', true),
-    ('doctor-test-neuro-003', 'D1003', '王神内医生', '主治医师', 'dept-neuro', 'OUTPATIENT_DOCTOR', '睡眠障碍、头晕、神经康复随访', true),
-    ('doctor-test-general-002', 'D2002', '赵全科医生', '副主任医师', 'dept-general', 'OUTPATIENT_DOCTOR', '高血压、糖尿病、发热门诊', true),
-    ('doctor-test-general-003', 'D2003', '孙全科医生', '主治医师', 'dept-general', 'OUTPATIENT_DOCTOR', '呼吸道感染、慢病随访', true),
-    ('doctor-test-rehab-001', 'D3001', '周康复医生', '主治医师', 'dept-rehab', 'OUTPATIENT_DOCTOR', '针灸、换药、术后康复', true)
+    ('doctor-test-neuro-002',   '李神内医生', '副主任医师', 'dept-neuro',    'OUTPATIENT_DOCTOR', '眩晕、偏头痛、脑血管病随访', '00010010', true),
+    ('doctor-test-neuro-003',   '王神内医生', '主治医师',   'dept-neuro',    'OUTPATIENT_DOCTOR', '睡眠障碍、头晕、神经康复随访','00010011', true),
+    ('doctor-test-general-002', '赵全科医生', '副主任医师', 'dept-general',  'OUTPATIENT_DOCTOR', '高血压、糖尿病、发热门诊',    '00040010', true),
+    ('doctor-test-general-003', '孙全科医生', '主治医师',   'dept-general',  'OUTPATIENT_DOCTOR', '呼吸道感染、慢病随访',        '00040011', true),
+    ('doctor-test-rehab-001',   '周康复医生', '主治医师',   'dept-rehab',    'OUTPATIENT_DOCTOR', '针灸、换药、术后康复',        '00050010', true)
 on conflict (id) do update
-set employee_no = excluded.employee_no,
-    name = excluded.name,
-    title = excluded.title,
-    department_id = excluded.department_id,
-    role_type = excluded.role_type,
-    specialty = excluded.specialty,
-    active = excluded.active;
+    set name          = excluded.name,
+        title         = excluded.title,
+        department_id = excluded.department_id,
+        role_type     = excluded.role_type,
+        specialty     = excluded.specialty,
+        employee_no   = excluded.employee_no,
+        active        = excluded.active;
+
+-- 补充 dept-rehab 诊室（V8 migration 时该科室尚不存在）
+insert into doctor.outpatient_clinic_room (id, department_id, name, location)
+select 'room-' || id, id, name || '1号诊室', '门诊楼'
+from doctor.department
+where id = 'dept-rehab'
+on conflict (id) do update
+    set name = excluded.name, location = excluded.location;
+
+-- 写入门诊医生扩展表
+insert into doctor.outpatient_doctor (doctor_id, clinic_room_id)
+values
+    ('doctor-test-neuro-002',   'room-dept-neuro'),
+    ('doctor-test-neuro-003',   'room-dept-neuro'),
+    ('doctor-test-general-002', 'room-dept-general'),
+    ('doctor-test-general-003', 'room-dept-general'),
+    ('doctor-test-rehab-001',   'room-dept-rehab')
+on conflict (doctor_id) do nothing;
 
 insert into doctor.doctor_schedule (
     id, doctor_id, department_id, work_date, period, capacity, status, suspension_reason, updated_at

@@ -21,7 +21,7 @@ class TokenServiceTest {
         TokenService service = new TokenService(encoder, "cloud-brain-medical-test", 60);
 
         String token = service.issue(new UserAccount("u-1", "doctor", "hash", "13900000000", "张医生",
-                "OUTPATIENT_DOCTOR", List.of("medical-record:write"), true));
+                "OUTPATIENT_DOCTOR", List.of("medical-record:write"), true, "00010001"));
         Jwt jwt = decoder.decode(token);
 
         assertThat(jwt.getSubject()).isEqualTo("u-1");

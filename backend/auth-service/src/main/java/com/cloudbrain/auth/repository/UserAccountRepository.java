@@ -27,6 +27,14 @@ public class UserAccountRepository {
         return result.stream().findFirst();
     }
 
+    public Optional<UserAccount> findByEmployeeNo(String employeeNo) {
+        List<UserAccount> result = jdbcTemplate.query(
+                "select * from user_account where employee_no = ?",
+                rowMapper,
+                employeeNo);
+        return result.stream().findFirst();
+    }
+
     public Optional<UserAccount> findByPhone(String phone) {
         List<UserAccount> result = jdbcTemplate.query(
                 "select * from user_account where phone = ? order by created_at limit 1", rowMapper, phone);
@@ -90,7 +98,8 @@ public class UserAccountRepository {
                     rs.getString("name"),
                     rs.getString("role"),
                     Arrays.stream(rs.getString("permissions").split(",")).filter(item -> !item.isBlank()).toList(),
-                    rs.getBoolean("real_name_verified"));
+                    rs.getBoolean("real_name_verified"),
+                    rs.getString("employee_no"));
         }
     }
 }

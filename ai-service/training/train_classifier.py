@@ -1,5 +1,5 @@
 """
-阶段②：EfficientNet-B7 + RadImageNet 二分类训练（正常/出血）
+阶段②：EfficientNet-B3 + RadImageNet 二分类训练（正常/出血）
 使用 MONAI 数据管道 + timm 模型 + Focal Loss + 5-fold 交叉验证
 
 RadImageNet 权重默认自动下载（首次运行约 250MB）。
@@ -83,13 +83,14 @@ def _download_radimgnet() -> Path | None:
 
 def build_model() -> nn.Module:
     """
-    EfficientNet-B7 + RadImageNet 预训练权重。
+    EfficientNet-B3 + RadImageNet 预训练权重。
     RadImageNet 是在 1.35M 张医学影像上训练的，比 ImageNet 更适合 CT 迁移学习。
     首次运行自动下载权重；下载失败自动回退到 ImageNet。
     """
     # 先用 ImageNet 权重初始化（保证结构正确）
-    model = timm.create_model("efficientnet_b7", pretrained=True,
-                               num_classes=NUM_CLASSES)
+    model = timm.create_model("efficientnet_b3", pretrained=True,
+                               num_classes=NUM_CLASSES,
+                               drop_rate=0.3)
 
     # 尝试加载 RadImageNet 权重替换骨干网络
     rad_path = _download_radimgnet()
@@ -175,30 +176,44 @@ def train_epoch(model, loader, optimizer, criterion, device) -> float:
 
 
 @torch.no_grad()
-def eval_epoch(model, loader, device) -> tuple[float, np.ndarray, np.ndarray]:
+def eval_epoch(model, loader, criterion, device):
     model.eval()
     all_preds, all_labels, all_probs = [], [], []
+    total_loss = 0.0
     for batch in tqdm(loader, desc="验证", leave=False):
         x = batch["image"].to(device)
+        y = batch["label"].to(device)
         logits = model(x)
+        total_loss += criterion(logits, y).item()
         probs = torch.softmax(logits, dim=1).cpu().numpy()
         preds = probs.argmax(axis=1)
         all_probs.extend(probs.tolist())
         all_preds.extend(preds.tolist())
         all_labels.extend(batch["label"].numpy().tolist())
-    acc = np.mean(np.array(all_preds) == np.array(all_labels))
-    return acc, np.array(all_preds), np.array(all_labels)
+
+    all_preds  = np.array(all_preds)
+    all_labels = np.array(all_labels)
+    acc      = np.mean(all_preds == all_labels)
+    val_loss = total_loss / len(loader)
+    try:
+        auc = roc_auc_score(all_labels, [p[1] for p in all_probs])
+    except Exception:
+        auc = 0.0
+    hem_mask   = all_labels == 1
+    recall_hem = np.mean(all_preds[hem_mask] == 1) if hem_mask.any() else 0.0
+    return val_loss, acc, auc, recall_hem, all_preds, all_labels
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="EfficientNet-B0 CT 分类训练")
+    parser = argparse.ArgumentParser(description="EfficientNet-B3 CT 分类训练")
     parser.add_argument("--data",    required=True)
     parser.add_argument("--output",  required=True)
     parser.add_argument("--fold",    type=int, default=None, help="0~4，None=全量训练")
-    parser.add_argument("--epochs",  type=int, default=50)
-    parser.add_argument("--batch",   type=int,   default=16)   # B7 更大，显存更多
-    parser.add_argument("--lr",     type=float, default=1e-4)
-    parser.add_argument("--workers",type=int,   default=8)
+    parser.add_argument("--epochs",   type=int,   default=50)
+    parser.add_argument("--batch",    type=int,   default=32)
+    parser.add_argument("--lr",       type=float, default=3e-5)
+    parser.add_argument("--workers",  type=int,   default=8)
+    parser.add_argument("--patience", type=int,   default=15, help="early stopping 轮数")
     args = parser.parse_args()
 
     data_dir   = Path(args.data)
@@ -222,10 +237,12 @@ def main() -> None:
     model     = build_model().to(device)
     weights   = compute_class_weights(train_items).to(device)
     criterion = FocalLoss(gamma=2.0, weight=weights)
-    optimizer = AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
+    optimizer = AdamW(model.parameters(), lr=args.lr, weight_decay=1e-3)
     scheduler = CosineAnnealingLR(optimizer, T_max=args.epochs, eta_min=1e-6)
 
-    best_acc = 0.0
+    best_auc = 0.0
+    patience = args.patience
+    no_improve = 0
     history  = []
 
     for epoch in range(1, args.epochs + 1):
@@ -233,23 +250,32 @@ def main() -> None:
         scheduler.step()
 
         if val_items:
-            val_acc, preds, labels = eval_epoch(model, val_dl, device)
-            print(f"Epoch {epoch:03d} | loss={train_loss:.4f} | val_acc={val_acc:.4f}")
-            history.append({"epoch": epoch, "loss": train_loss, "val_acc": val_acc})
+            val_loss, val_acc, auc, recall_hem, preds, labels = eval_epoch(model, val_dl, criterion, device)
+            current_lr = optimizer.param_groups[0]["lr"]
+            print(f"Epoch {epoch:03d} | train={train_loss:.6f} | val={val_loss:.6f} | acc={val_acc:.4f} | auc={auc:.4f} | recall_hem={recall_hem:.4f} | lr={current_lr:.2e}")
+            history.append({"epoch": epoch, "train_loss": train_loss, "val_loss": val_loss,
+                            "val_acc": val_acc, "auc": auc, "recall_hem": recall_hem, "lr": current_lr})
+            (output_dir / "history.json").write_text(json.dumps(history, indent=2), encoding="utf-8")
 
-            if val_acc > best_acc:
-                best_acc = val_acc
+            if auc > best_auc:
+                best_auc = auc
+                no_improve = 0
                 torch.save(model.state_dict(), output_dir / "best_classifier.pt")
-                print(f"  ✓ 保存最优模型 acc={best_acc:.4f}")
+                print(f"  ✓ 保存最优模型 auc={best_auc:.4f}")
+            else:
+                no_improve += 1
+                if no_improve >= patience:
+                    print(f"Early stopping：连续 {patience} 轮 AUC 无提升，停止训练")
+                    break
         else:
-            print(f"Epoch {epoch:03d} | loss={train_loss:.4f}")
+            print(f"Epoch {epoch:03d} | loss={train_loss:.6f}")
             torch.save(model.state_dict(), output_dir / "best_classifier.pt")
 
     # 导出 ONNX（推理服务使用）
     print("导出 ONNX...")
     model.load_state_dict(torch.load(output_dir / "best_classifier.pt", map_location=device))
     model.eval()
-    dummy = torch.randn(1, 3, 512, 512).to(device)  # B7 支持任意输入尺寸
+    dummy = torch.randn(1, 3, 512, 512).to(device)
     onnx_path = output_dir / "classifier.onnx"
     torch.onnx.export(
         model, dummy, str(onnx_path),
@@ -261,14 +287,14 @@ def main() -> None:
 
     # 最终评估报告
     if val_items:
-        _, final_preds, final_labels = eval_epoch(model, val_dl, device)
+        _, _, _, _, final_preds, final_labels = eval_epoch(model, val_dl, criterion, device)
         report = classification_report(final_labels, final_preds,
                                        target_names=CLASSES, digits=4)
         print("\n分类报告:\n", report)
         (output_dir / "val_report.txt").write_text(report, encoding="utf-8")
 
     (output_dir / "history.json").write_text(json.dumps(history, indent=2), encoding="utf-8")
-    print(f"\n训练完成，最优 acc={best_acc:.4f}，模型目录: {output_dir}")
+    print(f"\n训练完成，最优 auc={best_auc:.4f}，模型目录: {output_dir}")
 
 
 if __name__ == "__main__":

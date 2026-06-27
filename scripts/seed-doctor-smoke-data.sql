@@ -24,166 +24,109 @@ set name = excluded.name,
     description = excluded.description,
     active = excluded.active;
 
-with doctor_seed(id, username, phone, name, title, department_id, specialty) as (
+-- 工号规则（smoke 科室段，002xxxxx）：
+--   0021xxxx 心血管内科 | 0022xxxx 呼吸与危重症 | 0023xxxx 内分泌科
+--   0024xxxx 消化内科   | 0025xxxx 骨科         | 0026xxxx 皮肤科
+--   0027xxxx 儿科       | 0028xxxx 耳鼻咽喉科
+with doctor_seed(id, phone, name, title, department_id, specialty, employee_no) as (
     values
-        ('doc-smoke-card-01', 'doctor-card-01', '13701010001', '陈心内', '主任医师', 'dept-smoke-cardiology', '冠心病、胸痛评估、支架术后随访'),
-        ('doc-smoke-card-02', 'doctor-card-02', '13701010002', '刘心内', '副主任医师', 'dept-smoke-cardiology', '高血压、心衰、房颤管理'),
-        ('doc-smoke-card-03', 'doctor-card-03', '13701010003', '王心内', '主治医师', 'dept-smoke-cardiology', '心悸、血脂异常、心电图异常'),
-        ('doc-smoke-card-04', 'doctor-card-04', '13701010004', '赵心内', '主治医师', 'dept-smoke-cardiology', '心律失常、动态心电图解读'),
-        ('doc-smoke-card-05', 'doctor-card-05', '13701010005', '孙心内', '副主任医师', 'dept-smoke-cardiology', '老年心血管病、慢病复诊'),
-        ('doc-smoke-card-06', 'doctor-card-06', '13701010006', '周心内', '医师', 'dept-smoke-cardiology', '高血压初诊、用药调整'),
-
-        ('doc-smoke-resp-01', 'doctor-resp-01', '13701010101', '吴呼吸', '主任医师', 'dept-smoke-respiratory', '慢阻肺、肺结节、哮喘'),
-        ('doc-smoke-resp-02', 'doctor-resp-02', '13701010102', '郑呼吸', '副主任医师', 'dept-smoke-respiratory', '咳嗽、支气管炎、肺部感染'),
-        ('doc-smoke-resp-03', 'doctor-resp-03', '13701010103', '冯呼吸', '主治医师', 'dept-smoke-respiratory', '哮喘随访、过敏性咳嗽'),
-        ('doc-smoke-resp-04', 'doctor-resp-04', '13701010104', '蒋呼吸', '主治医师', 'dept-smoke-respiratory', '发热咳嗽、胸片异常'),
-        ('doc-smoke-resp-05', 'doctor-resp-05', '13701010105', '沈呼吸', '副主任医师', 'dept-smoke-respiratory', '肺功能异常、慢性咳嗽'),
-        ('doc-smoke-resp-06', 'doctor-resp-06', '13701010106', '韩呼吸', '医师', 'dept-smoke-respiratory', '上呼吸道感染、复诊开药'),
-
-        ('doc-smoke-endo-01', 'doctor-endo-01', '13701010201', '杨内分泌', '主任医师', 'dept-smoke-endocrine', '糖尿病并发症、胰岛素调整'),
-        ('doc-smoke-endo-02', 'doctor-endo-02', '13701010202', '朱内分泌', '副主任医师', 'dept-smoke-endocrine', '甲状腺结节、甲亢甲减'),
-        ('doc-smoke-endo-03', 'doctor-endo-03', '13701010203', '秦内分泌', '主治医师', 'dept-smoke-endocrine', '2型糖尿病、肥胖管理'),
-        ('doc-smoke-endo-04', 'doctor-endo-04', '13701010204', '许内分泌', '主治医师', 'dept-smoke-endocrine', '妊娠糖尿病、血糖波动'),
-        ('doc-smoke-endo-05', 'doctor-endo-05', '13701010205', '何内分泌', '副主任医师', 'dept-smoke-endocrine', '骨质疏松、代谢综合征'),
-        ('doc-smoke-endo-06', 'doctor-endo-06', '13701010206', '吕内分泌', '医师', 'dept-smoke-endocrine', '糖尿病复诊、检验解读'),
-
-        ('doc-smoke-dige-01', 'doctor-dige-01', '13701010301', '张消化', '主任医师', 'dept-smoke-digestive', '胃食管反流、胃肠镜后复诊'),
-        ('doc-smoke-dige-02', 'doctor-dige-02', '13701010302', '梁消化', '副主任医师', 'dept-smoke-digestive', '肝功能异常、脂肪肝'),
-        ('doc-smoke-dige-03', 'doctor-dige-03', '13701010303', '邓消化', '主治医师', 'dept-smoke-digestive', '腹痛腹泻、幽门螺杆菌'),
-        ('doc-smoke-dige-04', 'doctor-dige-04', '13701010304', '傅消化', '主治医师', 'dept-smoke-digestive', '便秘、胃炎、肠易激'),
-        ('doc-smoke-dige-05', 'doctor-dige-05', '13701010305', '曹消化', '副主任医师', 'dept-smoke-digestive', '炎症性肠病、肝胆疾病'),
-        ('doc-smoke-dige-06', 'doctor-dige-06', '13701010306', '谢消化', '医师', 'dept-smoke-digestive', '消化不良、报告解读'),
-
-        ('doc-smoke-orth-01', 'doctor-orth-01', '13701010401', '罗骨科', '主任医师', 'dept-smoke-orthopedics', '关节退变、运动损伤'),
-        ('doc-smoke-orth-02', 'doctor-orth-02', '13701010402', '宋骨科', '副主任医师', 'dept-smoke-orthopedics', '腰椎间盘突出、颈椎病'),
-        ('doc-smoke-orth-03', 'doctor-orth-03', '13701010403', '唐骨科', '主治医师', 'dept-smoke-orthopedics', '骨折术后复查、换药'),
-        ('doc-smoke-orth-04', 'doctor-orth-04', '13701010404', '魏骨科', '主治医师', 'dept-smoke-orthopedics', '肩膝关节痛、腱鞘炎'),
-        ('doc-smoke-orth-05', 'doctor-orth-05', '13701010405', '姚骨科', '副主任医师', 'dept-smoke-orthopedics', '脊柱退变、骨质疏松'),
-        ('doc-smoke-orth-06', 'doctor-orth-06', '13701010406', '毛骨科', '医师', 'dept-smoke-orthopedics', '扭伤、软组织损伤'),
-
-        ('doc-smoke-derm-01', 'doctor-derm-01', '13701010501', '潘皮肤', '主任医师', 'dept-smoke-dermatology', '银屑病、特应性皮炎'),
-        ('doc-smoke-derm-02', 'doctor-derm-02', '13701010502', '董皮肤', '副主任医师', 'dept-smoke-dermatology', '痤疮、玫瑰痤疮、色斑'),
-        ('doc-smoke-derm-03', 'doctor-derm-03', '13701010503', '袁皮肤', '主治医师', 'dept-smoke-dermatology', '湿疹、荨麻疹、过敏'),
-        ('doc-smoke-derm-04', 'doctor-derm-04', '13701010504', '石皮肤', '主治医师', 'dept-smoke-dermatology', '真菌感染、皮肤瘙痒'),
-        ('doc-smoke-derm-05', 'doctor-derm-05', '13701010505', '贾皮肤', '副主任医师', 'dept-smoke-dermatology', '皮肤肿物、激光术后复查'),
-        ('doc-smoke-derm-06', 'doctor-derm-06', '13701010506', '范皮肤', '医师', 'dept-smoke-dermatology', '常见皮炎、用药咨询'),
-
-        ('doc-smoke-pedi-01', 'doctor-pedi-01', '13701010601', '金儿科', '主任医师', 'dept-smoke-pediatrics', '儿童哮喘、反复呼吸道感染'),
-        ('doc-smoke-pedi-02', 'doctor-pedi-02', '13701010602', '孔儿科', '副主任医师', 'dept-smoke-pediatrics', '儿童发热、消化不良'),
-        ('doc-smoke-pedi-03', 'doctor-pedi-03', '13701010603', '严儿科', '主治医师', 'dept-smoke-pediatrics', '咳嗽、鼻炎、过敏体质'),
-        ('doc-smoke-pedi-04', 'doctor-pedi-04', '13701010604', '邱儿科', '主治医师', 'dept-smoke-pediatrics', '腹泻、喂养、生长发育'),
-        ('doc-smoke-pedi-05', 'doctor-pedi-05', '13701010605', '程儿科', '副主任医师', 'dept-smoke-pediatrics', '儿童内分泌、矮小症筛查'),
-        ('doc-smoke-pedi-06', 'doctor-pedi-06', '13701010606', '余儿科', '医师', 'dept-smoke-pediatrics', '儿童常见病复诊'),
-
-        ('doc-smoke-ent-01', 'doctor-ent-01', '13701010701', '苏耳鼻喉', '主任医师', 'dept-smoke-ent', '鼻窦炎、过敏性鼻炎'),
-        ('doc-smoke-ent-02', 'doctor-ent-02', '13701010702', '叶耳鼻喉', '副主任医师', 'dept-smoke-ent', '咽喉炎、声带疾病'),
-        ('doc-smoke-ent-03', 'doctor-ent-03', '13701010703', '白耳鼻喉', '主治医师', 'dept-smoke-ent', '中耳炎、听力下降'),
-        ('doc-smoke-ent-04', 'doctor-ent-04', '13701010704', '杜耳鼻喉', '主治医师', 'dept-smoke-ent', '鼻出血、耳鸣眩晕'),
-        ('doc-smoke-ent-05', 'doctor-ent-05', '13701010705', '顾耳鼻喉', '副主任医师', 'dept-smoke-ent', '儿童鼾症、扁桃体疾病'),
-        ('doc-smoke-ent-06', 'doctor-ent-06', '13701010706', '夏耳鼻喉', '医师', 'dept-smoke-ent', '耳鼻喉常见病复诊')
+        ('doc-smoke-card-01','13701010001','陈心内','主任医师',  'dept-smoke-cardiology', '冠心病、胸痛评估、支架术后随访','00210001'),
+        ('doc-smoke-card-02','13701010002','刘心内','副主任医师','dept-smoke-cardiology', '高血压、心衰、房颤管理',        '00210002'),
+        ('doc-smoke-card-03','13701010003','王心内','主治医师',  'dept-smoke-cardiology', '心悸、血脂异常、心电图异常',    '00210003'),
+        ('doc-smoke-card-04','13701010004','赵心内','主治医师',  'dept-smoke-cardiology', '心律失常、动态心电图解读',      '00210004'),
+        ('doc-smoke-card-05','13701010005','孙心内','副主任医师','dept-smoke-cardiology', '老年心血管病、慢病复诊',        '00210005'),
+        ('doc-smoke-card-06','13701010006','周心内','医师',      'dept-smoke-cardiology', '高血压初诊、用药调整',          '00210006'),
+        ('doc-smoke-resp-01','13701010101','吴呼吸','主任医师',  'dept-smoke-respiratory','慢阻肺、肺结节、哮喘',          '00220001'),
+        ('doc-smoke-resp-02','13701010102','郑呼吸','副主任医师','dept-smoke-respiratory','咳嗽、支气管炎、肺部感染',      '00220002'),
+        ('doc-smoke-resp-03','13701010103','冯呼吸','主治医师',  'dept-smoke-respiratory','哮喘随访、过敏性咳嗽',          '00220003'),
+        ('doc-smoke-resp-04','13701010104','蒋呼吸','主治医师',  'dept-smoke-respiratory','发热咳嗽、胸片异常',            '00220004'),
+        ('doc-smoke-resp-05','13701010105','沈呼吸','副主任医师','dept-smoke-respiratory','肺功能异常、慢性咳嗽',          '00220005'),
+        ('doc-smoke-resp-06','13701010106','韩呼吸','医师',      'dept-smoke-respiratory','上呼吸道感染、复诊开药',        '00220006'),
+        ('doc-smoke-endo-01','13701010201','杨内分泌','主任医师','dept-smoke-endocrine',  '糖尿病并发症、胰岛素调整',      '00230001'),
+        ('doc-smoke-endo-02','13701010202','朱内分泌','副主任医师','dept-smoke-endocrine','甲状腺结节、甲亢甲减',          '00230002'),
+        ('doc-smoke-endo-03','13701010203','秦内分泌','主治医师','dept-smoke-endocrine',  '2型糖尿病、肥胖管理',           '00230003'),
+        ('doc-smoke-endo-04','13701010204','许内分泌','主治医师','dept-smoke-endocrine',  '妊娠糖尿病、血糖波动',          '00230004'),
+        ('doc-smoke-endo-05','13701010205','何内分泌','副主任医师','dept-smoke-endocrine','骨质疏松、代谢综合征',          '00230005'),
+        ('doc-smoke-endo-06','13701010206','吕内分泌','医师',    'dept-smoke-endocrine',  '糖尿病复诊、检验解读',          '00230006'),
+        ('doc-smoke-dige-01','13701010301','张消化','主任医师',  'dept-smoke-digestive',  '胃食管反流、胃肠镜后复诊',      '00240001'),
+        ('doc-smoke-dige-02','13701010302','梁消化','副主任医师','dept-smoke-digestive',  '肝功能异常、脂肪肝',            '00240002'),
+        ('doc-smoke-dige-03','13701010303','邓消化','主治医师',  'dept-smoke-digestive',  '腹痛腹泻、幽门螺杆菌',          '00240003'),
+        ('doc-smoke-dige-04','13701010304','傅消化','主治医师',  'dept-smoke-digestive',  '便秘、胃炎、肠易激',            '00240004'),
+        ('doc-smoke-dige-05','13701010305','曹消化','副主任医师','dept-smoke-digestive',  '炎症性肠病、肝胆疾病',          '00240005'),
+        ('doc-smoke-dige-06','13701010306','谢消化','医师',      'dept-smoke-digestive',  '消化不良、报告解读',            '00240006'),
+        ('doc-smoke-orth-01','13701010401','罗骨科','主任医师',  'dept-smoke-orthopedics','关节退变、运动损伤',             '00250001'),
+        ('doc-smoke-orth-02','13701010402','宋骨科','副主任医师','dept-smoke-orthopedics','腰椎间盘突出、颈椎病',          '00250002'),
+        ('doc-smoke-orth-03','13701010403','唐骨科','主治医师',  'dept-smoke-orthopedics','骨折术后复查、换药',             '00250003'),
+        ('doc-smoke-orth-04','13701010404','魏骨科','主治医师',  'dept-smoke-orthopedics','肩膝关节痛、腱鞘炎',            '00250004'),
+        ('doc-smoke-orth-05','13701010405','姚骨科','副主任医师','dept-smoke-orthopedics','脊柱退变、骨质疏松',            '00250005'),
+        ('doc-smoke-orth-06','13701010406','毛骨科','医师',      'dept-smoke-orthopedics','扭伤、软组织损伤',               '00250006'),
+        ('doc-smoke-derm-01','13701010501','潘皮肤','主任医师',  'dept-smoke-dermatology','银屑病、特应性皮炎',             '00260001'),
+        ('doc-smoke-derm-02','13701010502','董皮肤','副主任医师','dept-smoke-dermatology','痤疮、玫瑰痤疮、色斑',          '00260002'),
+        ('doc-smoke-derm-03','13701010503','袁皮肤','主治医师',  'dept-smoke-dermatology','湿疹、荨麻疹、过敏',            '00260003'),
+        ('doc-smoke-derm-04','13701010504','石皮肤','主治医师',  'dept-smoke-dermatology','真菌感染、皮肤瘙痒',            '00260004'),
+        ('doc-smoke-derm-05','13701010505','贾皮肤','副主任医师','dept-smoke-dermatology','皮肤肿物、激光术后复查',        '00260005'),
+        ('doc-smoke-derm-06','13701010506','范皮肤','医师',      'dept-smoke-dermatology','常见皮炎、用药咨询',             '00260006'),
+        ('doc-smoke-pedi-01','13701010601','金儿科','主任医师',  'dept-smoke-pediatrics', '儿童哮喘、反复呼吸道感染',      '00270001'),
+        ('doc-smoke-pedi-02','13701010602','孔儿科','副主任医师','dept-smoke-pediatrics', '儿童发热、消化不良',            '00270002'),
+        ('doc-smoke-pedi-03','13701010603','严儿科','主治医师',  'dept-smoke-pediatrics', '咳嗽、鼻炎、过敏体质',          '00270003'),
+        ('doc-smoke-pedi-04','13701010604','邱儿科','主治医师',  'dept-smoke-pediatrics', '腹泻、喂养、生长发育',          '00270004'),
+        ('doc-smoke-pedi-05','13701010605','程儿科','副主任医师','dept-smoke-pediatrics', '儿童内分泌、矮小症筛查',        '00270005'),
+        ('doc-smoke-pedi-06','13701010606','余儿科','医师',      'dept-smoke-pediatrics', '儿童常见病复诊',                 '00270006'),
+        ('doc-smoke-ent-01', '13701010701','苏耳鼻喉','主任医师','dept-smoke-ent',        '鼻窦炎、过敏性鼻炎',            '00280001'),
+        ('doc-smoke-ent-02', '13701010702','叶耳鼻喉','副主任医师','dept-smoke-ent',      '咽喉炎、声带疾病',              '00280002'),
+        ('doc-smoke-ent-03', '13701010703','白耳鼻喉','主治医师','dept-smoke-ent',        '中耳炎、听力下降',              '00280003'),
+        ('doc-smoke-ent-04', '13701010704','杜耳鼻喉','主治医师','dept-smoke-ent',        '鼻出血、耳鸣眩晕',              '00280004'),
+        ('doc-smoke-ent-05', '13701010705','顾耳鼻喉','副主任医师','dept-smoke-ent',      '儿童鼾症、扁桃体疾病',          '00280005'),
+        ('doc-smoke-ent-06', '13701010706','夏耳鼻喉','医师',    'dept-smoke-ent',        '耳鼻喉常见病复诊',              '00280006')
 )
-insert into auth.user_account (
-    id, username, password, phone, name, role, permissions, real_name_verified, created_at
-)
+
+-- ── auth 账号 ──
+insert into auth.user_account
+    (id, username, password, phone, name, role, permissions, real_name_verified, employee_no, created_at)
 select
-    id,
-    'D' || right(phone, 5),
+    id, id,
     '$2a$10$7NukEsugMLsxrPkaBLnhuOHHhSQg2RjHt4RiGYxJNx7pq9cyG6bL.',
-    phone,
-    name,
+    phone, name,
     'OUTPATIENT_DOCTOR',
     'appointment:read,appointment:skip,medical-record:read,medical-record:write,medical-order:create,prescription:create',
-    true,
-    now()
+    true, employee_no, now()
 from doctor_seed
-on conflict (id) do update
-set username = excluded.username,
-    password = excluded.password,
-    phone = excluded.phone,
-    name = excluded.name,
-    role = excluded.role,
-    permissions = excluded.permissions,
-    real_name_verified = excluded.real_name_verified;
+on conflict (username) do update
+    set password           = excluded.password,
+        phone              = excluded.phone,
+        name               = excluded.name,
+        role               = excluded.role,
+        permissions        = excluded.permissions,
+        real_name_verified = excluded.real_name_verified,
+        employee_no        = excluded.employee_no;
 
-with doctor_seed(id, name, title, department_id, specialty) as (
-    values
-        ('doc-smoke-card-01', '陈心内', '主任医师', 'dept-smoke-cardiology', '冠心病、胸痛评估、支架术后随访'),
-        ('doc-smoke-card-02', '刘心内', '副主任医师', 'dept-smoke-cardiology', '高血压、心衰、房颤管理'),
-        ('doc-smoke-card-03', '王心内', '主治医师', 'dept-smoke-cardiology', '心悸、血脂异常、心电图异常'),
-        ('doc-smoke-card-04', '赵心内', '主治医师', 'dept-smoke-cardiology', '心律失常、动态心电图解读'),
-        ('doc-smoke-card-05', '孙心内', '副主任医师', 'dept-smoke-cardiology', '老年心血管病、慢病复诊'),
-        ('doc-smoke-card-06', '周心内', '医师', 'dept-smoke-cardiology', '高血压初诊、用药调整'),
-        ('doc-smoke-resp-01', '吴呼吸', '主任医师', 'dept-smoke-respiratory', '慢阻肺、肺结节、哮喘'),
-        ('doc-smoke-resp-02', '郑呼吸', '副主任医师', 'dept-smoke-respiratory', '咳嗽、支气管炎、肺部感染'),
-        ('doc-smoke-resp-03', '冯呼吸', '主治医师', 'dept-smoke-respiratory', '哮喘随访、过敏性咳嗽'),
-        ('doc-smoke-resp-04', '蒋呼吸', '主治医师', 'dept-smoke-respiratory', '发热咳嗽、胸片异常'),
-        ('doc-smoke-resp-05', '沈呼吸', '副主任医师', 'dept-smoke-respiratory', '肺功能异常、慢性咳嗽'),
-        ('doc-smoke-resp-06', '韩呼吸', '医师', 'dept-smoke-respiratory', '上呼吸道感染、复诊开药'),
-        ('doc-smoke-endo-01', '杨内分泌', '主任医师', 'dept-smoke-endocrine', '糖尿病并发症、胰岛素调整'),
-        ('doc-smoke-endo-02', '朱内分泌', '副主任医师', 'dept-smoke-endocrine', '甲状腺结节、甲亢甲减'),
-        ('doc-smoke-endo-03', '秦内分泌', '主治医师', 'dept-smoke-endocrine', '2型糖尿病、肥胖管理'),
-        ('doc-smoke-endo-04', '许内分泌', '主治医师', 'dept-smoke-endocrine', '妊娠糖尿病、血糖波动'),
-        ('doc-smoke-endo-05', '何内分泌', '副主任医师', 'dept-smoke-endocrine', '骨质疏松、代谢综合征'),
-        ('doc-smoke-endo-06', '吕内分泌', '医师', 'dept-smoke-endocrine', '糖尿病复诊、检验解读'),
-        ('doc-smoke-dige-01', '张消化', '主任医师', 'dept-smoke-digestive', '胃食管反流、胃肠镜后复诊'),
-        ('doc-smoke-dige-02', '梁消化', '副主任医师', 'dept-smoke-digestive', '肝功能异常、脂肪肝'),
-        ('doc-smoke-dige-03', '邓消化', '主治医师', 'dept-smoke-digestive', '腹痛腹泻、幽门螺杆菌'),
-        ('doc-smoke-dige-04', '傅消化', '主治医师', 'dept-smoke-digestive', '便秘、胃炎、肠易激'),
-        ('doc-smoke-dige-05', '曹消化', '副主任医师', 'dept-smoke-digestive', '炎症性肠病、肝胆疾病'),
-        ('doc-smoke-dige-06', '谢消化', '医师', 'dept-smoke-digestive', '消化不良、报告解读'),
-        ('doc-smoke-orth-01', '罗骨科', '主任医师', 'dept-smoke-orthopedics', '关节退变、运动损伤'),
-        ('doc-smoke-orth-02', '宋骨科', '副主任医师', 'dept-smoke-orthopedics', '腰椎间盘突出、颈椎病'),
-        ('doc-smoke-orth-03', '唐骨科', '主治医师', 'dept-smoke-orthopedics', '骨折术后复查、换药'),
-        ('doc-smoke-orth-04', '魏骨科', '主治医师', 'dept-smoke-orthopedics', '肩膝关节痛、腱鞘炎'),
-        ('doc-smoke-orth-05', '姚骨科', '副主任医师', 'dept-smoke-orthopedics', '脊柱退变、骨质疏松'),
-        ('doc-smoke-orth-06', '毛骨科', '医师', 'dept-smoke-orthopedics', '扭伤、软组织损伤'),
-        ('doc-smoke-derm-01', '潘皮肤', '主任医师', 'dept-smoke-dermatology', '银屑病、特应性皮炎'),
-        ('doc-smoke-derm-02', '董皮肤', '副主任医师', 'dept-smoke-dermatology', '痤疮、玫瑰痤疮、色斑'),
-        ('doc-smoke-derm-03', '袁皮肤', '主治医师', 'dept-smoke-dermatology', '湿疹、荨麻疹、过敏'),
-        ('doc-smoke-derm-04', '石皮肤', '主治医师', 'dept-smoke-dermatology', '真菌感染、皮肤瘙痒'),
-        ('doc-smoke-derm-05', '贾皮肤', '副主任医师', 'dept-smoke-dermatology', '皮肤肿物、激光术后复查'),
-        ('doc-smoke-derm-06', '范皮肤', '医师', 'dept-smoke-dermatology', '常见皮炎、用药咨询'),
-        ('doc-smoke-pedi-01', '金儿科', '主任医师', 'dept-smoke-pediatrics', '儿童哮喘、反复呼吸道感染'),
-        ('doc-smoke-pedi-02', '孔儿科', '副主任医师', 'dept-smoke-pediatrics', '儿童发热、消化不良'),
-        ('doc-smoke-pedi-03', '严儿科', '主治医师', 'dept-smoke-pediatrics', '咳嗽、鼻炎、过敏体质'),
-        ('doc-smoke-pedi-04', '邱儿科', '主治医师', 'dept-smoke-pediatrics', '腹泻、喂养、生长发育'),
-        ('doc-smoke-pedi-05', '程儿科', '副主任医师', 'dept-smoke-pediatrics', '儿童内分泌、矮小症筛查'),
-        ('doc-smoke-pedi-06', '余儿科', '医师', 'dept-smoke-pediatrics', '儿童常见病复诊'),
-        ('doc-smoke-ent-01', '苏耳鼻喉', '主任医师', 'dept-smoke-ent', '鼻窦炎、过敏性鼻炎'),
-        ('doc-smoke-ent-02', '叶耳鼻喉', '副主任医师', 'dept-smoke-ent', '咽喉炎、声带疾病'),
-        ('doc-smoke-ent-03', '白耳鼻喉', '主治医师', 'dept-smoke-ent', '中耳炎、听力下降'),
-        ('doc-smoke-ent-04', '杜耳鼻喉', '主治医师', 'dept-smoke-ent', '鼻出血、耳鸣眩晕'),
-        ('doc-smoke-ent-05', '顾耳鼻喉', '副主任医师', 'dept-smoke-ent', '儿童鼾症、扁桃体疾病'),
-        ('doc-smoke-ent-06', '夏耳鼻喉', '医师', 'dept-smoke-ent', '耳鼻喉常见病复诊')
-)
-insert into doctor.outpatient_doctor (id, employee_no, name, title, department_id, role_type, specialty, active)
-select
-    id,
-    case
-        when id like 'doc-smoke-card-%' then 'D100' || right(id, 2)
-        when id like 'doc-smoke-resp-%' then 'D101' || right(id, 2)
-        when id like 'doc-smoke-endo-%' then 'D102' || right(id, 2)
-        when id like 'doc-smoke-dige-%' then 'D103' || right(id, 2)
-        when id like 'doc-smoke-orth-%' then 'D104' || right(id, 2)
-        when id like 'doc-smoke-derm-%' then 'D105' || right(id, 2)
-        when id like 'doc-smoke-pedi-%' then 'D106' || right(id, 2)
-        else 'D107' || right(id, 2)
-    end,
-    name,
-    title,
-    department_id,
-    'OUTPATIENT_DOCTOR',
-    specialty,
-    true
+-- ── 医生档案（doctor.doctor 基础表）──
+insert into doctor.doctor (id, name, title, department_id, role_type, specialty, employee_no, active)
+select id, name, title, department_id, 'OUTPATIENT_DOCTOR', specialty, employee_no, true
 from doctor_seed
 on conflict (id) do update
-set employee_no = excluded.employee_no,
-    name = excluded.name,
-    title = excluded.title,
-    department_id = excluded.department_id,
-    role_type = excluded.role_type,
-    specialty = excluded.specialty,
-    active = excluded.active;
+    set name          = excluded.name,
+        title         = excluded.title,
+        department_id = excluded.department_id,
+        role_type     = excluded.role_type,
+        specialty     = excluded.specialty,
+        employee_no   = excluded.employee_no,
+        active        = excluded.active;
+
+-- ── 补全 smoke 科室诊室（V8 migration 时这些科室不存在）──
+insert into doctor.outpatient_clinic_room (id, department_id, name, location)
+select 'room-' || id, id, name || '1号诊室', '门诊楼'
+from doctor.department
+where id like 'dept-smoke-%'
+on conflict (id) do update
+    set name = excluded.name, location = excluded.location;
+
+-- ── 门诊医生扩展（doctor.outpatient_doctor）──
+insert into doctor.outpatient_doctor (doctor_id, clinic_room_id)
+select d.id, 'room-' || d.department_id
+from doctor_seed d
+where exists (select 1 from doctor.outpatient_clinic_room r where r.id = 'room-' || d.department_id)
+on conflict (doctor_id) do nothing;
 
 with doctor_seed(id, dept_code, doctor_no, department_id, title) as (
     values

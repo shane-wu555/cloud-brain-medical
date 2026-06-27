@@ -175,7 +175,18 @@ where id in (
     'schedule-test-rehab-001-pm'
 );
 
+-- outpatient_doctor 是扩展表，用 doctor_id 关联
 delete from doctor.outpatient_doctor
+where doctor_id in (
+    'doctor-test-neuro-002',
+    'doctor-test-neuro-003',
+    'doctor-test-general-002',
+    'doctor-test-general-003',
+    'doctor-test-rehab-001'
+);
+
+-- 同步清理 doctor.doctor 基础档案
+delete from doctor.doctor
 where id in (
     'doctor-test-neuro-002',
     'doctor-test-neuro-003',

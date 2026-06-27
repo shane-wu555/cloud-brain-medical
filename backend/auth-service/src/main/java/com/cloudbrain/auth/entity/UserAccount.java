@@ -12,6 +12,7 @@ public class UserAccount {
     private final String role;
     private final List<String> permissions;
     private boolean realNameVerified;
+    private final String employeeNo;
     private final LocalDateTime createdAt;
 
     public UserAccount(
@@ -22,7 +23,8 @@ public class UserAccount {
             String name,
             String role,
             List<String> permissions,
-            boolean realNameVerified) {
+            boolean realNameVerified,
+            String employeeNo) {
         this.id = id;
         this.username = username;
         this.password = password;
@@ -31,6 +33,7 @@ public class UserAccount {
         this.role = role;
         this.permissions = permissions;
         this.realNameVerified = realNameVerified;
+        this.employeeNo = employeeNo;
         this.createdAt = LocalDateTime.now();
     }
 
@@ -64,6 +67,10 @@ public class UserAccount {
 
     public boolean isRealNameVerified() {
         return realNameVerified;
+    }
+
+    public String getEmployeeNo() {
+        return employeeNo;
     }
 
     public LocalDateTime getCreatedAt() {

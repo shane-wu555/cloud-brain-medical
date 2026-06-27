@@ -105,6 +105,6 @@ class AuthServiceTest {
 
     private UserAccount account(String encodedPassword) {
         return new UserAccount("doctor-001", "doctor", encodedPassword, "13900000000", "张医生",
-                "OUTPATIENT_DOCTOR", List.of("medical-record:write"), true);
+                "OUTPATIENT_DOCTOR", List.of("medical-record:write"), true, "00010001");
     }
 }
