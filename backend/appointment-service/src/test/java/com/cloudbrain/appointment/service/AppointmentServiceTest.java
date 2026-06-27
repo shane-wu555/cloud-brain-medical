@@ -61,9 +61,9 @@ class AppointmentServiceTest {
         assertThatThrownBy(() -> service.createOffline(request())).isInstanceOf(IllegalStateException.class);
     }
 
-    @Test void samePatientCannotBookSamePeriodTwice() {
+    @Test void samePatientCannotBookSameStartTimeTwice() {
         AppointmentController.CreateAppointmentRequest request = request();
-        when(appointments.existsActiveInPeriod("patient", request.visitDate(), request.period())).thenReturn(true);
+        when(appointments.existsActiveAtStartTime("patient", request.visitDate(), LocalTime.of(8, 0))).thenReturn(true);
         assertThatThrownBy(() -> service.lockOnline(request))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("同一就诊人同一时段不能重复预约");

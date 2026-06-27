@@ -1,59 +1,72 @@
 <template>
   <view class="page home-page">
-    <view class="hero card">
-      <view class="hero-top">
-        <view>
-          <view class="title">你好，{{ auth.user?.username || auth.user?.phone || auth.user?.name }}</view>
-          <view class="hero-subtitle">{{ auth.boundPatient ? `当前就诊人：${auth.boundPatient.name}` : '未绑定就诊人' }}</view>
-        </view>
-        <view :class="['verify-chip', auth.boundPatient ? 'verified' : 'unverified']">
-          {{ auth.boundPatient ? '已绑定' : '待绑定' }}
-        </view>
-      </view>
-
-      <view v-if="!auth.boundPatient" class="verify-panel">
-        <view class="muted">添加并绑定就诊人后才能使用问诊、挂号、缴费和病历等业务。</view>
-        <button class="button verify-button" @tap="go('/pages/real-name/index')">添加就诊人</button>
-      </view>
-      <view v-else class="verify-panel">
-        <view class="muted">{{ auth.boundPatient.name }} · {{ auth.boundPatient.idNumber }}</view>
-        <button class="button verify-button" @tap="go('/pages/real-name/index')">切换就诊人</button>
+    <view class="top-band">
+      <view class="hospital-name">智慧云脑诊疗平台</view>
+      <view class="search-box" @tap="go('/pages/search/index')">
+        <view class="search-icon"></view>
+        <text>搜索科室、医生</text>
       </view>
     </view>
 
-    <view class="card">
-      <view class="section-title">快捷操作</view>
-      <view class="quick-grid">
+    <view class="banner-card">
+      <view>
+        <view class="banner-title">门诊预约与缴费一站办理</view>
+        <view class="banner-desc">先问诊、再挂号，报告和费用集中查看</view>
+      </view>
+      <view class="banner-pill">轮播图待替换</view>
+    </view>
+
+    <view :class="['patient-card', auth.boundPatient ? 'bound' : 'unbound']">
+      <view>
+        <view class="patient-line">
+          {{ auth.boundPatient ? `${auth.boundPatient.name} 的电子就诊卡` : '请先添加就诊人' }}
+        </view>
+        <view class="patient-subtitle">
+          {{ auth.boundPatient ? `门诊号：${auth.boundPatient.id}` : '绑定后可使用挂号、缴费、报告和病历服务' }}
+        </view>
+      </view>
+      <button class="switch-button" @tap="go('/pages/real-name/index')">
+        {{ auth.boundPatient ? '切换' : '添加' }}
+      </button>
+    </view>
+
+    <view class="quick-grid">
         <view
           v-for="item in quickEntries"
           :key="item.url"
           :class="['quick-card', item.tone]"
           @tap="go(item.url)"
         >
-          <view class="quick-badge">{{ item.badge }}</view>
+        <view class="quick-icon">{{ item.badge }}</view>
+        <view>
           <view class="quick-name">{{ item.name }}</view>
           <view class="quick-desc">{{ item.desc }}</view>
         </view>
-      </view>
+        </view>
     </view>
 
-    <view v-for="group in serviceGroups" :key="group.title" class="card">
-      <view class="section-head">
-        <view class="section-title">{{ group.title }}</view>
-        <view class="muted">{{ group.subtitle }}</view>
+    <view class="service-panel">
+      <view class="tab-row">
+        <view
+          v-for="group in serviceGroups"
+          :key="group.title"
+          :class="['tab-item', activeGroup === group.title ? 'active' : '']"
+          @tap="activeGroup = group.title"
+        >
+          {{ group.title }}
+        </view>
       </view>
 
-      <view
-        v-for="item in group.items"
-        :key="item.url"
-        class="service-row"
-        @tap="go(item.url)"
-      >
-        <view class="service-main">
+      <view class="service-grid">
+        <view
+          v-for="item in activeItems"
+          :key="item.url"
+          class="service-item"
+          @tap="go(item.url)"
+        >
+          <view class="service-icon">{{ item.icon }}</view>
           <view class="service-name">{{ item.name }}</view>
-          <view class="service-desc">{{ item.desc }}</view>
         </view>
-        <view class="service-arrow">{{ '>' }}</view>
       </view>
     </view>
   </view>
@@ -61,35 +74,42 @@
 
 <script setup lang="ts">
 import { onShow } from '@dcloudio/uni-app';
+import { computed, ref } from 'vue';
 import { useAuthStore } from '../../stores/auth';
 
 const auth = useAuthStore();
+const activeGroup = ref('门诊');
 
 const quickEntries = [
-  { name: 'AI 智能问诊', desc: '先问诊，再带着推荐去挂号', badge: 'AI', tone: 'tone-ai', url: '/pages/consultation/index' },
-  { name: '线上挂号', desc: '选科室、选日期，直接预约医生', badge: '挂号', tone: 'tone-booking', url: '/pages/booking/index' },
-  { name: '待缴费项目', desc: '集中处理挂号费、检查费、药费', badge: '缴费', tone: 'tone-payment', url: '/pages/pending-payments/index' }
+  { name: 'AI问诊建议', desc: '智能推荐科室', badge: 'AI', tone: 'tone-disease', url: '/pages/consultation/index' },
+  { name: '按科室挂号', desc: '选择院区科室', badge: '科', tone: 'tone-dept', url: '/pages/booking/index' },
+  { name: '就诊人管理', desc: '切换电子就诊卡', badge: '人', tone: 'tone-report', url: '/pages/real-name/index' },
+  { name: '门诊缴费', desc: '挂号、药品等缴费', badge: '费', tone: 'tone-payment', url: '/pages/pending-payments/index' }
 ];
 
 const serviceGroups = [
   {
-    title: '就诊服务',
-    subtitle: '从挂号到处置、取药',
+    title: '门诊',
     items: [
-      { name: '我的挂号', desc: '查看预约、就诊日期和当前状态', url: '/pages/appointments/index' },
-      { name: '处置安排', desc: '查看换药、注射、输液等处置项目进度', url: '/pages/disposals/index' },
-      { name: '药方', desc: '查看处方、药房状态、发药与退药信息', url: '/pages/prescriptions/index' }
+      { name: '我的挂号', icon: '挂', url: '/pages/appointments/index' },
+      { name: '待处置安排', icon: '处', url: '/pages/disposals/index?mode=arrangement' },
+      { name: '待检查/检验安排', icon: '检', url: '/pages/medical-orders/index?mode=arrangement' },
+      { name: '待取药安排', icon: '药', url: '/pages/prescriptions/index?mode=arrangement' }
     ]
   },
   {
-    title: '健康档案',
-    subtitle: '病历与正式报告',
+    title: '记录',
     items: [
-      { name: '电子病历', desc: '查看门诊病历摘要与历史就诊记录', url: '/pages/medical-records/index' },
-      { name: '检查检验报告', desc: '仅查看已确认的检查与检验正式报告', url: '/pages/medical-orders/index' }
+      { name: '检查检验报告', icon: '报', url: '/pages/medical-orders/index?mode=report' },
+      { name: '电子病历', icon: '历', url: '/pages/medical-records/index' },
+      { name: '缴费记录', icon: '缴', url: '/pages/pending-payments/index?mode=record' },
+      { name: '处置记录', icon: '处', url: '/pages/disposals/index?mode=record' },
+      { name: '取药记录', icon: '药', url: '/pages/prescriptions/index?mode=record' }
     ]
   }
 ];
+
+const activeItems = computed(() => serviceGroups.find((group) => group.title === activeGroup.value)?.items ?? serviceGroups[0].items);
 
 onShow(async () => {
   if (!auth.token) {
@@ -116,160 +136,258 @@ function go(url: string) {
 
 <style scoped>
 .home-page {
-  background:
-    radial-gradient(circle at top right, rgba(15, 118, 110, 0.1), transparent 220rpx),
-    linear-gradient(180deg, #f4fbfa 0%, #f5f7fb 240rpx);
+  padding-top: 0;
+  background: linear-gradient(180deg, #48a4f5 0, #48a4f5 256rpx, #f2f7ff 256rpx, #f2f7ff 100%);
 }
 
-.hero {
-  background: linear-gradient(135deg, #0f766e 0%, #115e59 100%);
-  color: #f8fafc;
+.top-band {
+  padding: 30rpx 6rpx 24rpx;
+  color: #fff;
 }
 
-.hero-top {
+.hospital-name {
+  font-size: 38rpx;
+  font-weight: 800;
+  line-height: 1.3;
+}
+
+.search-box {
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 20rpx;
-}
-
-.hero-subtitle {
-  margin-top: 12rpx;
-  color: rgba(248, 250, 252, 0.82);
-  font-size: 26rpx;
-  line-height: 1.6;
-}
-
-.verify-chip {
-  padding: 10rpx 18rpx;
-  border-radius: 999rpx;
-  font-size: 22rpx;
-  white-space: nowrap;
-}
-
-.verified {
-  background: rgba(236, 253, 245, 0.18);
-  color: #d1fae5;
-}
-
-.unverified {
-  background: rgba(255, 247, 237, 0.18);
-  color: #fde68a;
-}
-
-.verify-panel {
-  margin-top: 28rpx;
-  padding: 20rpx 22rpx;
-  border-radius: 18rpx;
-  background: rgba(255, 255, 255, 0.12);
-}
-
-.verify-panel .muted {
-  color: rgba(248, 250, 252, 0.82);
-}
-
-.verify-button {
-  margin-top: 16rpx;
-  background: #f8fafc;
-  color: #0f766e;
-}
-
-.section-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
+  align-items: center;
   gap: 16rpx;
-  margin-bottom: 12rpx;
+  height: 78rpx;
+  margin-top: 24rpx;
+  padding: 0 24rpx;
+  border-radius: 14rpx;
+  background: #fff;
+  color: #9aa8ba;
+  font-size: 30rpx;
+  box-shadow: 0 8rpx 24rpx rgba(22, 91, 163, 0.18);
 }
 
-.section-title {
-  color: #0f172a;
-  font-size: 32rpx;
-  font-weight: 700;
+.search-icon {
+  width: 26rpx;
+  height: 26rpx;
+  border: 4rpx solid #b6c2d1;
+  border-radius: 50%;
+  position: relative;
 }
 
-.quick-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 18rpx;
-  margin-top: 18rpx;
-}
-
-.quick-card {
-  padding: 24rpx;
-  border-radius: 18rpx;
-}
-
-.tone-ai {
-  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
-}
-
-.tone-booking {
-  background: linear-gradient(135deg, #ecfeff 0%, #ccfbf1 100%);
-}
-
-.tone-payment {
-  background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%);
-}
-
-.quick-badge {
-  display: inline-flex;
-  padding: 6rpx 14rpx;
+.search-icon::after {
+  content: "";
+  position: absolute;
+  right: -12rpx;
+  bottom: -10rpx;
+  width: 16rpx;
+  height: 4rpx;
   border-radius: 999rpx;
-  background: rgba(255, 255, 255, 0.9);
-  color: #0f766e;
-  font-size: 22rpx;
-  font-weight: 700;
+  background: #b6c2d1;
+  transform: rotate(45deg);
 }
 
-.quick-name {
-  margin-top: 18rpx;
-  color: #0f172a;
-  font-size: 34rpx;
-  font-weight: 700;
+.banner-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 184rpx;
+  margin-bottom: 22rpx;
+  padding: 30rpx;
+  border-radius: 18rpx;
+  background: linear-gradient(135deg, #ff8a00 0%, #ff5c35 100%);
+  color: #fff;
+  box-shadow: 0 14rpx 34rpx rgba(255, 117, 24, 0.24);
 }
 
-.quick-desc {
-  margin-top: 10rpx;
-  color: #475569;
+.banner-title {
+  font-size: 42rpx;
+  font-weight: 900;
+  line-height: 1.3;
+}
+
+.banner-desc {
+  margin-top: 12rpx;
+  color: rgba(255, 255, 255, 0.86);
   font-size: 26rpx;
-  line-height: 1.6;
 }
 
-.service-row {
+.banner-pill {
+  flex-shrink: 0;
+  padding: 12rpx 16rpx;
+  border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.18);
+  font-size: 24rpx;
+  font-weight: 700;
+}
+
+.patient-card {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 20rpx;
-  padding: 24rpx 0;
-  border-bottom: 1px solid #e2e8f0;
+  margin-bottom: 22rpx;
+  padding: 30rpx;
+  border-radius: 18rpx;
+  color: #fff;
+  box-shadow: 0 12rpx 28rpx rgba(47, 128, 237, 0.18);
 }
 
-.service-row:last-child {
-  border-bottom: none;
-  padding-bottom: 0;
+.patient-card.bound {
+  background: linear-gradient(135deg, #1677ff 0%, #28d2c0 100%);
 }
 
-.service-main {
-  flex: 1;
+.patient-card.unbound {
+  background: linear-gradient(135deg, #64748b 0%, #94a3b8 100%);
 }
 
-.service-name {
-  color: #0f172a;
+.patient-line {
+  font-size: 34rpx;
+  font-weight: 800;
+}
+
+.patient-subtitle {
+  margin-top: 14rpx;
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 26rpx;
+}
+
+.switch-button {
+  flex-shrink: 0;
+  height: 64rpx;
+  min-width: 116rpx;
+  margin: 0;
+  border: 2rpx solid rgba(255, 255, 255, 0.8);
+  border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  font-size: 26rpx;
+  line-height: 60rpx;
+}
+
+.quick-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18rpx;
+  margin-bottom: 22rpx;
+}
+
+.quick-card {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  min-height: 130rpx;
+  padding: 24rpx;
+  border-radius: 16rpx;
+  background: #fff;
+  box-shadow: 0 10rpx 26rpx rgba(31, 84, 140, 0.08);
+}
+
+.quick-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 78rpx;
+  height: 78rpx;
+  border-radius: 20rpx;
+  color: #fff;
   font-size: 30rpx;
+  font-weight: 900;
+}
+
+.tone-disease .quick-icon {
+  background: linear-gradient(135deg, #ffc928 0%, #ff8a00 100%);
+}
+
+.tone-dept .quick-icon {
+  background: linear-gradient(135deg, #ff9f1c 0%, #ff5c35 100%);
+}
+
+.tone-report .quick-icon {
+  background: linear-gradient(135deg, #5bbcff 0%, #2f80ed 100%);
+}
+
+.tone-payment .quick-icon {
+  background: linear-gradient(135deg, #2dd4bf 0%, #0ea5e9 100%);
+}
+
+.quick-name {
+  color: #0f172a;
+  font-size: 31rpx;
+  font-weight: 800;
+}
+
+.quick-desc {
+  margin-top: 8rpx;
+  color: #475569;
+  font-size: 25rpx;
+}
+
+.service-panel {
+  padding: 26rpx 24rpx 18rpx;
+  border-radius: 18rpx;
+  background: #fff;
+  box-shadow: 0 10rpx 30rpx rgba(31, 84, 140, 0.08);
+}
+
+.tab-row {
+  display: flex;
+  justify-content: space-around;
+  margin-bottom: 28rpx;
+}
+
+.tab-item {
+  position: relative;
+  padding-bottom: 16rpx;
+  color: #2f3542;
+  font-size: 34rpx;
   font-weight: 700;
 }
 
-.service-desc {
-  margin-top: 8rpx;
-  color: #64748b;
-  font-size: 25rpx;
-  line-height: 1.6;
+.tab-item.active {
+  color: #2f80ed;
 }
 
-.service-arrow {
-  color: #94a3b8;
-  font-size: 40rpx;
+.tab-item.active::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 48rpx;
+  height: 7rpx;
+  border-radius: 999rpx;
+  background: #2f80ed;
+  transform: translateX(-50%);
 }
 
+.service-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  row-gap: 34rpx;
+}
+
+.service-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14rpx;
+}
+
+.service-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 76rpx;
+  height: 76rpx;
+  border-radius: 18rpx;
+  background: linear-gradient(135deg, #37b3ff 0%, #2f80ed 68%, #ff9f1c 100%);
+  color: #fff;
+  font-size: 28rpx;
+  font-weight: 900;
+}
+
+.service-name {
+  color: #2f3542;
+  font-size: 27rpx;
+  font-weight: 600;
+  text-align: center;
+}
 </style>

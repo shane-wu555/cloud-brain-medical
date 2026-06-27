@@ -6,6 +6,7 @@ import com.cloudbrain.appointment.entity.AppointmentStatus;
 import com.cloudbrain.appointment.entity.PaymentStatus;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -44,14 +45,14 @@ public class AppointmentRepository {
                 """,(rs,row)->rs.getString(1));
     }
 
-    public boolean existsActiveInPeriod(String patientId, String visitDate, String period) {
+    public boolean existsActiveAtStartTime(String patientId, String visitDate, LocalTime startTime) {
         Integer count = jdbcTemplate.queryForObject("""
                 select count(*) from appointment
                 where patient_id = ?
                   and visit_date = ?::date
-                  and period = ?
+                  and start_time = ?
                   and status <> 'CANCELLED'
-                """, Integer.class, patientId, visitDate, period);
+                """, Integer.class, patientId, visitDate, startTime);
         return count != null && count > 0;
     }
 

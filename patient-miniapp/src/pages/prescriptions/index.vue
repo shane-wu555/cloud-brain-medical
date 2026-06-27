@@ -1,21 +1,21 @@
 <template>
   <view class="page">
     <view class="card">
-      <view class="title">药方</view>
-      <view class="muted">在这里统一查看处方内容、药方状态、缴费情况和发药进度。</view>
+      <view class="title">{{ pageTitle }}</view>
+      <view class="muted">{{ pageDesc }}</view>
     </view>
 
-    <view v-for="prescription in prescriptions" :key="prescription.id" class="card prescription-card">
+    <view v-for="prescription in visiblePrescriptions" :key="prescription.id" class="card prescription-card">
       <view class="row-between">
-        <view class="title-sm">{{ prescription.prescriptionNo }}</view>
+        <view class="title-sm">{{ prescriptionTitle(prescription) }}</view>
         <view :class="['status-tag', statusClass(prescription.status)]">{{ statusLabel(prescription.status) }}</view>
       </view>
       <view class="muted">诊断：{{ prescription.diagnosis || '暂无' }}</view>
       <view class="muted">总金额：¥{{ amountText(prescription.totalAmount) }}</view>
-      <view v-if="prescription.confirmedAt" class="muted">开方时间：{{ prescription.confirmedAt }}</view>
-      <view v-if="prescription.paidAt" class="muted">缴费时间：{{ prescription.paidAt }}</view>
-      <view v-if="prescription.dispensedAt" class="muted">发药时间：{{ prescription.dispensedAt }}</view>
-      <view v-if="prescription.returnedAt" class="muted">退药时间：{{ prescription.returnedAt }}</view>
+      <view v-if="prescription.confirmedAt" class="muted">开方时间：{{ formatDateTime(prescription.confirmedAt) }}</view>
+      <view v-if="prescription.paidAt" class="muted">缴费时间：{{ formatDateTime(prescription.paidAt) }}</view>
+      <view v-if="prescription.dispensedAt" class="muted">发药时间：{{ formatDateTime(prescription.dispensedAt) }}</view>
+      <view v-if="prescription.returnedAt" class="muted">退药时间：{{ formatDateTime(prescription.returnedAt) }}</view>
       <view v-if="prescription.returnReason" class="muted">退药原因：{{ prescription.returnReason }}</view>
 
       <view class="section">
@@ -39,15 +39,16 @@
       </button>
     </view>
 
-    <view v-if="!prescriptions.length" class="card muted">暂无药方记录</view>
+    <view v-if="!visiblePrescriptions.length" class="card muted">{{ emptyText }}</view>
   </view>
 </template>
 
 <script setup lang="ts">
-import { onShow } from '@dcloudio/uni-app';
-import { ref } from 'vue';
+import { onLoad, onShow } from '@dcloudio/uni-app';
+import { computed, ref } from 'vue';
 import { request } from '../../api/http';
 import { useAuthStore } from '../../stores/auth';
+import { formatDateTime } from '../../utils/format';
 
 interface PrescriptionItem {
   id: string;
@@ -89,9 +90,39 @@ interface Prescription {
 
 const auth = useAuthStore();
 const prescriptions = ref<Prescription[]>([]);
+const mode = ref<'arrangement' | 'record'>('arrangement');
+const visiblePrescriptions = computed(() =>
+  prescriptions.value
+    .filter((item) =>
+      mode.value === 'arrangement'
+        ? ['CONFIRMED', 'PENDING_PAYMENT', 'PAID', 'WAITING_DISPENSE'].includes(item.status)
+        : ['DISPENSED', 'RETURNED', 'CANCELLED'].includes(item.status)
+    )
+    .sort((a, b) => prescriptionSortTime(b).localeCompare(prescriptionSortTime(a)))
+);
+const pageTitle = computed(() => (mode.value === 'arrangement' ? '待取药安排' : '取药记录'));
+const pageDesc = computed(() =>
+  mode.value === 'arrangement'
+    ? '查看待缴费、待发药和准备取药的处方。'
+    : '查看已发药、退药或取消的取药记录。'
+);
+const emptyText = computed(() => (mode.value === 'arrangement' ? '暂无待取药安排' : '暂无取药记录'));
+
+onLoad((options) => {
+  mode.value = options?.mode === 'record' ? 'record' : 'arrangement';
+  uni.setNavigationBarTitle({ title: pageTitle.value });
+});
 
 function amountText(value: number) {
   return Number(value ?? 0).toFixed(2);
+}
+
+function prescriptionSortTime(value: Prescription) {
+  return value.returnedAt || value.dispensedAt || value.paidAt || value.confirmedAt || value.createdAt || '';
+}
+
+function prescriptionTitle(prescription: Prescription) {
+  return prescription.diagnosis ? `${prescription.diagnosis}药方` : '药方';
 }
 
 function statusLabel(status: Prescription['status']) {

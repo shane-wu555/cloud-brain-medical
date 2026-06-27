@@ -1,10 +1,31 @@
 <template>
   <view class="page">
     <view class="card">
-      <view class="title">待缴费项目</view>
-      <view class="muted">集中查看挂号费、检查费、检验费、处置费和药费，按费用类别分开展示。</view>
+      <view class="title">{{ mode === 'record' ? '缴费记录' : '待缴费项目' }}</view>
+      <view class="muted">{{ mode === 'record' ? '查看历史支付单和支付状态。' : '集中查看挂号费、检查费、检验费、处置费和药费，按费用类别分开展示。' }}</view>
     </view>
 
+    <view v-if="mode === 'record'">
+      <view
+        v-for="item in sortedPaymentRecords"
+        :key="item.id"
+        :class="['card', 'item-row', 'payment-record', { payable: isPendingPaymentRecord(item) }]"
+        @click="openPendingPayment(item)"
+      >
+        <view class="item-main">
+          <view class="item-title">{{ businessTypeLabel(item.businessType) }}</view>
+          <view class="item-desc">业务号：{{ item.businessId }}</view>
+          <view class="muted">{{ item.paidAt ? `支付时间：${formatDateTime(item.paidAt)}` : `当前状态：${paymentStatusLabel(item.status)}` }}</view>
+        </view>
+        <view class="item-actions">
+          <view class="amount">¥{{ amountText(item.amount) }}</view>
+          <view :class="['record-status', item.status.toLowerCase()]">{{ paymentStatusLabel(item.status) }}</view>
+        </view>
+      </view>
+      <view v-if="!sortedPaymentRecords.length" class="card muted">暂无缴费记录</view>
+    </view>
+
+    <view v-else>
     <view v-if="loadWarning" class="card warning-card">
       <view class="warning-title">部分数据加载失败</view>
       <view class="muted">{{ loadWarning }}</view>
@@ -126,14 +147,16 @@
     </view>
 
     <view v-if="!totalCount" class="card muted">暂无待缴费项目</view>
+    </view>
   </view>
 </template>
 
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { onShow } from '@dcloudio/uni-app';
+import { onLoad, onShow } from '@dcloudio/uni-app';
 import { request } from '../../api/http';
 import { useAuthStore } from '../../stores/auth';
+import { formatDateTime } from '../../utils/format';
 
 interface Appointment {
   id: string;
@@ -151,6 +174,8 @@ interface PaymentOrder {
   businessId: string;
   amount: number;
   status: string;
+  createdAt?: string;
+  paidAt?: string;
 }
 
 interface MedicalOrder {
@@ -185,7 +210,9 @@ const auth = useAuthStore();
 const registrationItems = ref<PendingItem[]>([]);
 const medicalOrderItems = ref<PendingItem[]>([]);
 const prescriptionItems = ref<PendingItem[]>([]);
+const paymentRecords = ref<PaymentOrder[]>([]);
 const loadWarning = ref('');
+const mode = ref<'pending' | 'record'>('pending');
 const registeredAppointmentStatuses = new Set(['WAITING', 'CALLED', 'IN_VISIT', 'REVISIT_WAITING']);
 
 const checkItems = computed(() => medicalOrderItems.value.filter((item) => item.feeType === 'CHECK'));
@@ -197,6 +224,10 @@ const totalAmount = computed(() =>
     .reduce((sum, item) => sum + Number(item.amount ?? 0), 0)
 );
 const totalCount = computed(() => registrationItems.value.length + medicalOrderItems.value.length + prescriptionItems.value.length);
+
+const sortedPaymentRecords = computed(() =>
+  [...paymentRecords.value].sort((left, right) => paymentRecordSortTime(right).localeCompare(paymentRecordSortTime(left)))
+);
 
 const categorySummaries = computed(() => [
   summarizeCategory('registration', '挂号费', registrationItems.value),
@@ -219,13 +250,56 @@ function amountText(value: number) {
   return Number(value ?? 0).toFixed(2);
 }
 
+function businessTypeLabel(type: string) {
+  return {
+    APPOINTMENT: '挂号费',
+    MEDICAL_ORDER: '检查检验处置费',
+    PRESCRIPTION: '药费'
+  }[type] ?? type;
+}
+
+function paymentStatusLabel(status: string) {
+  return {
+    PENDING: '待支付',
+    PENDING_PAYMENT: '待缴费',
+    UNPAID: '未支付',
+    PAID: '已支付',
+    FAILED: '支付失败',
+    CANCELLED: '已取消',
+    REFUNDED: '已退款'
+  }[status] ?? status;
+}
+
+function paymentRecordSortTime(item: PaymentOrder) {
+  return item.paidAt || item.createdAt || '';
+}
+
+function isPendingPaymentRecord(item: PaymentOrder) {
+  return item.status === 'PENDING';
+}
+
+function openPendingPayment(item: PaymentOrder) {
+  if (!isPendingPaymentRecord(item)) return;
+  uni.navigateTo({ url: '/pages/pending-payments/index' });
+}
+
+onLoad((options) => {
+  mode.value = options?.mode === 'record' ? 'record' : 'pending';
+  uni.setNavigationBarTitle({ title: mode.value === 'record' ? '缴费记录' : '待缴费项目' });
+});
+
 function appointmentStatusLabel(item: Appointment) {
   if (item.paymentStatus === 'REFUNDED') return '已退号';
-  if (item.status === 'PENDING_PAYMENT') return '待支付';
-  if (registeredAppointmentStatuses.has(item.status)) return '已挂号';
-  if (item.status === 'CANCELLED') return '已取消';
-  if (item.status === 'FINISHED') return '已完成';
-  return item.status;
+  return {
+    PENDING_PAYMENT: '待缴费',
+    WAITING: '待就诊',
+    CALLED: '已叫号',
+    IN_VISIT: '就诊中',
+    REVISIT_WAITING: '复诊等待',
+    CANCELLED: '已取消',
+    FINISHED: '已完成',
+    EXPIRED: '已过期'
+  }[item.status] ?? item.status;
 }
 
 function orderTypeLabel(type: MedicalOrder['orderType']) {
@@ -238,6 +312,18 @@ function orderTypeLabel(type: MedicalOrder['orderType']) {
 
 function urgencyLabel(value: string) {
   return value === 'EMERGENCY' ? '急诊' : '普通';
+}
+
+function medicalOrderStatusLabel(status: MedicalOrder['status'], paymentStatus: MedicalOrder['paymentStatus']) {
+  if (paymentStatus === 'UNPAID') return '待缴费';
+  return {
+    PENDING_PAYMENT: '待缴费',
+    WAITING_TRIAGE: '待安排',
+    WAITING: '待执行',
+    IN_PROGRESS: '进行中',
+    COMPLETED: '已完成',
+    MISSED: '已顺延'
+  }[status] ?? status;
 }
 
 function prescriptionStatusLabel(status: Prescription['status']) {
@@ -263,6 +349,10 @@ async function load() {
     return;
   }
   loadWarning.value = '';
+  if (mode.value === 'record') {
+    paymentRecords.value = await request<PaymentOrder[]>({ url: '/payments', method: 'GET' });
+    return;
+  }
   const warnings: string[] = [];
   const [appointmentsResult, paymentsResult, medicalOrdersResult, prescriptionsResult] = await Promise.allSettled([
     request<Appointment[]>({ url: '/appointments?status=PENDING_PAYMENT', method: 'GET' }),
@@ -302,7 +392,7 @@ async function load() {
       feeType: item.orderType,
       title: item.projectName,
       description: `${orderTypeLabel(item.orderType)} · ${urgencyLabel(item.urgency)}`,
-      note: `当前状态：${item.status}`,
+      note: `当前状态：${medicalOrderStatusLabel(item.status, item.paymentStatus)}`,
       amount: item.amount
     }));
 
@@ -312,7 +402,7 @@ async function load() {
       businessType: 'PRESCRIPTION' as const,
       businessId: item.id,
       feeType: 'DRUG' as const,
-      title: `处方 ${item.prescriptionNo}`,
+      title: '药费',
       description: item.diagnosis || '待医生确认诊断',
       note: `当前状态：${prescriptionStatusLabel(item.status)}`,
       amount: item.totalAmount
@@ -457,6 +547,11 @@ onShow(load);
   padding-bottom: 0;
 }
 
+.card.item-row {
+  padding: 26rpx 30rpx;
+  border-bottom: none;
+}
+
 .item-main {
   flex: 1;
   display: flex;
@@ -489,9 +584,40 @@ onShow(load);
 }
 
 .mini-pay {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   margin: 0;
   min-width: 160rpx;
+  height: 64rpx;
   padding: 0 20rpx;
-  line-height: 2.2;
+  line-height: 64rpx;
+}
+
+.record-status {
+  padding: 6rpx 14rpx;
+  border-radius: 999rpx;
+  font-size: 24rpx;
+  font-weight: 700;
+}
+
+.record-status.pending {
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.record-status.paid {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.record-status.failed {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.record-status.refunded {
+  background: #f1f5f9;
+  color: #64748b;
 }
 </style>

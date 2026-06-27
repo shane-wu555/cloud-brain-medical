@@ -1,11 +1,11 @@
 <template>
   <view class="page">
     <view class="card">
-      <view class="title">处置安排</view>
-      <view class="muted">查看输液、换药、注射、针灸等处置项目的缴费、排队和完成情况。</view>
+      <view class="title">{{ pageTitle }}</view>
+      <view class="muted">{{ pageDesc }}</view>
     </view>
 
-    <view v-for="item in disposals" :key="item.id" class="card disposal-card">
+    <view v-for="item in visibleDisposals" :key="item.id" class="card disposal-card">
       <view class="row-between">
         <view class="title-sm">{{ item.projectName }}</view>
         <view :class="['status-tag', statusClass(item.status, item.paymentStatus)]">
@@ -15,6 +15,7 @@
 
       <view class="muted">项目费用：¥{{ amountText(item.amount) }}</view>
       <view v-if="item.visitText" class="muted">计划就诊：{{ item.visitText }}</view>
+      <view class="muted">执行科室：{{ item.executorName || '处置科' }}</view>
       <view v-if="item.executorName" class="muted">执行人员：{{ item.executorName }}</view>
       <view v-if="item.executionLocation" class="muted">执行地点：{{ item.executionLocation }}</view>
       <view v-if="item.purpose" class="section">
@@ -25,7 +26,7 @@
         <view class="label">处置结果</view>
         <view>{{ item.resultSummary }}</view>
       </view>
-      <view v-if="item.completedAt" class="muted">完成时间：{{ item.completedAt }}</view>
+      <view v-if="item.completedAt" class="muted">完成时间：{{ formatDateTime(item.completedAt) }}</view>
 
       <button
         v-if="item.paymentStatus === 'UNPAID'"
@@ -36,15 +37,16 @@
       </button>
     </view>
 
-    <view v-if="!disposals.length" class="card muted">暂无处置项目</view>
+    <view v-if="!visibleDisposals.length" class="card muted">{{ emptyText }}</view>
   </view>
 </template>
 
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { onShow } from '@dcloudio/uni-app';
+import { onLoad, onShow } from '@dcloudio/uni-app';
 import { request } from '../../api/http';
 import { useAuthStore } from '../../stores/auth';
+import { formatDateTime } from '../../utils/format';
 
 interface Appointment {
   id: string;
@@ -52,6 +54,7 @@ interface Appointment {
   doctorName: string;
   visitDate: string;
   period: string;
+  startTime?: string | number[] | { hour?: number; minute?: number; second?: number };
 }
 
 interface MedicalOrder {
@@ -66,26 +69,76 @@ interface MedicalOrder {
   executionLocation: string;
   queueNumber: number | null;
   resultSummary: string;
+  createdAt: string;
   completedAt: string;
 }
 
 const orders = ref<MedicalOrder[]>([]);
 const appointments = ref<Appointment[]>([]);
 const auth = useAuthStore();
+const mode = ref<'arrangement' | 'record'>('arrangement');
 
 const appointmentMap = computed(() => new Map(appointments.value.map((item) => [item.id, item])));
 const disposals = computed(() =>
-  orders.value.map((item) => {
-    const appointment = appointmentMap.value.get(item.appointmentId);
-    return {
-      ...item,
-      visitText: appointment ? `${appointment.visitDate} ${appointment.period} · ${appointment.departmentName}` : ''
-    };
-  })
+  orders.value
+    .map((item) => {
+      const appointment = appointmentMap.value.get(item.appointmentId);
+      return {
+        ...item,
+        visitText: appointment ? `${appointment.visitDate} ${normalizeStartTime(appointment.startTime) || appointment.period} · ${appointment.departmentName}` : '',
+        sortTime: item.completedAt || appointmentSortTime(appointment) || item.createdAt || ''
+      };
+    })
+    .sort((a, b) => b.sortTime.localeCompare(a.sortTime))
 );
+const visibleDisposals = computed(() =>
+  disposals.value.filter((item) =>
+    mode.value === 'arrangement'
+      ? item.paymentStatus === 'UNPAID' || !['COMPLETED', 'MISSED'].includes(item.status)
+      : ['COMPLETED', 'MISSED'].includes(item.status)
+  )
+);
+const pageTitle = computed(() => (mode.value === 'arrangement' ? '待处置安排' : '处置记录'));
+const pageDesc = computed(() =>
+  mode.value === 'arrangement'
+    ? '查看待处理处置项目、执行科室、地点和当前状态。'
+    : '查看已完成或已顺延的处置项目和结果信息。'
+);
+const emptyText = computed(() => (mode.value === 'arrangement' ? '暂无待处置项目' : '暂无处置记录'));
+
+onLoad((options) => {
+  mode.value = options?.mode === 'record' ? 'record' : 'arrangement';
+  uni.setNavigationBarTitle({ title: pageTitle.value });
+});
 
 function amountText(value: number) {
   return Number(value ?? 0).toFixed(2);
+}
+
+function appointmentSortTime(appointment?: Appointment) {
+  if (!appointment) {
+    return '';
+  }
+  const startTime = normalizeStartTime(appointment.startTime) || '00:00';
+  return `${appointment.visitDate}T${startTime}:00`;
+}
+
+function normalizeStartTime(value: Appointment['startTime']) {
+  if (!value) {
+    return '';
+  }
+  if (typeof value === 'string') {
+    return value.slice(0, 5);
+  }
+  if (Array.isArray(value) && value.length >= 2) {
+    return `${String(value[0]).padStart(2, '0')}:${String(value[1]).padStart(2, '0')}`;
+  }
+  const hour = value.hour;
+  const minute = value.minute;
+  if (typeof hour === 'number' && typeof minute === 'number') {
+    return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+  }
+  return '';
 }
 
 function statusLabel(status: MedicalOrder['status'], paymentStatus: MedicalOrder['paymentStatus']) {

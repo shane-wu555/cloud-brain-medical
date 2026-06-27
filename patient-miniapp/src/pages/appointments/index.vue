@@ -2,36 +2,52 @@
   <view class="page">
     <view class="card">
       <view class="title">我的挂号</view>
-      <view v-for="item in appointments" :key="item.id" class="row">
-        <text>{{ item.departmentName }} · {{ item.doctorName }}</text>
-        <text class="muted">{{ item.businessNo }} · {{ item.visitDate }} · {{ appointmentStatusLabel(item) }}</text>
-        <view class="actions">
-          <button v-if="canCancel(item)" size="mini" @click="cancel(item)">{{ cancelLabel(item) }}</button>
-          <button v-if="canRevisit(item)" size="mini" class="btn-revisit" @click="revisit(item)">复诊报到</button>
+      <view class="muted">查看预约时间、就诊医生和当前状态</view>
+    </view>
+
+    <view v-for="item in visibleAppointments" :key="item.id" class="card appointment-card">
+      <view class="row-between">
+        <view class="appointment-main">
+          <view class="title-sm">{{ item.departmentName || '门诊科室' }}</view>
+          <view class="doctor-line">{{ item.doctorName || '待分配医生' }}</view>
         </view>
+        <view :class="['status-tag', appointmentStatusClass(item)]">{{ appointmentStatusLabel(item) }}</view>
+      </view>
+
+      <view class="visit-line">{{ visitTimeText(item) }}</view>
+
+      <view v-if="canCancel(item) || canRevisit(item)" class="action-row">
+        <button v-if="canCancel(item)" class="cancel-button" @click="cancel(item)">{{ cancelLabel(item) }}</button>
+        <button v-if="canRevisit(item)" class="revisit-button" @click="revisit(item)">申请复诊</button>
       </view>
     </view>
+
+    <view v-if="!visibleAppointments.length" class="card muted">暂无挂号记录</view>
   </view>
 </template>
-
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { onShow } from '@dcloudio/uni-app';
 import { request } from '../../api/http';
 import { useAuthStore } from '../../stores/auth';
 
 interface Appointment {
   id: string;
-  businessNo: string;
+  businessNo?: string;
   departmentName: string;
   doctorName: string;
   visitDate: string;
+  period?: string;
+  startTime?: string | number[] | { hour?: number; minute?: number; second?: number };
   status: string;
   paymentStatus?: string;
 }
 
 const auth = useAuthStore();
 const appointments = ref<Appointment[]>([]);
+const visibleAppointments = computed(() =>
+  [...appointments.value].sort((a, b) => appointmentSortTime(b).localeCompare(appointmentSortTime(a)))
+);
 
 function todayStr() {
   const d = new Date();
@@ -43,12 +59,71 @@ function todayStr() {
 
 function appointmentStatusLabel(item: Appointment) {
   if (item.paymentStatus === 'REFUNDED') return '已退号';
-  if (item.status === 'PENDING_PAYMENT') return '待支付';
-  if (['WAITING', 'CALLED', 'IN_VISIT'].includes(item.status)) return '已挂号';
-  if (item.status === 'REVISIT_WAITING') return '复诊候诊中';
-  if (item.status === 'CANCELLED') return '已取消';
-  if (item.status === 'FINISHED') return '已完成';
-  return item.status;
+  if (item.status === 'WAITING' || item.status === 'IN_VISIT') {
+    return hasVisitStarted(item) ? '就诊中' : '待就诊';
+  }
+  return {
+    PENDING_PAYMENT: '待缴费',
+    CALLED: '已叫号',
+    REVISIT_WAITING: '复诊等待',
+    CANCELLED: '已取消',
+    FINISHED: '已完成',
+    EXPIRED: '已过期'
+  }[item.status] ?? item.status;
+}
+
+function appointmentStatusClass(item: Appointment) {
+  if (item.paymentStatus === 'REFUNDED') return 'cancelled';
+  if (item.status === 'WAITING' || item.status === 'IN_VISIT') {
+    return hasVisitStarted(item) ? 'progress' : 'queued';
+  }
+  return {
+    PENDING_PAYMENT: 'pending',
+    CALLED: 'progress',
+    REVISIT_WAITING: 'queued',
+    CANCELLED: 'cancelled',
+    FINISHED: 'done',
+    EXPIRED: 'cancelled'
+  }[item.status] ?? 'muted-tag';
+}
+
+function appointmentDateTime(item: Appointment) {
+  const time = normalizeStartTime(item.startTime) || '00:00';
+  const parsed = new Date(`${item.visitDate}T${time}:00`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function hasVisitStarted(item: Appointment) {
+  const start = appointmentDateTime(item);
+  return !!start && start.getTime() <= Date.now();
+}
+
+function visitTimeText(item: Appointment) {
+  const startTime = normalizeStartTime(item.startTime);
+  return [item.visitDate, startTime || item.period].filter(Boolean).join(' ');
+}
+
+function appointmentSortTime(item: Appointment) {
+  const startTime = normalizeStartTime(item.startTime) || '00:00';
+  return `${item.visitDate}T${startTime}:00`;
+}
+
+function normalizeStartTime(value: Appointment['startTime']) {
+  if (!value) {
+    return '';
+  }
+  if (typeof value === 'string') {
+    return value.slice(0, 5);
+  }
+  if (Array.isArray(value) && value.length >= 2) {
+    return `${String(value[0]).padStart(2, '0')}:${String(value[1]).padStart(2, '0')}`;
+  }
+  const hour = value.hour;
+  const minute = value.minute;
+  if (typeof hour === 'number' && typeof minute === 'number') {
+    return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+  }
+  return '';
 }
 
 function canCancel(item: Appointment) {
@@ -102,9 +177,102 @@ async function revisit(item: Appointment) {
   }
 }
 </script>
-
 <style scoped>
-.row { display: flex; flex-direction: column; gap: 8rpx; padding: 20rpx 0; border-bottom: 1px solid #eee; }
-.actions { display: flex; gap: 16rpx; margin-top: 8rpx; }
-.btn-revisit { background: #1565c0 !important; color: #fff !important; }
+.appointment-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+  border-left: 8rpx solid #2f80ed;
+}
+
+.row-between {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16rpx;
+}
+
+.title-sm {
+  color: #172033;
+  font-size: 34rpx;
+  font-weight: 800;
+}
+
+.appointment-main {
+  min-width: 0;
+}
+
+.doctor-line {
+  margin-top: 8rpx;
+  color: #334155;
+  font-size: 28rpx;
+}
+
+.visit-line {
+  padding: 18rpx;
+  border-radius: 14rpx;
+  background: #f8fafc;
+  color: #0f766e;
+  font-size: 28rpx;
+  font-weight: 700;
+}
+
+.status-tag {
+  padding: 6rpx 14rpx;
+  border-radius: 999rpx;
+  font-size: 22rpx;
+  white-space: nowrap;
+}
+
+.pending {
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.queued {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.progress {
+  background: #ecfeff;
+  color: #0f766e;
+}
+
+.done {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.cancelled,
+.muted-tag {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.action-row {
+  display: flex;
+  gap: 16rpx;
+  flex-wrap: wrap;
+}
+
+.cancel-button,
+.revisit-button {
+  align-self: flex-start;
+  min-width: 160rpx;
+  height: 64rpx;
+  margin: 0;
+  padding: 0 24rpx;
+  border-radius: 10rpx;
+  background: #eef6ff;
+  color: #2f80ed;
+  font-size: 26rpx;
+  font-weight: 700;
+  line-height: 64rpx;
+}
+
+.revisit-button {
+  background: #ecfdf5;
+  color: #0f766e;
+}
 </style>

@@ -1,8 +1,13 @@
 <template>
-  <view class="page">
-    <view class="card">
-      <view class="title">患者微信小程序</view>
-      <view class="muted">注册、登录后可继续使用 AI 问诊和线上挂号</view>
+  <view class="page login-page">
+    <view class="login-hero">
+      <view class="hero-title">智慧云脑诊疗</view>
+      <view class="hero-subtitle">登录后使用 AI 问诊、预约挂号、缴费和报告查询</view>
+    </view>
+
+    <view class="login-card">
+      <view class="title">患者登录</view>
+      <view class="muted">请选择登录方式并完成身份验证</view>
 
       <view class="tabs">
         <text
@@ -55,17 +60,12 @@
         </text>
       </view>
 
-      <view v-if="devCode" class="muted">开发模式验证码：{{ devCode }}</view>
-      <view class="muted">接口地址：{{ apiBaseUrl }}</view>
-      <view class="debug">调试状态：{{ debugMessage }}</view>
     </view>
   </view>
 </template>
 
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { onShow } from '@dcloudio/uni-app';
-import { API_BASE_URL } from '../../api/http';
 import { useAuthStore } from '../../stores/auth';
 
 type Mode = 'PASSWORD' | 'SMS' | 'REGISTER' | 'RESET';
@@ -78,9 +78,6 @@ const phone = ref('13800000011');
 const password = ref('abc12345');
 const name = ref('新患者');
 const smsCode = ref('');
-const devCode = ref('');
-const apiBaseUrl = API_BASE_URL;
-const debugMessage = ref('页面已加载，等待操作');
 
 const modeTabs = [
   { value: 'PASSWORD' as Mode, label: '密码登录' },
@@ -108,26 +105,16 @@ const actionTabs = computed(() => {
   return actions;
 });
 
-onShow(() => {
-  debugMessage.value = `页面显示成功，当前模式：${mode.value}`;
-  console.log('login page onShow', { apiBaseUrl, mode: mode.value });
-});
-
 function switchMode(nextMode: Mode) {
   mode.value = nextMode;
-  debugMessage.value = `已切换到${modeTabs.find((item) => item.value === nextMode)?.label}`;
-  console.log('login switchMode', { nextMode });
 }
 
 function handleAction(action: ActionType) {
-  console.log('login handleAction', { action, mode: mode.value });
   if (action === 'SEND_CODE') {
-    debugMessage.value = '已触发获取验证码操作';
     void sendCode();
     return;
   }
 
-  debugMessage.value = `已触发${submitLabel.value}操作`;
   void submit();
 }
 
@@ -146,8 +133,6 @@ function currentPhone() {
 }
 
 function navigateToHome(successMessage: string) {
-  debugMessage.value = `${successMessage}，准备跳转首页`;
-  console.log('login navigateToHome', { mode: mode.value });
   uni.showToast({ title: successMessage, icon: 'success' });
   setTimeout(() => {
     uni.reLaunch({ url: '/pages/home/index' });
@@ -156,8 +141,6 @@ function navigateToHome(successMessage: string) {
 
 async function sendCode() {
   const normalizedPhone = currentPhone();
-  debugMessage.value = `开始请求验证码，模式=${mode.value}，手机号=${normalizedPhone}`;
-  console.log('login sendCode start', { mode: mode.value, phone: normalizedPhone });
 
   try {
     const purpose: SmsPurpose =
@@ -166,21 +149,14 @@ async function sendCode() {
         : mode.value === 'RESET'
           ? 'RESET_PASSWORD'
           : 'LOGIN';
-    const result = await auth.sendCode(normalizedPhone, purpose);
-    devCode.value = result.devCode ?? '';
-    if (result.devCode) {
-      smsCode.value = result.devCode;
-    }
-    debugMessage.value = `验证码请求成功，expiresIn=${result.expiresIn}`;
+    await auth.sendCode(normalizedPhone, purpose);
   } catch (error) {
-    debugMessage.value = `验证码请求失败：${(error as Error).message}`;
     uni.showToast({ title: (error as Error).message, icon: 'none' });
   }
 }
 
 async function submit() {
   const normalizedPhone = currentPhone();
-  debugMessage.value = `开始请求，模式=${mode.value}`;
 
   try {
     if (mode.value === 'PASSWORD') {
@@ -202,31 +178,67 @@ async function submit() {
     }
 
     await auth.resetPassword(normalizedPhone, smsCode.value, password.value);
-    debugMessage.value = '密码重置成功，请使用新密码登录';
     uni.showToast({ title: '密码已重置', icon: 'success' });
     mode.value = 'PASSWORD';
   } catch (error) {
-    debugMessage.value = `请求失败：${(error as Error).message}`;
     uni.showToast({ title: (error as Error).message, icon: 'none' });
   }
 }
 </script>
 
 <style scoped>
+.login-page {
+  padding-top: 0;
+  background: linear-gradient(180deg, #48a4f5 0, #48a4f5 280rpx, #f2f7ff 280rpx, #f2f7ff 100%);
+}
+
+.login-hero {
+  padding: 58rpx 8rpx 56rpx;
+  color: #fff;
+}
+
+.hero-title {
+  font-size: 50rpx;
+  font-weight: 900;
+}
+
+.hero-subtitle {
+  margin-top: 16rpx;
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 28rpx;
+  line-height: 1.55;
+}
+
+.login-card {
+  padding: 36rpx 30rpx;
+  border-radius: 24rpx;
+  background: #fff;
+  box-shadow: 0 14rpx 38rpx rgba(31, 84, 140, 0.12);
+}
+
 .tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 20rpx;
-  margin: 28rpx 0 18rpx;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12rpx;
+  margin: 32rpx 0 22rpx;
+  padding: 10rpx;
+  border-radius: 16rpx;
+  background: #f1f6fd;
 }
 
 .tabs text {
+  padding: 16rpx 8rpx;
+  border-radius: 12rpx;
   color: #64748b;
+  font-size: 27rpx;
+  font-weight: 700;
+  text-align: center;
 }
 
 .tabs .active {
-  color: #0f766e;
-  font-weight: 700;
+  background: #fff;
+  color: #2f80ed;
+  box-shadow: 0 6rpx 18rpx rgba(47, 128, 237, 0.14);
 }
 
 .phone-row,
@@ -238,10 +250,12 @@ async function submit() {
 
 .phone-prefix {
   min-width: 88rpx;
-  padding: 24rpx 18rpx;
-  border-radius: 16rpx;
-  background: #f8fafc;
-  color: #0f172a;
+  padding: 22rpx 18rpx;
+  border: 1px solid #d9e6f6;
+  border-radius: 12rpx;
+  background: #f8fbff;
+  color: #1f2937;
+  font-size: 30rpx;
   text-align: center;
   box-sizing: border-box;
 }
@@ -260,30 +274,23 @@ async function submit() {
 
 .action-link {
   display: block;
-  padding: 24rpx 20rpx;
-  border-radius: 16rpx;
+  padding: 22rpx 20rpx;
+  border-radius: 12rpx;
   text-align: center;
-  font-size: 34rpx;
-  font-weight: 700;
+  font-size: 32rpx;
+  font-weight: 800;
   box-sizing: border-box;
 }
 
 .primary-action {
-  background: #0f766e;
+  background: linear-gradient(135deg, #4aa5ff 0%, #2f80ed 100%);
   color: #ffffff;
 }
 
 .secondary-action {
-  background: #f8fafc;
-  color: #0f766e;
-  border: 1px solid #99f6e4;
+  background: #eef6ff;
+  color: #2f80ed;
+  border: 1px solid #cfe5ff;
 }
 
-.debug {
-  margin-top: 12rpx;
-  color: #b45309;
-  font-size: 24rpx;
-  line-height: 1.6;
-  word-break: break-all;
-}
 </style>

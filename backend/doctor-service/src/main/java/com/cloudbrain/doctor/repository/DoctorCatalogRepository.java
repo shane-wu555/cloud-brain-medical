@@ -25,8 +25,10 @@ public class DoctorCatalogRepository {
     public List<Doctor> doctors(String departmentId) {
         StringBuilder sql = new StringBuilder("""
                 select d.id,d.employee_no,d.name,d.title,d.department_id,p.name,d.specialty,d.role_type
-                from outpatient_doctor d join department p on p.id=d.department_id
-                where d.active
+                from doctor d
+                join department p on p.id=d.department_id
+                left join outpatient_doctor od on od.doctor_id=d.id
+                where d.active and d.role_type='OUTPATIENT_DOCTOR'
                 """);
         List<Object> args = new ArrayList<>();
         if (departmentId != null && !departmentId.isBlank()) {
@@ -39,14 +41,26 @@ public class DoctorCatalogRepository {
     }
     public Doctor createDoctor(String employeeNo, String name, String title, String departmentId, String roleType, String specialty) {
         String id = UUID.randomUUID().toString();
-        jdbc.update("insert into outpatient_doctor (id,employee_no,name,title,department_id,role_type,specialty) values (?,?,?,?,?,?,?)",
+        jdbc.update("insert into doctor (id,employee_no,name,title,department_id,role_type,specialty) values (?,?,?,?,?,?,?)",
                 id, employeeNo, name, title, departmentId, roleType, specialty);
+        jdbc.update("""
+                insert into outpatient_clinic_room (id,department_id,name,location)
+                select ?,id,name || ' Default Room','Outpatient Building'
+                from department
+                where id=?
+                on conflict (id) do nothing
+                """, "room-" + departmentId, departmentId);
+        jdbc.update("""
+                insert into outpatient_doctor (doctor_id,clinic_room_id)
+                values (?,?)
+                on conflict (doctor_id) do update set clinic_room_id=excluded.clinic_room_id
+                """, id, "room-" + departmentId);
         return doctors(departmentId).stream().filter(d -> d.id().equals(id)).findFirst().orElseThrow();
     }
     public List<Schedule> schedules(String doctorId, String departmentId) {
         StringBuilder sql = new StringBuilder("""
                 select s.id,s.doctor_id,d.name,s.department_id,s.work_date,s.period,s.capacity,s.status
-                from doctor_schedule s join outpatient_doctor d on d.id=s.doctor_id
+                from doctor_schedule s join doctor d on d.id=s.doctor_id
                 where 1 = 1
                 """);
         List<Object> args = new ArrayList<>();
@@ -64,7 +78,7 @@ public class DoctorCatalogRepository {
     public Schedule findSchedule(String id) {
         return jdbc.query("""
                 select s.id,s.doctor_id,d.name,s.department_id,s.work_date,s.period,s.capacity,s.status
-                from doctor_schedule s join outpatient_doctor d on d.id=s.doctor_id where s.id=?
+                from doctor_schedule s join doctor d on d.id=s.doctor_id where s.id=?
                 """, (rs, row) -> mapSchedule(rs), id).stream().findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("排班不存在"));
     }
