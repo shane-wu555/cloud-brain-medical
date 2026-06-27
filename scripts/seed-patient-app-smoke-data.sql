@@ -41,7 +41,7 @@ values
     ),
     (
         'doctor-test-neuro-002',
-        'doctor-neuro-02',
+        'D1002',
         '$2a$10$7NukEsugMLsxrPkaBLnhuOHHhSQg2RjHt4RiGYxJNx7pq9cyG6bL.',
         '13700000021',
         '李神内医生',
@@ -52,7 +52,7 @@ values
     ),
     (
         'doctor-test-neuro-003',
-        'doctor-neuro-03',
+        'D1003',
         '$2a$10$7NukEsugMLsxrPkaBLnhuOHHhSQg2RjHt4RiGYxJNx7pq9cyG6bL.',
         '13700000022',
         '王神内医生',
@@ -63,7 +63,7 @@ values
     ),
     (
         'doctor-test-general-002',
-        'doctor-general-02',
+        'D2002',
         '$2a$10$7NukEsugMLsxrPkaBLnhuOHHhSQg2RjHt4RiGYxJNx7pq9cyG6bL.',
         '13700000023',
         '赵全科医生',
@@ -74,7 +74,7 @@ values
     ),
     (
         'doctor-test-general-003',
-        'doctor-general-03',
+        'D2003',
         '$2a$10$7NukEsugMLsxrPkaBLnhuOHHhSQg2RjHt4RiGYxJNx7pq9cyG6bL.',
         '13700000024',
         '孙全科医生',
@@ -85,7 +85,7 @@ values
     ),
     (
         'doctor-test-rehab-001',
-        'doctor-rehab-01',
+        'D3001',
         '$2a$10$7NukEsugMLsxrPkaBLnhuOHHhSQg2RjHt4RiGYxJNx7pq9cyG6bL.',
         '13700000025',
         '周康复医生',
@@ -94,8 +94,9 @@ values
         true,
         now()
     )
-on conflict (username) do update
+on conflict (id) do update
 set password = excluded.password,
+    username = excluded.username,
     phone = excluded.phone,
     name = excluded.name,
     role = excluded.role,
@@ -166,15 +167,16 @@ set name = excluded.name,
     description = excluded.description,
     active = excluded.active;
 
-insert into doctor.doctor (id, name, title, department_id, role_type, specialty, active)
+insert into doctor.outpatient_doctor (id, employee_no, name, title, department_id, role_type, specialty, active)
 values
-    ('doctor-test-neuro-002', '李神内医生', '副主任医师', 'dept-neuro', 'OUTPATIENT_DOCTOR', '眩晕、偏头痛、脑血管病随访', true),
-    ('doctor-test-neuro-003', '王神内医生', '主治医师', 'dept-neuro', 'OUTPATIENT_DOCTOR', '睡眠障碍、头晕、神经康复随访', true),
-    ('doctor-test-general-002', '赵全科医生', '副主任医师', 'dept-general', 'OUTPATIENT_DOCTOR', '高血压、糖尿病、发热门诊', true),
-    ('doctor-test-general-003', '孙全科医生', '主治医师', 'dept-general', 'OUTPATIENT_DOCTOR', '呼吸道感染、慢病随访', true),
-    ('doctor-test-rehab-001', '周康复医生', '主治医师', 'dept-rehab', 'OUTPATIENT_DOCTOR', '针灸、换药、术后康复', true)
+    ('doctor-test-neuro-002', 'D1002', '李神内医生', '副主任医师', 'dept-neuro', 'OUTPATIENT_DOCTOR', '眩晕、偏头痛、脑血管病随访', true),
+    ('doctor-test-neuro-003', 'D1003', '王神内医生', '主治医师', 'dept-neuro', 'OUTPATIENT_DOCTOR', '睡眠障碍、头晕、神经康复随访', true),
+    ('doctor-test-general-002', 'D2002', '赵全科医生', '副主任医师', 'dept-general', 'OUTPATIENT_DOCTOR', '高血压、糖尿病、发热门诊', true),
+    ('doctor-test-general-003', 'D2003', '孙全科医生', '主治医师', 'dept-general', 'OUTPATIENT_DOCTOR', '呼吸道感染、慢病随访', true),
+    ('doctor-test-rehab-001', 'D3001', '周康复医生', '主治医师', 'dept-rehab', 'OUTPATIENT_DOCTOR', '针灸、换药、术后康复', true)
 on conflict (id) do update
-set name = excluded.name,
+set employee_no = excluded.employee_no,
+    name = excluded.name,
     title = excluded.title,
     department_id = excluded.department_id,
     role_type = excluded.role_type,
@@ -780,6 +782,20 @@ set appointment_id = excluded.appointment_id,
     result_summary = excluded.result_summary,
     started_at = excluded.started_at,
     completed_at = excluded.completed_at;
+
+update medical_order.medical_order
+set executor_workspace_id = executor_id,
+    executor_workspace_name = executor_name,
+    executor_workspace_location = execution_location
+where id in (
+    'order-test-check-report-001',
+    'order-test-lab-report-001',
+    'order-test-disposal-done-001',
+    'order-test-disposal-wait-001',
+    'order-test-check-unpaid-001',
+    'order-test-lab-unpaid-001',
+    'order-test-disposal-unpaid-001'
+);
 
 insert into medical_order.medical_report (
     id, medical_order_id, report_type, status, findings, conclusion, advice, created_by_type,

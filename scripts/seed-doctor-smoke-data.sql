@@ -87,7 +87,7 @@ insert into auth.user_account (
 )
 select
     id,
-    username,
+    'D' || right(phone, 5),
     '$2a$10$7NukEsugMLsxrPkaBLnhuOHHhSQg2RjHt4RiGYxJNx7pq9cyG6bL.',
     phone,
     name,
@@ -96,8 +96,9 @@ select
     true,
     now()
 from doctor_seed
-on conflict (username) do update
-set password = excluded.password,
+on conflict (id) do update
+set username = excluded.username,
+    password = excluded.password,
     phone = excluded.phone,
     name = excluded.name,
     role = excluded.role,
@@ -155,11 +156,29 @@ with doctor_seed(id, name, title, department_id, specialty) as (
         ('doc-smoke-ent-05', '顾耳鼻喉', '副主任医师', 'dept-smoke-ent', '儿童鼾症、扁桃体疾病'),
         ('doc-smoke-ent-06', '夏耳鼻喉', '医师', 'dept-smoke-ent', '耳鼻喉常见病复诊')
 )
-insert into doctor.doctor (id, name, title, department_id, role_type, specialty, active)
-select id, name, title, department_id, 'OUTPATIENT_DOCTOR', specialty, true
+insert into doctor.outpatient_doctor (id, employee_no, name, title, department_id, role_type, specialty, active)
+select
+    id,
+    case
+        when id like 'doc-smoke-card-%' then 'D100' || right(id, 2)
+        when id like 'doc-smoke-resp-%' then 'D101' || right(id, 2)
+        when id like 'doc-smoke-endo-%' then 'D102' || right(id, 2)
+        when id like 'doc-smoke-dige-%' then 'D103' || right(id, 2)
+        when id like 'doc-smoke-orth-%' then 'D104' || right(id, 2)
+        when id like 'doc-smoke-derm-%' then 'D105' || right(id, 2)
+        when id like 'doc-smoke-pedi-%' then 'D106' || right(id, 2)
+        else 'D107' || right(id, 2)
+    end,
+    name,
+    title,
+    department_id,
+    'OUTPATIENT_DOCTOR',
+    specialty,
+    true
 from doctor_seed
 on conflict (id) do update
-set name = excluded.name,
+set employee_no = excluded.employee_no,
+    name = excluded.name,
     title = excluded.title,
     department_id = excluded.department_id,
     role_type = excluded.role_type,

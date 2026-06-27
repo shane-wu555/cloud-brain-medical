@@ -175,7 +175,7 @@ where id in (
     'schedule-test-rehab-001-pm'
 );
 
-delete from doctor.doctor
+delete from doctor.outpatient_doctor
 where id in (
     'doctor-test-neuro-002',
     'doctor-test-neuro-003',
@@ -183,6 +183,14 @@ where id in (
     'doctor-test-general-003',
     'doctor-test-rehab-001'
 );
+
+do $$
+begin
+    if to_regclass('doctor.outpatient_clinic_room') is not null then
+        delete from doctor.outpatient_clinic_room
+        where department_id = 'dept-rehab';
+    end if;
+end $$;
 
 delete from doctor.department
 where id = 'dept-rehab';
