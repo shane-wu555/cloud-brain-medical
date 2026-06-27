@@ -5,7 +5,7 @@
       <view class="muted">查看本次和历史就诊病历摘要</view>
     </view>
 
-    <view v-for="record in records" :key="record.id" class="card record-card">
+    <view v-for="record in visibleRecords" :key="record.id" class="card record-card">
       <view class="row-between">
         <view class="title-sm">{{ record.departmentName }} · {{ record.visitDate }} {{ record.period }}</view>
         <view :class="['status-tag', record.status.toLowerCase()]">{{ statusLabel(record.status) }}</view>
@@ -33,13 +33,13 @@
       </view>
     </view>
 
-    <view v-if="!records.length" class="card muted">暂无电子病历</view>
+    <view v-if="!visibleRecords.length" class="card muted">暂无电子病历</view>
   </view>
 </template>
 
 <script setup lang="ts">
 import { onShow } from '@dcloudio/uni-app';
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import { request } from '../../api/http';
 import { useAuthStore } from '../../stores/auth';
 
@@ -70,6 +70,9 @@ interface MedicalRecord {
 
 const records = ref<MedicalRecord[]>([]);
 const auth = useAuthStore();
+const visibleRecords = computed(() =>
+  [...records.value].sort((a, b) => medicalRecordSortTime(b).localeCompare(medicalRecordSortTime(a)))
+);
 
 function statusLabel(status: MedicalRecord['status']) {
   return {
@@ -77,6 +80,10 @@ function statusLabel(status: MedicalRecord['status']) {
     ACTIVE: '就诊中',
     ARCHIVED: '已归档'
   }[status] ?? status;
+}
+
+function medicalRecordSortTime(record: MedicalRecord) {
+  return record.updatedAt || record.visitDate || '';
 }
 
 onShow(async () => {

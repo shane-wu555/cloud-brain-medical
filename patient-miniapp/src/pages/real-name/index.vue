@@ -1,9 +1,14 @@
 <template>
-  <view class="page">
-    <view class="card">
-      <view class="title">就诊人管理</view>
-      <view class="muted">同一账号最多添加 5 个就诊人，业务操作会使用当前绑定的就诊人。</view>
+  <view class="page patient-page">
+    <view class="page-header">
+      <view class="header-title">添加就诊人</view>
+      <view class="header-subtitle">实名制就诊，请如实填写就诊信息</view>
+    </view>
 
+    <view class="notice">实名制就诊，请如实填写就诊信息</view>
+
+    <view class="form-card">
+      <view class="block-title"><text></text>就诊人信息</view>
       <view v-if="auth.patients.length" class="patient-list">
         <view v-for="patient in auth.patients" :key="patient.id" class="patient-row">
           <view>
@@ -24,20 +29,40 @@
       <view v-else class="empty">暂无就诊人</view>
     </view>
 
-    <view v-if="auth.patients.length < 5" class="card">
-      <view class="title">添加就诊人</view>
-      <input v-model="form.name" class="input" placeholder="姓名" />
+    <view v-if="auth.patients.length < 5" class="form-card">
+      <view class="block-title"><text></text>新增就诊人</view>
+      <view class="form-row">
+        <text class="field-label">姓名<text class="required">*</text></text>
+        <input v-model="form.name" class="field-input" placeholder="请填写就诊人姓名" placeholder-class="placeholder" />
+      </view>
       <picker :range="idTypeOptions" range-key="label" :value="selectedIdTypeIndex" @change="onIdTypeChange($event)">
-        <view class="input">{{ idTypeLabel(form.idType) || '选择证件类型' }}</view>
+        <view class="form-row">
+          <text class="field-label">证件类型<text class="required">*</text></text>
+          <view class="field-value">{{ idTypeLabel(form.idType) || '选择证件类型' }} <text class="chevron">›</text></view>
+        </view>
       </picker>
-      <input v-model="form.idNumber" class="input" placeholder="证件号码" />
+      <view class="form-row">
+        <text class="field-label">证件号码<text class="required">*</text></text>
+        <input v-model="form.idNumber" class="field-input" placeholder="请填写就诊人证件号码" placeholder-class="placeholder" />
+      </view>
       <picker :range="genderOptions" range-key="label" :value="selectedGenderIndex" @change="onGenderChange($event)">
-        <view class="input">{{ genderLabel(form.gender) || '选择性别' }}</view>
+        <view class="form-row">
+          <text class="field-label">性别<text class="required">*</text></text>
+          <view class="field-value">{{ genderLabel(form.gender) || '选择性别' }} <text class="chevron">›</text></view>
+        </view>
       </picker>
-      <picker mode="date" :value="form.birthDate" @change="onBirthDateChange($event)">
-        <view class="input">{{ form.birthDate || '选择出生日期' }}</view>
-      </picker>
-      <button class="button" :disabled="loading" @tap="submit()">
+      <view class="form-row birth-row">
+        <text class="field-label">出生日期<text class="required">*</text></text>
+        <view class="birth-inputs">
+          <input v-model="form.birthYear" class="birth-input year-input" type="number" maxlength="4" placeholder="年" placeholder-class="placeholder" />
+          <text>年</text>
+          <input v-model="form.birthMonth" class="birth-input" type="number" maxlength="2" placeholder="月" placeholder-class="placeholder" />
+          <text>月</text>
+          <input v-model="form.birthDay" class="birth-input" type="number" maxlength="2" placeholder="日" placeholder-class="placeholder" />
+          <text>日</text>
+        </view>
+      </view>
+      <button class="submit-button" :disabled="loading" @tap="submit()">
         {{ loading ? '提交中...' : '添加就诊人' }}
       </button>
     </view>
@@ -70,7 +95,9 @@ const form = reactive({
   idType: 'ID_CARD',
   idNumber: '',
   gender: 'MALE',
-  birthDate: ''
+  birthYear: '',
+  birthMonth: '',
+  birthDay: ''
 });
 
 const selectedIdTypeIndex = computed(() => optionIndex(idTypeOptions, form.idType));
@@ -109,10 +136,6 @@ function onGenderChange(event: { detail: { value: string } }) {
   form.gender = genderOptions[Number(event.detail.value)]?.value || 'UNKNOWN';
 }
 
-function onBirthDateChange(event: { detail: { value: string } }) {
-  form.birthDate = event.detail.value;
-}
-
 async function bind(patientId: string) {
   try {
     await auth.bindPatient(patientId);
@@ -123,7 +146,8 @@ async function bind(patientId: string) {
 }
 
 async function submit() {
-  if (!form.name.trim() || !form.idNumber.trim() || !form.birthDate) {
+  const birthDate = buildBirthDate();
+  if (!form.name.trim() || !form.idNumber.trim() || !birthDate) {
     uni.showToast({ title: '请完整填写就诊人信息', icon: 'none' });
     return;
   }
@@ -143,11 +167,13 @@ async function submit() {
       idType: form.idType,
       idNumber,
       gender: form.gender,
-      birthDate: form.birthDate
+      birthDate
     });
     form.name = '';
     form.idNumber = '';
-    form.birthDate = '';
+    form.birthYear = '';
+    form.birthMonth = '';
+    form.birthDay = '';
     uni.showToast({ title: '已添加就诊人', icon: 'success' });
   } catch (error) {
     uni.showToast({ title: (error as Error).message, icon: 'none' });
@@ -155,14 +181,83 @@ async function submit() {
     loading.value = false;
   }
 }
+
+function buildBirthDate() {
+  const year = Number(form.birthYear);
+  const month = Number(form.birthMonth);
+  const day = Number(form.birthDay);
+  if (!year || !month || !day || year < 1900 || month < 1 || month > 12 || day < 1 || day > 31) {
+    return '';
+  }
+  const date = new Date(year, month - 1, day);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
+    return '';
+  }
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
 </script>
 
 <style scoped>
+.patient-page {
+  padding-top: 0;
+  background: linear-gradient(180deg, #48a4f5 0, #48a4f5 176rpx, #f6f8fb 176rpx, #f6f8fb 100%);
+}
+
+.page-header {
+  padding: 34rpx 4rpx 28rpx;
+  color: #fff;
+  text-align: center;
+}
+
+.header-title {
+  font-size: 46rpx;
+  font-weight: 900;
+}
+
+.header-subtitle {
+  margin-top: 10rpx;
+  color: rgba(255, 255, 255, 0.84);
+  font-size: 27rpx;
+}
+
+.notice {
+  margin: 0 -24rpx 24rpx;
+  padding: 24rpx;
+  background: #fff8e6;
+  color: #b96b18;
+  font-size: 30rpx;
+  font-weight: 700;
+  text-align: center;
+}
+
+.form-card {
+  margin-bottom: 24rpx;
+  padding: 0 30rpx;
+  border-radius: 18rpx;
+  background: #fff;
+  box-shadow: 0 10rpx 30rpx rgba(31, 84, 140, 0.08);
+}
+
+.block-title {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  padding: 30rpx 0 18rpx;
+  color: #2f80ed;
+  font-size: 34rpx;
+  font-weight: 800;
+}
+
+.block-title text {
+  width: 8rpx;
+  height: 36rpx;
+  border-radius: 999rpx;
+  background: #2f80ed;
+}
+
 .patient-list {
   display: flex;
   flex-direction: column;
-  gap: 18rpx;
-  margin-top: 24rpx;
 }
 
 .patient-row {
@@ -170,7 +265,7 @@ async function submit() {
   justify-content: space-between;
   align-items: center;
   gap: 20rpx;
-  padding: 20rpx 0;
+  padding: 24rpx 0;
   border-bottom: 1px solid #e2e8f0;
 }
 
@@ -185,15 +280,99 @@ async function submit() {
   min-width: 120rpx;
   padding: 14rpx 20rpx;
   border-radius: 999rpx;
-  background: #f8fafc;
-  color: #0f766e;
+  background: #eef6ff;
+  color: #2f80ed;
   font-size: 24rpx;
+  font-weight: 700;
   text-align: center;
 }
 
 .empty {
-  margin-top: 24rpx;
+  padding: 20rpx 0 34rpx;
   color: #64748b;
   font-size: 28rpx;
+}
+
+.form-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 104rpx;
+  border-bottom: 1px solid #e8edf3;
+}
+
+.field-label {
+  flex-shrink: 0;
+  color: #2f3542;
+  font-size: 32rpx;
+  font-weight: 700;
+}
+
+.required {
+  color: #d71920;
+}
+
+.field-input {
+  flex: 1;
+  min-width: 0;
+  color: #1f2937;
+  font-size: 31rpx;
+  text-align: right;
+}
+
+.placeholder {
+  color: #c7ccd4;
+}
+
+.field-value {
+  color: #2f3542;
+  font-size: 31rpx;
+}
+
+.birth-row {
+  gap: 18rpx;
+}
+
+.birth-inputs {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8rpx;
+  flex: 1;
+  min-width: 0;
+  color: #2f3542;
+  font-size: 30rpx;
+}
+
+.birth-input {
+  width: 76rpx;
+  height: 64rpx;
+  border-radius: 10rpx;
+  background: #f8fbff;
+  color: #1f2937;
+  font-size: 30rpx;
+  text-align: center;
+}
+
+.year-input {
+  width: 120rpx;
+}
+
+.chevron {
+  margin-left: 12rpx;
+  color: #a9b2bf;
+  font-size: 48rpx;
+  vertical-align: -4rpx;
+}
+
+.submit-button {
+  height: 86rpx;
+  margin: 34rpx 0 30rpx;
+  border-radius: 12rpx;
+  background: linear-gradient(135deg, #4aa5ff 0%, #2f80ed 100%);
+  color: #fff;
+  font-size: 32rpx;
+  font-weight: 800;
+  line-height: 86rpx;
 }
 </style>

@@ -67,7 +67,7 @@ public class AppointmentService {
         validateRequired(request.visitDate(), "visitDate");
         validateRequired(request.period(), "period");
         LocalTime startTime = parseStartTime(request);
-        validateNoRepeatedAppointment(request);
+        validateNoRepeatedAppointment(request, startTime);
 
         if (!slotInventoryRepository.tryLock(request.scheduleId())) {
             throw new IllegalStateException("当前号源已约满或排班不存在");
@@ -85,7 +85,7 @@ public class AppointmentService {
         validateRequired(request.visitDate(), "visitDate");
         validateRequired(request.period(), "period");
         LocalTime startTime = parseStartTime(request);
-        validateNoRepeatedAppointment(request);
+        validateNoRepeatedAppointment(request, startTime);
         if (!slotInventoryRepository.bookOffline(request.scheduleId())) {
             throw new IllegalStateException("当前号源已约满或排班不存在");
         }
@@ -272,8 +272,8 @@ public class AppointmentService {
         };
     }
 
-    private void validateNoRepeatedAppointment(AppointmentController.CreateAppointmentRequest request) {
-        if (appointmentRepository.existsActiveInPeriod(request.patientId(), request.visitDate(), request.period())) {
+    private void validateNoRepeatedAppointment(AppointmentController.CreateAppointmentRequest request, LocalTime startTime) {
+        if (appointmentRepository.existsActiveAtStartTime(request.patientId(), request.visitDate(), startTime)) {
             throw new IllegalStateException("同一就诊人同一时段不能重复预约");
         }
     }

@@ -1,74 +1,150 @@
 <template>
-  <view class="page">
-    <view v-if="aiConsultation" class="card">
-      <view class="title">AI 推荐挂号</view>
-      <view class="muted">{{ aiConsultation.summary }}</view>
-      <view>推荐科室：{{ aiConsultation.recommendedDepartmentName }}</view>
-      <view>风险等级：{{ aiConsultation.riskLevel }}</view>
+  <view class="page booking-page">
+    <view class="booking-hero">
+      <view class="hero-title">线上挂号</view>
+      <view class="hero-subtitle">选择科室、日期和医生时段，确认后前往待缴费</view>
     </view>
 
-    <view class="card">
-      <view class="title">选择科室</view>
-      <picker :range="departments" range-key="name" :value="selectedDepartmentIndex" @change="onDepartmentChange($event)">
-        <view class="input">{{ selectedDepartment?.name ?? '请选择科室' }}</view>
-      </picker>
+    <view v-if="aiConsultation" class="ai-card">
+      <view class="ai-title">AI 推荐</view>
+      <view class="ai-desc">{{ aiConsultation.summary }}</view>
+      <view class="ai-meta">推荐科室：{{ aiConsultation.recommendedDepartmentName }} · 风险等级：{{ aiConsultation.riskLevel }}</view>
     </view>
 
-    <view v-if="availableDates.length" class="card">
-      <view class="title">选择日期</view>
-      <picker :range="availableDates" :value="selectedDateIndex" @change="onDateChange($event)">
-        <view class="input">{{ selectedDate || '请选择日期' }}</view>
-      </picker>
-    </view>
-
-    <view v-if="selectedSchedule" class="card schedule-detail">
-      <view class="schedule-head">
-        <view>
-          <view class="doctor">{{ selectedSchedule.doctorName }}</view>
-          <view class="muted">{{ doctorInfo(selectedSchedule.doctorId) }}</view>
-        </view>
-        <button size="mini" @click="selectedSchedule = null">返回</button>
+    <view class="section-card">
+      <view class="section-title">选择科室</view>
+      <view v-if="isSearchDepartmentEntry" class="single-chip-row">
+        <view class="dept-chip active">{{ selectedDepartment?.name }}</view>
       </view>
-      <view>{{ selectedSchedule.workDate }} · {{ selectedSchedule.period }}</view>
+      <scroll-view v-else scroll-x class="chip-scroll">
+        <view class="chip-row">
+          <view
+            v-for="department in departments"
+            :key="department.id"
+            :class="['dept-chip', selectedDepartmentId === department.id ? 'active' : '']"
+            @tap="selectDepartment(department.id)"
+          >
+            {{ department.name }}
+          </view>
+        </view>
+      </scroll-view>
+    </view>
+
+    <view v-if="availableDates.length" class="date-strip">
+      <scroll-view scroll-x>
+        <view class="date-row">
+          <view
+            v-for="date in availableDates"
+            :key="date"
+            :class="['date-card', selectedDate === date ? 'active' : '']"
+            @tap="selectDate(date)"
+          >
+            <view>{{ weekdayLabel(date) }}</view>
+            <view>{{ shortDate(date) }}</view>
+            <view class="date-status">有号</view>
+          </view>
+        </view>
+      </scroll-view>
+    </view>
+
+    <view v-if="selectedSchedule" class="doctor-detail">
+      <view class="doctor-banner">
+        <view class="avatar">{{ selectedSchedule.doctorName.slice(0, 1) }}</view>
+        <view>
+          <view class="detail-name">{{ selectedSchedule.doctorName }}</view>
+          <view class="detail-meta">{{ selectedDepartment?.name }} · {{ doctorInfo(selectedSchedule.doctorId) }}</view>
+        </view>
+        <button class="back-button" @click="selectedSchedule = null">返回</button>
+      </view>
+
+      <view class="level-row">
+        <view><text class="accent-bar"></text>级别：{{ doctorInfo(selectedSchedule.doctorId) }}</view>
+      </view>
+
       <view class="time-list">
-        <view v-for="slot in selectedSchedule.timeSlots" :key="slot.id" class="time-row">
-          <view>
-            <view class="time-value">{{ slot.startTime }}</view>
-            <view class="muted">余号 {{ slot.available }} / {{ slot.capacity }}</view>
+        <view
+          v-for="slot in selectedSchedule.timeSlots"
+          :key="slot.id"
+          :class="['time-row', slot.available <= 0 ? 'disabled' : '']"
+          @tap="selectSlot(selectedSchedule, slot)"
+        >
+          <view class="time-value">{{ slot.startTime }}</view>
+          <view class="slot-price">¥0.01</view>
+          <view class="slot-button">
+            <text>{{ slot.available > 0 ? '可约' : '满号' }}</text>
+            <text class="slot-left">余号{{ slot.available }}</text>
           </view>
-          <button class="button time-button" :disabled="slot.available <= 0" @click="book(selectedSchedule, slot)">
-            {{ slot.available > 0 ? '挂号并缴费' : '满号' }}
-          </button>
         </view>
       </view>
     </view>
 
-    <view v-for="schedule in filteredSchedules" v-else :key="schedule.id" class="card schedule">
-      <view class="schedule-head">
-        <view>
-          <view class="doctor">{{ schedule.doctorName }}</view>
-          <view class="muted">
-            {{ doctorInfo(schedule.doctorId) }}
+    <view v-for="schedule in filteredSchedules" v-else :key="schedule.id" class="doctor-card" @tap="openSchedule(schedule)">
+      <view class="doctor-main">
+        <view class="avatar">{{ schedule.doctorName.slice(0, 1) }}</view>
+        <view class="doctor-info">
+          <view class="doctor-line">
+            <text class="doctor">{{ schedule.doctorName }}</text>
+            <text class="doctor-title">{{ doctorInfo(schedule.doctorId) }}</text>
           </view>
+          <view class="dept-line">{{ selectedDepartment?.name || '门诊科室' }}</view>
+          <view class="price-line">¥0.01</view>
+          <view class="muted">擅长：{{ doctorInfo(schedule.doctorId) }}</view>
         </view>
-        <view v-if="recommendedDoctorIds.includes(schedule.doctorId)" class="tag">AI 推荐</view>
+        <view :class="['status-badge', schedule.available > 0 ? 'available' : 'full']">
+          <text>{{ schedule.period }}</text>
+          <text>{{ schedule.available > 0 ? '有号' : '满号' }}</text>
+        </view>
       </view>
-
-      <view>{{ schedule.workDate }} · {{ schedule.period }}</view>
-      <view class="muted">{{ schedule.available > 0 ? '有号' : '满号' }} · 余号 {{ schedule.available }} / {{ schedule.capacity }}</view>
-      <button class="button" :disabled="!schedule.timeSlots.length" @click="selectedSchedule = schedule">查看可约时间</button>
+      <view v-if="recommendedDoctorIds.includes(schedule.doctorId)" class="doctor-actions">
+        <view class="recommend-tag">AI 推荐</view>
+      </view>
     </view>
 
-    <view v-if="selectedDepartmentId && !filteredSchedules.length" class="card muted">
+    <view v-if="pendingBooking" class="confirm-mask">
+      <view class="confirm-dialog">
+        <view class="dialog-close" @tap="pendingBooking = null">×</view>
+        <view class="dialog-title">请核对以下挂号信息</view>
+        <view class="dialog-body">
+          <view class="confirm-row">
+            <text class="confirm-label">就诊人：</text>
+            <text class="confirm-value">{{ auth.boundPatient?.name || '当前就诊人' }}</text>
+          </view>
+          <view class="confirm-row">
+            <text class="confirm-label">预约科室：</text>
+            <text>{{ selectedDepartment?.name || '—' }}</text>
+          </view>
+          <view class="confirm-row">
+            <text class="confirm-label">预约医生：</text>
+            <text>{{ pendingBooking.schedule.doctorName }}</text>
+          </view>
+          <view class="confirm-row">
+            <text class="confirm-label">预约时间：</text>
+            <text>{{ formatDate(pendingBooking.schedule.workDate) }} {{ pendingBooking.schedule.period }} {{ pendingBooking.slot.startTime }}</text>
+          </view>
+          <view class="confirm-row">
+            <text class="confirm-label">挂号费：</text>
+            <text class="slot-price">¥0.01</text>
+          </view>
+        </view>
+        <view class="dialog-actions">
+          <button class="dialog-secondary" @tap="pendingBooking = null">返回修改</button>
+          <button class="dialog-primary" @tap="confirmBooking()">确认挂号并缴费</button>
+        </view>
+      </view>
+    </view>
+
+    <view v-if="selectedDepartmentId && !filteredSchedules.length && !selectedSchedule" class="empty-card">
       当前日期暂无可预约医生排班
     </view>
   </view>
 </template>
 
 <script setup lang="ts">
+import { onLoad } from '@dcloudio/uni-app';
 import { computed, onMounted, ref } from 'vue';
 import { request } from '../../api/http';
 import { useAuthStore } from '../../stores/auth';
+import { formatDate } from '../../utils/format';
 
 interface Department {
   id: string;
@@ -77,6 +153,7 @@ interface Department {
 
 interface Doctor {
   id: string;
+  employeeNo?: string;
   name: string;
   title: string;
   departmentId: string;
@@ -127,7 +204,11 @@ const selectedDepartmentId = ref('');
 const schedules = ref<Schedule[]>([]);
 const selectedDate = ref('');
 const selectedSchedule = ref<Schedule | null>(null);
+const pendingBooking = ref<{ schedule: Schedule; slot: TimeSlot } | null>(null);
 const aiConsultation = ref<AiConsultation>();
+const initialDepartmentId = ref('');
+const initialDoctorId = ref('');
+const focusedDoctorId = ref('');
 
 const selectedDepartment = computed(() => departments.value.find((item) => item.id === selectedDepartmentId.value));
 const recommendedDoctorIds = computed(() => aiConsultation.value?.recommendedDoctors.map((item) => item.doctorId) ?? []);
@@ -159,10 +240,15 @@ function isWithinBookingWindow(workDate: string) {
 const bookableSchedules = computed(() =>
   schedules.value.filter((item) => isWithinBookingWindow(item.workDate))
 );
-const availableDates = computed(() => Array.from(new Set(bookableSchedules.value.map((item) => item.workDate))).sort());
+const visibleSchedules = computed(() =>
+  focusedDoctorId.value
+    ? bookableSchedules.value.filter((item) => item.doctorId === focusedDoctorId.value)
+    : bookableSchedules.value
+);
+const availableDates = computed(() => Array.from(new Set(visibleSchedules.value.map((item) => item.workDate))).sort());
 const doctorMap = computed(() => new Map(doctors.value.map((item) => [item.id, item])));
 const filteredSchedules = computed(() =>
-  bookableSchedules.value
+  visibleSchedules.value
     .filter((item) => !selectedDate.value || item.workDate === selectedDate.value)
     .sort((a, b) => {
       const ar = recommendedDoctorIds.value.includes(a.doctorId) ? 0 : 1;
@@ -175,6 +261,7 @@ const filteredSchedules = computed(() =>
 );
 const selectedDepartmentIndex = computed(() => optionIndexById(departments.value, selectedDepartmentId.value));
 const selectedDateIndex = computed(() => optionIndexByValue(availableDates.value, selectedDate.value));
+const isSearchDepartmentEntry = computed(() => !!initialDepartmentId.value && !focusedDoctorId.value);
 
 function doctorInfo(doctorId: string) {
   const doctor = doctorMap.value.get(doctorId);
@@ -217,6 +304,7 @@ function toDepartment(item: Record<string, unknown>): Department {
 function toDoctor(item: Record<string, unknown>): Doctor {
   return {
     id: normalizeText(item.id),
+    employeeNo: normalizeText(item.employeeNo),
     name: normalizeText(item.name),
     title: normalizeText(item.title),
     departmentId: normalizeText(item.departmentId),
@@ -264,6 +352,57 @@ function optionIndexByValue(options: string[], value: string) {
   return index >= 0 ? index : 0;
 }
 
+function resolveInitialDepartmentId() {
+  if (initialDepartmentId.value && departments.value.some((item) => item.id === initialDepartmentId.value)) {
+    return initialDepartmentId.value;
+  }
+
+  const recommendedDepartmentId = aiConsultation.value?.recommendedDepartmentId;
+  if (recommendedDepartmentId && departments.value.some((item) => item.id === recommendedDepartmentId)) {
+    return recommendedDepartmentId;
+  }
+  const recommendedDepartmentName = aiConsultation.value?.recommendedDepartmentName;
+  if (recommendedDepartmentName) {
+    const matched = departments.value.find((item) => item.name === recommendedDepartmentName);
+    if (matched) {
+      return matched.id;
+    }
+  }
+  return departments.value[0]?.id || '';
+}
+
+async function selectDepartment(departmentId: string) {
+  if (selectedDepartmentId.value === departmentId) {
+    return;
+  }
+  selectedSchedule.value = null;
+  pendingBooking.value = null;
+  focusedDoctorId.value = '';
+  initialDoctorId.value = '';
+  selectedDepartmentId.value = departmentId;
+  await loadDepartmentResources();
+}
+
+function selectDate(date: string) {
+  selectedSchedule.value = null;
+  pendingBooking.value = null;
+  selectedDate.value = date;
+  openFocusedDoctorScheduleForDate();
+}
+
+function shortDate(date: string) {
+  return date.slice(5);
+}
+
+function weekdayLabel(date: string) {
+  const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+  const parsed = new Date(`${date}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) {
+    return '日期';
+  }
+  return weekdays[parsed.getDay()];
+}
+
 function syncSelectedDate() {
   if (!availableDates.value.length) {
     selectedDate.value = '';
@@ -272,6 +411,33 @@ function syncSelectedDate() {
   if (!availableDates.value.includes(selectedDate.value)) {
     selectedDate.value = availableDates.value[0];
   }
+}
+
+function openFocusedDoctorScheduleForDate() {
+  if (!focusedDoctorId.value || !selectedDate.value) {
+    return;
+  }
+
+  selectedSchedule.value = visibleSchedules.value.find((item) => item.workDate === selectedDate.value) ?? null;
+}
+
+function openInitialDoctorSchedule() {
+  if (!initialDoctorId.value) {
+    return;
+  }
+
+  focusedDoctorId.value = initialDoctorId.value;
+  syncSelectedDate();
+
+  const matched = visibleSchedules.value.find((item) => item.workDate === selectedDate.value) ?? visibleSchedules.value[0];
+  if (!matched) {
+    uni.showToast({ title: '该医生暂无可约排班', icon: 'none' });
+    return;
+  }
+
+  selectedDate.value = matched.workDate;
+  selectedSchedule.value = matched;
+  initialDoctorId.value = '';
 }
 
 async function loadDepartmentResources() {
@@ -289,21 +455,47 @@ async function loadDepartmentResources() {
 
   doctors.value = doctorList.map(toDoctor);
   schedules.value = scheduleList.map(toSchedule);
-  syncSelectedDate();
+  if (initialDoctorId.value) {
+    openInitialDoctorSchedule();
+  } else {
+    syncSelectedDate();
+  }
 }
 
 async function onDepartmentChange(event: { detail: { value: string } }) {
   selectedSchedule.value = null;
+  pendingBooking.value = null;
   selectedDepartmentId.value = departments.value[Number(event.detail.value)]?.id ?? '';
   await loadDepartmentResources();
 }
 
 function onDateChange(event: { detail: { value: string } }) {
   selectedSchedule.value = null;
+  pendingBooking.value = null;
   selectedDate.value = availableDates.value[Number(event.detail.value)] ?? '';
 }
 
-async function book(schedule: Schedule, slot: TimeSlot) {
+function selectSlot(schedule: Schedule, slot: TimeSlot) {
+  if (slot.available <= 0) {
+    return;
+  }
+  pendingBooking.value = { schedule, slot };
+}
+
+function openSchedule(schedule: Schedule) {
+  if (!schedule.timeSlots.length) {
+    uni.showToast({ title: '暂无可约时间', icon: 'none' });
+    return;
+  }
+  selectedSchedule.value = schedule;
+}
+
+async function confirmBooking() {
+  if (!pendingBooking.value) {
+    return;
+  }
+
+  const { schedule, slot } = pendingBooking.value;
   let patient;
   try {
     patient = auth.requireBoundPatient();
@@ -347,28 +539,12 @@ async function book(schedule: Schedule, slot: TimeSlot) {
       }
     });
 
-    try {
-      await request({
-        url: '/payments/test-callback',
-        method: 'POST',
-        data: {
-          businessType: 'APPOINTMENT',
-          businessId: appointment.id,
-          patientId: patient.id,
-          channel: 'WECHAT',
-          channelTradeNo: `wx-test-${appointment.id}-${Date.now()}`
-        }
-      });
-      uni.showToast({ title: '挂号并缴费成功', icon: 'success' });
-    } catch (paymentError) {
-      console.error('booking payment fallback', paymentError);
-      uni.showToast({ title: '已挂号，请前往待缴费项目完成支付', icon: 'none' });
-      setTimeout(() => {
-        uni.navigateTo({ url: '/pages/pending-payments/index' });
-      }, 400);
-    }
-
+    uni.showToast({ title: '已生成待缴费挂号单', icon: 'none' });
+    pendingBooking.value = null;
     await loadDepartmentResources();
+    setTimeout(() => {
+      uni.navigateTo({ url: '/pages/pending-payments/index' });
+    }, 400);
   } catch (error) {
     uni.showToast({ title: (error as Error).message, icon: 'none' });
   }
@@ -378,72 +554,456 @@ async function initialize() {
   aiConsultation.value = uni.getStorageSync('last_ai_consultation') || undefined;
   const departmentList = await request<Record<string, unknown>[]>({ url: '/departments', method: 'GET' });
   departments.value = departmentList.map(toDepartment);
-  selectedDepartmentId.value = aiConsultation.value?.recommendedDepartmentId || departments.value[0]?.id || '';
-  if (!departments.value.some((item) => item.id === selectedDepartmentId.value)) {
-    selectedDepartmentId.value = departments.value[0]?.id ?? '';
-  }
+  selectedDepartmentId.value = resolveInitialDepartmentId();
   await loadDepartmentResources();
 }
+
+onLoad((options) => {
+  initialDepartmentId.value = decodeURIComponent(String(options?.departmentId || ''));
+  initialDoctorId.value = decodeURIComponent(String(options?.doctorId || ''));
+});
 
 onMounted(initialize);
 </script>
 
 <style scoped>
-.schedule {
-  display: flex;
-  flex-direction: column;
-  gap: 12rpx;
+.booking-page {
+  padding-top: 0;
+  background: linear-gradient(180deg, #48a4f5 0, #48a4f5 210rpx, #f2f7ff 210rpx, #f2f7ff 100%);
 }
 
-.schedule-head {
+.booking-hero {
+  padding: 34rpx 4rpx 28rpx;
+  color: #fff;
+}
+
+.hero-title {
+  font-size: 46rpx;
+  font-weight: 900;
+}
+
+.hero-subtitle {
+  margin-top: 12rpx;
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 27rpx;
+}
+
+.ai-card,
+.section-card,
+.doctor-card,
+.doctor-detail,
+.empty-card {
+  margin-bottom: 22rpx;
+  padding: 28rpx;
+  border-radius: 18rpx;
+  background: #fff;
+  box-shadow: 0 10rpx 30rpx rgba(31, 84, 140, 0.08);
+}
+
+.ai-card {
+  border-left: 8rpx solid #2f80ed;
+}
+
+.ai-title,
+.section-title {
+  color: #172033;
+  font-size: 34rpx;
+  font-weight: 800;
+}
+
+.ai-desc {
+  margin-top: 12rpx;
+  color: #334155;
+  font-size: 28rpx;
+  line-height: 1.55;
+}
+
+.ai-meta {
+  margin-top: 12rpx;
+  color: #2f80ed;
+  font-size: 26rpx;
+}
+
+.chip-scroll {
+  margin-top: 20rpx;
+  white-space: nowrap;
+}
+
+.single-chip-row {
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
+  justify-content: center;
+  margin-top: 20rpx;
+}
+
+.chip-row,
+.date-row {
+  display: flex;
   gap: 16rpx;
 }
 
-.doctor {
+.dept-chip {
+  flex-shrink: 0;
+  padding: 16rpx 28rpx;
+  border-radius: 999rpx;
+  background: #f1f6fd;
+  color: #334155;
+  font-size: 28rpx;
   font-weight: 700;
-  font-size: 32rpx;
 }
 
-.tag {
-  align-self: flex-start;
-  padding: 4rpx 12rpx;
+.dept-chip.active {
+  background: #2f80ed;
+  color: #fff;
+}
+
+.date-strip {
+  margin: 0 -24rpx 22rpx;
+  padding: 20rpx 24rpx;
+  background: #fff;
+  box-shadow: 0 8rpx 20rpx rgba(31, 84, 140, 0.06);
+}
+
+.date-card {
+  flex-shrink: 0;
+  width: 112rpx;
+  padding: 18rpx 8rpx 12rpx;
+  border-radius: 10rpx;
+  background: #f6f8fb;
+  color: #2f3542;
+  font-size: 28rpx;
+  line-height: 1.35;
+  text-align: center;
+}
+
+.date-card.active {
+  background: #2f80ed;
+  color: #fff;
+}
+
+.date-status {
+  margin-top: 8rpx;
+  color: #2f80ed;
+  font-size: 26rpx;
+  font-weight: 700;
+}
+
+.date-card.active .date-status {
+  color: #fff;
+}
+
+.doctor-main {
+  display: flex;
+  gap: 20rpx;
+  align-items: flex-start;
+}
+
+.avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 104rpx;
+  height: 104rpx;
+  border-radius: 12rpx;
+  background: linear-gradient(135deg, #dbeafe 0%, #93c5fd 100%);
+  color: #1d4ed8;
+  font-size: 42rpx;
+  font-weight: 900;
+}
+
+.doctor-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.doctor-line {
+  display: flex;
+  align-items: baseline;
+  gap: 14rpx;
+  flex-wrap: wrap;
+}
+
+.doctor {
+  color: #111827;
+  font-size: 36rpx;
+  font-weight: 900;
+}
+
+.doctor-title {
+  color: #111827;
+  font-size: 27rpx;
+  font-weight: 700;
+}
+
+.dept-line {
+  margin-top: 10rpx;
+  color: #334155;
+  font-size: 28rpx;
+}
+
+.price-line,
+.slot-price {
+  color: #e6821e;
+  font-size: 32rpx;
+  font-weight: 800;
+}
+
+.price-line {
+  margin: 10rpx 0;
+}
+
+.status-badge {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  min-width: 112rpx;
+  overflow: hidden;
+  border: 2rpx solid;
+  border-radius: 10rpx;
+  font-size: 27rpx;
+  font-weight: 800;
+  text-align: center;
+}
+
+.status-badge text {
+  padding: 8rpx 14rpx;
+}
+
+.status-badge.available {
+  border-color: #30c47c;
+  color: #30a873;
+}
+
+.status-badge.available text:first-child {
+  background: #30c47c;
+  color: #fff;
+}
+
+.status-badge.full {
+  border-color: #ff8a00;
+  color: #ff8a00;
+}
+
+.status-badge.full text:first-child {
+  background: #ff8a00;
+  color: #fff;
+}
+
+.doctor-actions {
+  display: flex;
+  align-items: center;
+  min-height: 44rpx;
+  margin-top: 22rpx;
+  padding-top: 20rpx;
+  border-top: 1px solid #edf2f7;
+}
+
+.recommend-tag {
+  padding: 7rpx 16rpx;
   border-radius: 999rpx;
   background: #ecfdf5;
-  color: #047857;
+  color: #059669;
   font-size: 24rpx;
+  font-weight: 700;
+}
+
+.doctor-detail {
+  padding: 0;
+  overflow: hidden;
+}
+
+.doctor-banner {
+  display: flex;
+  align-items: center;
+  gap: 22rpx;
+  padding: 34rpx 30rpx;
+  background: #3d98f4;
+  color: #fff;
+}
+
+.detail-name {
+  font-size: 36rpx;
+  font-weight: 900;
+}
+
+.detail-meta {
+  margin-top: 12rpx;
+  color: rgba(255, 255, 255, 0.86);
+  font-size: 27rpx;
+}
+
+.back-button {
+  margin-left: auto;
+  width: 132rpx;
+  height: 62rpx;
+  padding: 0;
+  border-radius: 999rpx;
+  color: #2f80ed;
+  background: #fff;
+  font-size: 28rpx;
+  line-height: 62rpx;
+  white-space: nowrap;
+}
+
+.level-row {
+  display: flex;
+  align-items: center;
+  padding: 28rpx 30rpx;
+  border-bottom: 1px solid #edf2f7;
+  color: #1f2937;
+  font-size: 31rpx;
+  font-weight: 800;
+}
+
+.accent-bar {
+  display: inline-block;
+  width: 8rpx;
+  height: 34rpx;
+  margin-right: 14rpx;
+  border-radius: 999rpx;
+  background: #2f80ed;
+  vertical-align: -6rpx;
 }
 
 .time-list {
   display: flex;
   flex-direction: column;
-  gap: 16rpx;
-  margin-top: 16rpx;
 }
 
 .time-row {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 1fr 160rpx 144rpx;
   align-items: center;
   gap: 18rpx;
-  padding: 18rpx 0;
-  border-bottom: 1px solid #e2e8f0;
+  min-height: 116rpx;
+  padding: 0 30rpx;
+  border-bottom: 1px solid #edf2f7;
 }
 
-.time-row:last-child {
-  border-bottom: none;
+.time-row.disabled {
+  opacity: 0.72;
 }
 
 .time-value {
-  color: #0f172a;
-  font-size: 32rpx;
+  color: #111827;
+  font-size: 34rpx;
   font-weight: 700;
 }
 
-.time-button {
-  width: 220rpx;
+.slot-button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 82rpx;
   margin: 0;
+  padding: 0;
+  border: 2rpx solid #30c47c;
+  border-radius: 10rpx;
+  background: #30c47c;
+  color: #fff;
+  font-size: 26rpx;
+  font-weight: 800;
+  line-height: 38rpx;
+}
+
+.time-row.disabled .slot-button {
+  border-color: #cbd5e1;
+  background: #cbd5e1;
+}
+
+.slot-left {
+  margin-top: 2rpx;
+  background: #fff;
+  color: #30a873;
+}
+
+.confirm-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48rpx;
+  background: rgba(0, 0, 0, 0.62);
+}
+
+.confirm-dialog {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 30rpx;
+  background: #fff;
+}
+
+.dialog-close {
+  position: absolute;
+  top: 26rpx;
+  right: 30rpx;
+  color: #111827;
+  font-size: 54rpx;
+  line-height: 1;
+}
+
+.dialog-title {
+  padding: 64rpx 36rpx 28rpx;
+  color: #1f2937;
+  font-size: 42rpx;
+  font-weight: 800;
+  text-align: center;
+}
+
+.dialog-body {
+  padding: 10rpx 46rpx 40rpx;
+}
+
+.confirm-row {
+  display: flex;
+  gap: 18rpx;
+  padding: 18rpx 0;
+  color: #1f2937;
+  font-size: 31rpx;
+  line-height: 1.45;
+}
+
+.confirm-label {
+  flex-shrink: 0;
+  color: #7b8494;
+}
+
+.confirm-value {
+  color: #2f80ed;
+}
+
+.dialog-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-top: 1px solid #edf2f7;
+}
+
+.dialog-secondary,
+.dialog-primary {
+  height: 96rpx;
+  margin: 0;
+  border-radius: 0;
+  background: #fff;
+  font-size: 32rpx;
+  line-height: 96rpx;
+}
+
+.dialog-secondary {
+  color: #1f2937;
+  border-right: 1px solid #edf2f7;
+}
+
+.dialog-primary {
+  color: #2f80ed;
+}
+
+.empty-card {
+  color: #64748b;
+  font-size: 29rpx;
+  text-align: center;
 }
 </style>

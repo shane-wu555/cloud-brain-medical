@@ -4,17 +4,18 @@
     { "path": "pages/home/index", "style": { "navigationBarTitleText": "智慧云脑诊疗" } },
     { "path": "pages/real-name/index", "style": { "navigationBarTitleText": "就诊人管理" } },
     { "path": "pages/consultation/index", "style": { "navigationBarTitleText": "AI 智能问诊" } },
+    { "path": "pages/search/index", "style": { "navigationBarTitleText": "搜索" } },
     { "path": "pages/booking/index", "style": { "navigationBarTitleText": "线上挂号" } },
     { "path": "pages/appointments/index", "style": { "navigationBarTitleText": "我的挂号" } },
     { "path": "pages/medical-orders/index", "style": { "navigationBarTitleText": "检查检验报告" } },
-    { "path": "pages/disposals/index", "style": { "navigationBarTitleText": "处置安排" } },
+    { "path": "pages/disposals/index", "style": { "navigationBarTitleText": "待处置安排" } },
     { "path": "pages/medical-records/index", "style": { "navigationBarTitleText": "电子病历" } },
     { "path": "pages/pending-payments/index", "style": { "navigationBarTitleText": "待缴费项目" } },
-    { "path": "pages/prescriptions/index", "style": { "navigationBarTitleText": "药方" } }
+    { "path": "pages/prescriptions/index", "style": { "navigationBarTitleText": "待取药安排" } }
   ],
   "globalStyle": {
-    "navigationBarTextStyle": "black",
-    "navigationBarBackgroundColor": "#ffffff",
-    "backgroundColor": "#f5f7fb"
+    "navigationBarTextStyle": "white",
+    "navigationBarBackgroundColor": "#48a4f5",
+    "backgroundColor": "#f2f7ff"
   }
 }

@@ -121,7 +121,7 @@ public class CashierRepository {
         return new Payment(rs.getString("id"),rs.getString("business_type"),rs.getString("business_id"),
                 rs.getString("patient_id"),rs.getBigDecimal("amount"),rs.getString("payment_method"),
                 rs.getString("status"),rs.getString("operator_id"),time(rs.getTimestamp("paid_at")),
-                rs.getString("payment_scene"),rs.getString("channel_trade_no"));
+                time(rs.getTimestamp("created_at")),rs.getString("payment_scene"),rs.getString("channel_trade_no"));
     }
 
     public List<Refund> refunds(String patientId, String businessId) {
@@ -153,7 +153,7 @@ public class CashierRepository {
     public record Payment(
             String id, String businessType, String businessId, String patientId, BigDecimal amount,
             String paymentMethod, String status, String operatorId, LocalDateTime paidAt,
-            String paymentScene,String channelTradeNo) {}
+            LocalDateTime createdAt,String paymentScene,String channelTradeNo) {}
     public record Refund(
             String id, String businessType, String businessId, String patientId, BigDecimal amount,
             String reason, String status, String operatorId, LocalDateTime refundedAt) {}
