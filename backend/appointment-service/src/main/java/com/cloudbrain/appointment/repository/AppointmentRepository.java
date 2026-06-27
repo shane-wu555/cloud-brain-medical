@@ -119,6 +119,44 @@ public class AppointmentRepository {
         return (max == null ? 0 : max) + 1;
     }
 
+    public Appointment insertForRevisit(String id, int positions) {
+        Appointment appt = findById(id).orElseThrow(() -> new IllegalArgumentException("挂号记录不存在"));
+        jdbcTemplate.query("select pg_advisory_xact_lock(hashtext(?))", rs -> null,
+                appt.getDoctorId() + ":" + appt.getVisitDate());
+        Appointment locked = findByIdForUpdate(id).orElseThrow(() -> new IllegalArgumentException("挂号记录不存在"));
+
+        // Find queue number of currently-serving patient; fall back to min waiting
+        Integer servingPos = jdbcTemplate.queryForObject("""
+                select coalesce(
+                    (select queue_number from appointment where doctor_id=? and visit_date=? and status='IN_VISIT' limit 1),
+                    (select min(queue_number) from appointment where doctor_id=? and visit_date=? and status in ('WAITING','CALLED'))
+                )
+                """, Integer.class,
+                locked.getDoctorId(), locked.getVisitDate(),
+                locked.getDoctorId(), locked.getVisitDate());
+
+        int target;
+        if (servingPos == null) {
+            // No active patients — append after last
+            Integer max = jdbcTemplate.queryForObject(
+                    "select coalesce(max(queue_number),0) from appointment where doctor_id=? and visit_date=?",
+                    Integer.class, locked.getDoctorId(), locked.getVisitDate());
+            target = (max == null ? 0 : max) + 1;
+        } else {
+            target = servingPos + positions;
+            // Push active patients at or beyond target back by one slot
+            jdbcTemplate.update("""
+                    update appointment set queue_number = queue_number + 1
+                    where doctor_id=? and visit_date=?
+                      and status in ('WAITING','CALLED','REVISIT_WAITING')
+                      and queue_number >= ?
+                    """, locked.getDoctorId(), locked.getVisitDate(), target);
+        }
+
+        locked.waitForRevisit(target);
+        return save(locked);
+    }
+
     public Appointment skipByPositions(String id,int positions) {
         Appointment current=findById(id).orElseThrow(()->new IllegalArgumentException("挂号记录不存在"));
         jdbcTemplate.query("select pg_advisory_xact_lock(hashtext(?))",rs->null,

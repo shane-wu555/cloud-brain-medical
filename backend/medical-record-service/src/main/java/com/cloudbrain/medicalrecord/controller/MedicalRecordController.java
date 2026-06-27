@@ -30,6 +30,13 @@ public class MedicalRecordController {
     @PostMapping("/initial") public MedicalRecord createInitial(@RequestBody CreateInitialRecordRequest request,
             @RequestHeader(name="X-Internal-Api-Key",required=false) String key){checkKey(key);return service.createInitial(request);}
 
+    @PostMapping("/doctor-init") @PreAuthorize("hasRole('OUTPATIENT_DOCTOR')")
+    public MedicalRecord doctorInit(@RequestBody CreateInitialRecordRequest request, JwtAuthenticationToken auth){
+        CreateInitialRecordRequest secured=new CreateInitialRecordRequest(request.appointmentId(),request.patientId(),request.patientName(),
+                auth.getToken().getSubject(),request.doctorName(),request.departmentName(),request.visitDate(),request.period(),request.triageSummary(),request.riskLevel());
+        return service.createInitial(secured);
+    }
+
     @GetMapping("/internal/{appointmentId}/saved") public Map<String,Boolean> saved(@PathVariable("appointmentId") String appointmentId,
             @RequestHeader(name="X-Internal-Api-Key",required=false) String key){checkKey(key);return Map.of("saved",service.isSaved(appointmentId));}
     @PostMapping("/internal/{appointmentId}/reports") public void linkReport(@PathVariable("appointmentId") String appointmentId,@RequestHeader(name="X-Internal-Api-Key",required=false)String key,@RequestBody ReportLink request){checkKey(key);service.linkReport(appointmentId,request.medicalOrderId(),request.reportId(),request.reportType(),request.conclusion(),request.confirmedBy(),request.confirmedAt());}

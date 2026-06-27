@@ -49,7 +49,7 @@ public class AppointmentService {
     public List<Appointment> todayQueue(String doctorId) {
         return appointmentRepository.findAll().stream()
                 .filter(a->a.getDoctorId().equals(doctorId) && a.getVisitDate().equals(LocalDate.now()))
-                .filter(a->List.of(AppointmentStatus.WAITING,AppointmentStatus.CALLED,AppointmentStatus.IN_VISIT,AppointmentStatus.REVISIT_WAITING).contains(a.getStatus()))
+                .filter(a->List.of(AppointmentStatus.WAITING,AppointmentStatus.CALLED,AppointmentStatus.IN_VISIT,AppointmentStatus.REVISIT_WAITING,AppointmentStatus.FINISHED).contains(a.getStatus()))
                 .sorted(java.util.Comparator.comparingInt(Appointment::getQueueNumber)).toList();
     }
 
@@ -211,7 +211,14 @@ public class AppointmentService {
         slotInventoryRepository.releaseLocked(appointment.getScheduleId()); appointment.markPaymentExpired();
         return appointmentRepository.save(appointment);
     }
-    @Transactional public Appointment enterRevisit(String id){Appointment snapshot=get(id);int next=appointmentRepository.nextQueueNumber(snapshot.getDoctorId(),snapshot.getVisitDate().toString());Appointment a=appointmentRepository.findByIdForUpdate(id).orElseThrow(()->new IllegalArgumentException("挂号记录不存在"));if(a.getStatus()==AppointmentStatus.REVISIT_WAITING)return a;if(a.getStatus()!=AppointmentStatus.FINISHED&&a.getStatus()!=AppointmentStatus.IN_VISIT)throw new IllegalStateException("当前就诊状态不能进入复诊队列");a.waitForRevisit(next);return appointmentRepository.save(a);}
+    @Transactional
+    public Appointment enterRevisit(String id) {
+        Appointment a = appointmentRepository.findById(id).orElseThrow(() -> new IllegalArgumentException("挂号记录不存在"));
+        if (a.getStatus() == AppointmentStatus.REVISIT_WAITING) return a;
+        if (a.getStatus() != AppointmentStatus.FINISHED && a.getStatus() != AppointmentStatus.IN_VISIT)
+            throw new IllegalStateException("当前就诊状态不能进入复诊队列");
+        return appointmentRepository.insertForRevisit(id, 3);
+    }
 
     public Appointment find(String id) {
         return get(id);

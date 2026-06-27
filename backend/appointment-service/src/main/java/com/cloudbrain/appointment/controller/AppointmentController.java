@@ -104,6 +104,17 @@ public class AppointmentController {
         return appointmentService.cancel(id, "CASHIER".equals(role));
     }
 
+    @PostMapping("/{id}/revisit")
+    @PreAuthorize("hasRole('PATIENT')")
+    public Appointment revisit(@PathVariable("id") String id, JwtAuthenticationToken authentication) {
+        String accountId = authentication.getToken().getSubject();
+        Appointment appointment = appointmentService.find(id);
+        if (!patientVerificationClient.owns(accountId, appointment.getPatientId())) {
+            throw new AccessDeniedException("患者只能操作自己账号名下就诊人的挂号记录");
+        }
+        return appointmentService.enterRevisit(id);
+    }
+
     @PostMapping("/{id}/skip")
     @PreAuthorize("hasRole('OUTPATIENT_DOCTOR')")
     public Appointment skip(@PathVariable("id") String id, JwtAuthenticationToken authentication) {
