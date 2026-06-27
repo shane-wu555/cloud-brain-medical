@@ -12,7 +12,7 @@ where schedule_id like 'sched-smoke-%'
 delete from doctor.doctor_schedule
 where id like 'sched-smoke-%';
 
-delete from doctor.doctor
+delete from doctor.outpatient_doctor
 where id like 'doc-smoke-%';
 
 delete from auth.user_account
@@ -25,6 +25,14 @@ where id like 'doc-smoke-%'
    or username like 'doctor-derm-%'
    or username like 'doctor-pedi-%'
    or username like 'doctor-ent-%';
+
+do $$
+begin
+    if to_regclass('doctor.outpatient_clinic_room') is not null then
+        delete from doctor.outpatient_clinic_room
+        where department_id like 'dept-smoke-%';
+    end if;
+end $$;
 
 delete from doctor.department
 where id like 'dept-smoke-%';

@@ -41,7 +41,7 @@
           <el-form label-position="top">
             <el-form-item label="医生">
               <el-select v-model="scheduleForm.doctorId" class="full" @change="syncDoctor">
-                <el-option v-for="doctor in doctors" :key="doctor.id" :label="`${doctor.name} / ${doctor.departmentName}`" :value="doctor.id" />
+                <el-option v-for="doctor in doctors" :key="doctor.id" :label="`${doctor.employeeNo} / ${doctor.name} / ${doctor.departmentName}`" :value="doctor.id" />
               </el-select>
             </el-form-item>
             <el-form-item label="日期">
@@ -80,9 +80,9 @@
         </el-card>
         <el-card class="span-6" shadow="never">
           <template #header>新增医生</template>
-          <el-form label-position="top"><el-form-item label="姓名"><el-input v-model="doctorForm.name" /></el-form-item>
+          <el-form label-position="top"><el-form-item label="工号"><el-input v-model="doctorForm.employeeNo" /></el-form-item><el-form-item label="姓名"><el-input v-model="doctorForm.name" /></el-form-item>
             <el-form-item label="科室"><el-select v-model="doctorForm.departmentId" class="full"><el-option v-for="item in departments" :key="item.id" :label="item.name" :value="item.id" /></el-select></el-form-item>
-            <el-form-item label="医生类型"><el-select v-model="doctorForm.roleType" class="full"><el-option label="门诊医生" value="OUTPATIENT_DOCTOR" /><el-option label="检查医生" value="CHECK_DOCTOR" /><el-option label="检验医生" value="LAB_DOCTOR" /></el-select></el-form-item>
+            <el-form-item label="医生类型"><el-select v-model="doctorForm.roleType" class="full"><el-option label="门诊医生" value="OUTPATIENT_DOCTOR" /></el-select></el-form-item>
             <el-button type="primary" @click="submitDoctor">保存医生</el-button></el-form>
         </el-card>
       </section>
@@ -105,7 +105,7 @@ const doctors = ref<Doctor[]>([]);
 const schedules = ref<Schedule[]>([]);
 const departments = ref<Department[]>([]);
 const departmentForm = reactive({ name: '', description: '' });
-const doctorForm = reactive({ name: '', title: '主治医师', departmentId: '', roleType: 'OUTPATIENT_DOCTOR', specialty: '' });
+const doctorForm = reactive({ employeeNo: '', name: '', title: '主治医师', departmentId: '', roleType: 'OUTPATIENT_DOCTOR', specialty: '' });
 const scheduleForm = reactive({
   doctorId: '',
   doctorName: '',
@@ -142,7 +142,7 @@ async function submitDepartment() {
   departmentForm.name=''; departmentForm.description='';
 }
 async function submitDoctor() {
-  await createDoctor(doctorForm); ElMessage.success('医生已保存'); doctors.value = await getDoctors(); doctorForm.name='';
+  await createDoctor(doctorForm); ElMessage.success('医生已保存'); doctors.value = await getDoctors(); doctorForm.employeeNo=''; doctorForm.name='';
 }
 
 function logout() {

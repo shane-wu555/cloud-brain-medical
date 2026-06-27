@@ -11,11 +11,11 @@
         <el-form-item label="账号">
           <el-select v-model="username" class="full">
             <el-option label="窗口收费 cashier" value="cashier" />
-            <el-option label="门诊医生 doctor" value="doctor" />
-            <el-option label="检查医生 check-doctor" value="check-doctor" />
-            <el-option label="检验医生 lab-doctor" value="lab-doctor" />
-            <el-option label="处置医生 disposal-doctor" value="disposal-doctor" />
-            <el-option label="药房医生 pharmacy-doctor" value="pharmacy-doctor" />
+            <el-option label="门诊医生 D0001" value="D0001" />
+            <el-option label="检查医生 D0002" value="D0002" />
+            <el-option label="检验医生 L0001" value="L0001" />
+            <el-option label="处置医生 T0001" value="T0001" />
+            <el-option label="药房医生 P0001" value="P0001" />
             <el-option label="管理员 admin" value="admin" />
           </el-select>
         </el-form-item>
@@ -36,7 +36,7 @@ import { useAuthStore } from '../store/auth';
 
 const router = useRouter();
 const auth = useAuthStore();
-const username = ref('doctor');
+const username = ref('D0001');
 const password = ref('abc12345');
 const loading = ref(false);
 

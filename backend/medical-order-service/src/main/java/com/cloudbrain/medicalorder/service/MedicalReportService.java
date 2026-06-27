@@ -136,7 +136,7 @@ public class MedicalReportService {
             MedicalOrder o = order(r.medicalOrderId());
             if ("PATIENT".equals(role)) return "CONFIRMED".equals(r.status()) && o.patientId().equals(finalPatientId);
             if ("OUTPATIENT_DOCTOR".equals(role)) return "CONFIRMED".equals(r.status()) && o.orderingDoctorId().equals(actor);
-            if (Set.of("CHECK_DOCTOR", "LAB_DOCTOR", "DISPOSAL_DOCTOR").contains(role)) return actor.equals(o.executorId());
+            if (Set.of("CHECK_DOCTOR", "LAB_DOCTOR", "DISPOSAL_DOCTOR").contains(role)) return canAccessWorkspace(o, actor);
             return false;
         }).toList();
     }
@@ -145,7 +145,7 @@ public class MedicalReportService {
         MedicalOrder o = order(orderId);
         boolean allowed = ("PATIENT".equals(role) && patientAccessClient.owns(actor, o.patientId()))
                 || ("OUTPATIENT_DOCTOR".equals(role) && o.orderingDoctorId().equals(actor))
-                || (Set.of("CHECK_DOCTOR", "LAB_DOCTOR", "DISPOSAL_DOCTOR").contains(role) && actor.equals(o.executorId()));
+                || (Set.of("CHECK_DOCTOR", "LAB_DOCTOR", "DISPOSAL_DOCTOR").contains(role) && canAccessWorkspace(o, actor));
         if (!allowed) throw new AccessDeniedException("无权查看附件");
         return reports.attachments(orderId);
     }
@@ -155,7 +155,13 @@ public class MedicalReportService {
     }
 
     private void checkExecutor(MedicalOrder o, String actor) {
-        if (!actor.equals(o.executorId())) throw new AccessDeniedException("只能处理分配给自己的医嘱");
+        if (!canAccessWorkspace(o, actor)) throw new AccessDeniedException("只能处理分配给自己执行房间的医技单");
+    }
+
+    private boolean canAccessWorkspace(MedicalOrder o, String actor) {
+        return orders.technician(actor)
+                .map(technician -> technician.workspaceId().equals(o.executorId()))
+                .orElse(false);
     }
 
     private void validateRole(MedicalOrder o, String role) {

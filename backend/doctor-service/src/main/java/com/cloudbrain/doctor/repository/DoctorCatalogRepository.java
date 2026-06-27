@@ -24,8 +24,8 @@ public class DoctorCatalogRepository {
     }
     public List<Doctor> doctors(String departmentId) {
         StringBuilder sql = new StringBuilder("""
-                select d.id,d.name,d.title,d.department_id,p.name,d.specialty,d.role_type
-                from doctor d join department p on p.id=d.department_id
+                select d.id,d.employee_no,d.name,d.title,d.department_id,p.name,d.specialty,d.role_type
+                from outpatient_doctor d join department p on p.id=d.department_id
                 where d.active
                 """);
         List<Object> args = new ArrayList<>();
@@ -35,18 +35,18 @@ public class DoctorCatalogRepository {
         }
         sql.append(" order by d.name");
         return jdbc.query(sql.toString(), (rs, row) -> new Doctor(rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4),
-                rs.getString(5), rs.getString(6), rs.getString(7)), args.toArray());
+                rs.getString(5), rs.getString(6), rs.getString(7), rs.getString(8)), args.toArray());
     }
-    public Doctor createDoctor(String name, String title, String departmentId, String roleType, String specialty) {
-        String id = "doctor-" + UUID.randomUUID();
-        jdbc.update("insert into doctor (id,name,title,department_id,role_type,specialty) values (?,?,?,?,?,?)",
-                id, name, title, departmentId, roleType, specialty);
+    public Doctor createDoctor(String employeeNo, String name, String title, String departmentId, String roleType, String specialty) {
+        String id = UUID.randomUUID().toString();
+        jdbc.update("insert into outpatient_doctor (id,employee_no,name,title,department_id,role_type,specialty) values (?,?,?,?,?,?,?)",
+                id, employeeNo, name, title, departmentId, roleType, specialty);
         return doctors(departmentId).stream().filter(d -> d.id().equals(id)).findFirst().orElseThrow();
     }
     public List<Schedule> schedules(String doctorId, String departmentId) {
         StringBuilder sql = new StringBuilder("""
                 select s.id,s.doctor_id,d.name,s.department_id,s.work_date,s.period,s.capacity,s.status
-                from doctor_schedule s join doctor d on d.id=s.doctor_id
+                from doctor_schedule s join outpatient_doctor d on d.id=s.doctor_id
                 where 1 = 1
                 """);
         List<Object> args = new ArrayList<>();
@@ -64,7 +64,7 @@ public class DoctorCatalogRepository {
     public Schedule findSchedule(String id) {
         return jdbc.query("""
                 select s.id,s.doctor_id,d.name,s.department_id,s.work_date,s.period,s.capacity,s.status
-                from doctor_schedule s join doctor d on d.id=s.doctor_id where s.id=?
+                from doctor_schedule s join outpatient_doctor d on d.id=s.doctor_id where s.id=?
                 """, (rs, row) -> mapSchedule(rs), id).stream().findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("排班不存在"));
     }
@@ -147,7 +147,7 @@ public class DoctorCatalogRepository {
     }
 
     public record Department(String id,String name,String description) {}
-    public record Doctor(String id,String name,String title,String departmentId,String departmentName,String specialty,String roleType) {}
+    public record Doctor(String id,String employeeNo,String name,String title,String departmentId,String departmentName,String specialty,String roleType) {}
     public record Schedule(String id,String doctorId,String doctorName,String departmentId,LocalDate workDate,String period,int capacity,String status) {}
     public record ScheduleTimeSlot(String id,String scheduleId,LocalTime startTime,int capacity) {}
 }

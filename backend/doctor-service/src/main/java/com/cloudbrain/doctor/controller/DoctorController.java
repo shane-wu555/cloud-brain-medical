@@ -14,11 +14,18 @@ public class DoctorController {
     }
     @PostMapping @PreAuthorize("hasRole('ADMIN')")
     public DoctorDto create(@RequestBody CreateDoctorRequest request) {
-        return dto(repository.createDoctor(request.name(),request.title(),request.departmentId(),request.roleType(),request.specialty()));
+        if (request.employeeNo() == null || request.employeeNo().isBlank()) {
+            throw new IllegalArgumentException("工号不能为空");
+        }
+        String roleType = request.roleType() == null || request.roleType().isBlank() ? "OUTPATIENT_DOCTOR" : request.roleType();
+        if (!"OUTPATIENT_DOCTOR".equals(roleType)) {
+            throw new IllegalArgumentException("doctor-service 只维护门诊医生档案");
+        }
+        return dto(repository.createDoctor(request.employeeNo().trim(),request.name(),request.title(),request.departmentId(),roleType,request.specialty()));
     }
     private DoctorDto dto(DoctorCatalogRepository.Doctor d) {
-        return new DoctorDto(d.id(),d.name(),d.title(),d.departmentId(),d.departmentName(),d.specialty(),d.roleType());
+        return new DoctorDto(d.id(),d.employeeNo(),d.name(),d.title(),d.departmentId(),d.departmentName(),d.specialty(),d.roleType());
     }
-    public record DoctorDto(String id,String name,String title,String departmentId,String departmentName,String specialty,String roleType) {}
-    public record CreateDoctorRequest(String name,String title,String departmentId,String roleType,String specialty) {}
+    public record DoctorDto(String id,String employeeNo,String name,String title,String departmentId,String departmentName,String specialty,String roleType) {}
+    public record CreateDoctorRequest(String employeeNo,String name,String title,String departmentId,String roleType,String specialty) {}
 }
