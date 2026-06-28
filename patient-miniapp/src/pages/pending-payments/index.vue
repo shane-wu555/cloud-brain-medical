@@ -13,8 +13,9 @@
         @click="openPendingPayment(item)"
       >
         <view class="item-main">
-          <view class="item-title">{{ businessTypeLabel(item.businessType) }}</view>
-          <view class="item-desc">业务号：{{ item.businessId }}</view>
+          <view class="item-title">{{ paymentRecordTitle(item) }}</view>
+          <view class="item-desc">{{ paymentRecordDescription(item) }}</view>
+          <view v-if="paymentRecordNote(item)" class="muted">{{ paymentRecordNote(item) }}</view>
           <view class="muted">{{ item.paidAt ? `支付时间：${formatDateTime(item.paidAt)}` : `当前状态：${paymentStatusLabel(item.status)}` }}</view>
         </view>
         <view class="item-actions">
@@ -164,8 +165,10 @@ interface Appointment {
   doctorName: string;
   visitDate: string;
   period: string;
+  startTime?: string | number[] | { hour?: number; minute?: number; second?: number };
   status: string;
   paymentStatus: string;
+  createdAt?: string;
 }
 
 interface PaymentOrder {
@@ -186,6 +189,16 @@ interface MedicalOrder {
   paymentStatus: string;
   status: string;
   urgency: string;
+  purpose?: string;
+  bodyPart?: string;
+  executionLocation?: string;
+  createdAt?: string;
+}
+
+interface PrescriptionItem {
+  id: string;
+  drugName: string;
+  quantity: number;
 }
 
 interface Prescription {
@@ -194,6 +207,9 @@ interface Prescription {
   diagnosis: string;
   totalAmount: number;
   status: 'DRAFT' | 'CONFIRMED' | 'PENDING_PAYMENT' | 'PAID' | 'WAITING_DISPENSE' | 'DISPENSED' | 'RETURNED' | 'CANCELLED';
+  items?: PrescriptionItem[];
+  confirmedAt?: string;
+  createdAt?: string;
 }
 
 interface PendingItem {
@@ -204,6 +220,7 @@ interface PendingItem {
   description: string;
   note?: string;
   amount: number;
+  sortTime: string;
 }
 
 const auth = useAuthStore();
@@ -211,6 +228,9 @@ const registrationItems = ref<PendingItem[]>([]);
 const medicalOrderItems = ref<PendingItem[]>([]);
 const prescriptionItems = ref<PendingItem[]>([]);
 const paymentRecords = ref<PaymentOrder[]>([]);
+const recordAppointments = ref<Appointment[]>([]);
+const recordMedicalOrders = ref<MedicalOrder[]>([]);
+const recordPrescriptions = ref<Prescription[]>([]);
 const loadWarning = ref('');
 const mode = ref<'pending' | 'record'>('pending');
 const registeredAppointmentStatuses = new Set(['WAITING', 'CALLED', 'IN_VISIT', 'REVISIT_WAITING']);
@@ -218,6 +238,9 @@ const registeredAppointmentStatuses = new Set(['WAITING', 'CALLED', 'IN_VISIT', 
 const checkItems = computed(() => medicalOrderItems.value.filter((item) => item.feeType === 'CHECK'));
 const labItems = computed(() => medicalOrderItems.value.filter((item) => item.feeType === 'LAB'));
 const disposalItems = computed(() => medicalOrderItems.value.filter((item) => item.feeType === 'DISPOSAL'));
+const recordAppointmentMap = computed(() => new Map(recordAppointments.value.map((item) => [item.id, item])));
+const recordMedicalOrderMap = computed(() => new Map(recordMedicalOrders.value.map((item) => [item.id, item])));
+const recordPrescriptionMap = computed(() => new Map(recordPrescriptions.value.map((item) => [item.id, item])));
 
 const totalAmount = computed(() =>
   [...registrationItems.value, ...medicalOrderItems.value, ...prescriptionItems.value]
@@ -226,7 +249,13 @@ const totalAmount = computed(() =>
 const totalCount = computed(() => registrationItems.value.length + medicalOrderItems.value.length + prescriptionItems.value.length);
 
 const sortedPaymentRecords = computed(() =>
-  [...paymentRecords.value].sort((left, right) => paymentRecordSortTime(right).localeCompare(paymentRecordSortTime(left)))
+  [...paymentRecords.value].sort((left, right) => {
+    const statusDiff = paymentRecordStatusRank(left) - paymentRecordStatusRank(right);
+    if (statusDiff !== 0) {
+      return statusDiff;
+    }
+    return paymentRecordSortTime(right).localeCompare(paymentRecordSortTime(left));
+  })
 );
 
 const categorySummaries = computed(() => [
@@ -258,6 +287,65 @@ function businessTypeLabel(type: string) {
   }[type] ?? type;
 }
 
+function paymentRecordTitle(item: PaymentOrder) {
+  if (item.businessType === 'APPOINTMENT') {
+    const appointment = recordAppointmentMap.value.get(item.businessId);
+    return appointment ? `${appointment.departmentName} · ${appointment.doctorName}` : businessTypeLabel(item.businessType);
+  }
+  if (item.businessType === 'MEDICAL_ORDER') {
+    const order = recordMedicalOrderMap.value.get(item.businessId);
+    return order?.projectName || businessTypeLabel(item.businessType);
+  }
+  if (item.businessType === 'PRESCRIPTION') {
+    const prescription = recordPrescriptionMap.value.get(item.businessId);
+    return prescription?.diagnosis ? `${prescription.diagnosis}药费` : businessTypeLabel(item.businessType);
+  }
+  return businessTypeLabel(item.businessType);
+}
+
+function paymentRecordDescription(item: PaymentOrder) {
+  if (item.businessType === 'APPOINTMENT') {
+    const appointment = recordAppointmentMap.value.get(item.businessId);
+    if (appointment) {
+      return `${appointment.visitDate} ${normalizeStartTime(appointment.startTime) || appointment.period}`;
+    }
+  }
+  if (item.businessType === 'MEDICAL_ORDER') {
+    const order = recordMedicalOrderMap.value.get(item.businessId);
+    if (order) {
+      const details = [order.bodyPart, order.purpose, order.executionLocation].filter(Boolean).join(' · ');
+      return `${orderTypeLabel(order.orderType)}${details ? ` · ${details}` : ''}`;
+    }
+  }
+  if (item.businessType === 'PRESCRIPTION') {
+    const prescription = recordPrescriptionMap.value.get(item.businessId);
+    if (prescription) {
+      const drugs = (prescription.items ?? [])
+        .slice(0, 3)
+        .map((drug) => `${drug.drugName}×${drug.quantity}`)
+        .join('、');
+      return drugs || prescription.diagnosis || '处方药费';
+    }
+  }
+  return '业务详情加载中';
+}
+
+function paymentRecordNote(item: PaymentOrder) {
+  if (item.businessType === 'APPOINTMENT') {
+    const appointment = recordAppointmentMap.value.get(item.businessId);
+    return appointment ? `挂号状态：${appointmentStatusLabel(appointment)}` : '';
+  }
+  if (item.businessType === 'MEDICAL_ORDER') {
+    const order = recordMedicalOrderMap.value.get(item.businessId);
+    return order ? `项目状态：${medicalOrderStatusLabel(order.status, order.paymentStatus)}` : '';
+  }
+  if (item.businessType === 'PRESCRIPTION') {
+    const prescription = recordPrescriptionMap.value.get(item.businessId);
+    return prescription ? `处方状态：${prescriptionStatusLabel(prescription.status)}` : '';
+  }
+  return '';
+}
+
 function paymentStatusLabel(status: string) {
   return {
     PENDING: '待支付',
@@ -275,7 +363,34 @@ function paymentRecordSortTime(item: PaymentOrder) {
 }
 
 function isPendingPaymentRecord(item: PaymentOrder) {
-  return item.status === 'PENDING';
+  return ['PENDING', 'PENDING_PAYMENT', 'UNPAID'].includes(item.status);
+}
+
+function paymentRecordStatusRank(item: PaymentOrder) {
+  return isPendingPaymentRecord(item) ? 0 : 1;
+}
+
+function pendingAppointmentSortTime(item: Appointment) {
+  const startTime = normalizeStartTime(item.startTime) || '00:00';
+  return item.visitDate ? `${item.visitDate}T${startTime}:00` : item.createdAt || '';
+}
+
+function normalizeStartTime(value: Appointment['startTime']) {
+  if (!value) {
+    return '';
+  }
+  if (typeof value === 'string') {
+    return value.slice(0, 5);
+  }
+  if (Array.isArray(value) && value.length >= 2) {
+    return `${String(value[0]).padStart(2, '0')}:${String(value[1]).padStart(2, '0')}`;
+  }
+  const hour = value.hour;
+  const minute = value.minute;
+  if (typeof hour === 'number' && typeof minute === 'number') {
+    return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+  }
+  return '';
 }
 
 function openPendingPayment(item: PaymentOrder) {
@@ -341,8 +456,9 @@ function prescriptionStatusLabel(status: Prescription['status']) {
 
 async function load() {
   await auth.loadProfile();
+  let patient;
   try {
-    auth.requireBoundPatient();
+    patient = auth.requireBoundPatient();
   } catch (error) {
     uni.showToast({ title: (error as Error).message, icon: 'none' });
     uni.navigateTo({ url: '/pages/real-name/index' });
@@ -350,7 +466,25 @@ async function load() {
   }
   loadWarning.value = '';
   if (mode.value === 'record') {
-    paymentRecords.value = await request<PaymentOrder[]>({ url: '/payments', method: 'GET' });
+    const [paymentsResult, appointmentsResult, medicalOrdersResult, prescriptionsResult] = await Promise.allSettled([
+      request<PaymentOrder[]>({ url: '/payments', method: 'GET' }),
+      request<Appointment[]>({ url: `/appointments?patientId=${patient.id}`, method: 'GET' }),
+      request<MedicalOrder[]>({ url: '/medical-orders', method: 'GET' }),
+      request<Prescription[]>({ url: '/prescriptions', method: 'GET' })
+    ]);
+
+    paymentRecords.value = paymentsResult.status === 'fulfilled' ? paymentsResult.value : [];
+    recordAppointments.value = appointmentsResult.status === 'fulfilled' ? appointmentsResult.value : [];
+    recordMedicalOrders.value = medicalOrdersResult.status === 'fulfilled' ? medicalOrdersResult.value : [];
+    recordPrescriptions.value = prescriptionsResult.status === 'fulfilled' ? prescriptionsResult.value : [];
+
+    const failedLabels = [
+      paymentsResult.status === 'rejected' ? '缴费记录' : '',
+      appointmentsResult.status === 'rejected' ? '挂号详情' : '',
+      medicalOrdersResult.status === 'rejected' ? '检查检验处置详情' : '',
+      prescriptionsResult.status === 'rejected' ? '处方详情' : ''
+    ].filter(Boolean);
+    loadWarning.value = failedLabels.length ? `当前未成功加载：${failedLabels.join('、')}。` : '';
     return;
   }
   const warnings: string[] = [];
@@ -381,8 +515,10 @@ async function load() {
       title: `${item.departmentName} · ${item.doctorName}`,
       description: `${item.visitDate} ${item.period}`,
       note: `当前状态：${appointmentStatusLabel(item)}，挂号后需完成缴费才能正常就诊`,
-      amount: paymentByBusinessId.get(item.id)?.amount ?? 0.01
-    }));
+      amount: paymentByBusinessId.get(item.id)?.amount ?? 0.01,
+      sortTime: pendingAppointmentSortTime(item)
+    }))
+    .sort((left, right) => right.sortTime.localeCompare(left.sortTime));
 
   medicalOrderItems.value = medicalOrders
     .filter((item) => item.paymentStatus === 'UNPAID')
@@ -393,8 +529,10 @@ async function load() {
       title: item.projectName,
       description: `${orderTypeLabel(item.orderType)} · ${urgencyLabel(item.urgency)}`,
       note: `当前状态：${medicalOrderStatusLabel(item.status, item.paymentStatus)}`,
-      amount: item.amount
-    }));
+      amount: item.amount,
+      sortTime: item.createdAt || ''
+    }))
+    .sort((left, right) => right.sortTime.localeCompare(left.sortTime));
 
   prescriptionItems.value = prescriptions
     .filter((item) => item.status === 'PENDING_PAYMENT' || item.status === 'CONFIRMED')
@@ -405,8 +543,10 @@ async function load() {
       title: '药费',
       description: item.diagnosis || '待医生确认诊断',
       note: `当前状态：${prescriptionStatusLabel(item.status)}`,
-      amount: item.totalAmount
-    }));
+      amount: item.totalAmount,
+      sortTime: item.confirmedAt || item.createdAt || ''
+    }))
+    .sort((left, right) => right.sortTime.localeCompare(left.sortTime));
 
   function unwrapResult<T>(result: PromiseSettledResult<T>, fallback: T, label: string): T {
     if (result.status === 'fulfilled') {

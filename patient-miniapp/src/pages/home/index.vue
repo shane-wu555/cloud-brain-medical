@@ -8,13 +8,11 @@
       </view>
     </view>
 
-    <view class="banner-card">
-      <view>
-        <view class="banner-title">门诊预约与缴费一站办理</view>
-        <view class="banner-desc">先问诊、再挂号，报告和费用集中查看</view>
-      </view>
-      <view class="banner-pill">轮播图待替换</view>
-    </view>
+    <swiper class="banner-swiper" :indicator-dots="true" :autoplay="false" indicator-color="rgba(255, 255, 255, 0.72)" indicator-active-color="#48a4f5">
+      <swiper-item>
+        <image class="banner-image" src="/static/banners/home-banner.png" mode="aspectFill" />
+      </swiper-item>
+    </swiper>
 
     <view :class="['patient-card', auth.boundPatient ? 'bound' : 'unbound']">
       <view>
@@ -37,7 +35,9 @@
           :class="['quick-card', item.tone]"
           @tap="go(item.url)"
         >
-        <view class="quick-icon">{{ item.badge }}</view>
+        <view class="quick-icon">
+          <MedicalIcon :name="item.icon" :size="34" />
+        </view>
         <view>
           <view class="quick-name">{{ item.name }}</view>
           <view class="quick-desc">{{ item.desc }}</view>
@@ -64,7 +64,9 @@
           class="service-item"
           @tap="go(item.url)"
         >
-          <view class="service-icon">{{ item.icon }}</view>
+          <view class="service-icon" :style="{ background: item.iconBg }">
+            <MedicalIcon :name="item.icon" :size="32" variant="white" />
+          </view>
           <view class="service-name">{{ item.name }}</view>
         </view>
       </view>
@@ -75,36 +77,37 @@
 <script setup lang="ts">
 import { onShow } from '@dcloudio/uni-app';
 import { computed, ref } from 'vue';
+import MedicalIcon from '../../components/MedicalIcon.vue';
 import { useAuthStore } from '../../stores/auth';
 
 const auth = useAuthStore();
 const activeGroup = ref('门诊');
 
 const quickEntries = [
-  { name: 'AI问诊建议', desc: '智能推荐科室', badge: 'AI', tone: 'tone-disease', url: '/pages/consultation/index' },
-  { name: '按科室挂号', desc: '选择院区科室', badge: '科', tone: 'tone-dept', url: '/pages/booking/index' },
-  { name: '就诊人管理', desc: '切换电子就诊卡', badge: '人', tone: 'tone-report', url: '/pages/real-name/index' },
-  { name: '门诊缴费', desc: '挂号、药品等缴费', badge: '费', tone: 'tone-payment', url: '/pages/pending-payments/index' }
+  { name: 'AI问诊建议', desc: '智能推荐科室', icon: 'stethoscope', tone: 'tone-disease', url: '/pages/consultation/index' },
+  { name: '按科室挂号', desc: '选择院区科室', icon: 'hospital', tone: 'tone-dept', url: '/pages/booking/index' },
+  { name: '就诊人管理', desc: '切换电子就诊卡', icon: 'user-round-plus', tone: 'tone-report', url: '/pages/real-name/index' },
+  { name: '门诊缴费', desc: '挂号药品等缴费', icon: 'wallet-cards', tone: 'tone-payment', url: '/pages/pending-payments/index' }
 ];
 
 const serviceGroups = [
   {
     title: '门诊',
     items: [
-      { name: '我的挂号', icon: '挂', url: '/pages/appointments/index' },
-      { name: '待处置安排', icon: '处', url: '/pages/disposals/index?mode=arrangement' },
-      { name: '待检查/检验安排', icon: '检', url: '/pages/medical-orders/index?mode=arrangement' },
-      { name: '待取药安排', icon: '药', url: '/pages/prescriptions/index?mode=arrangement' }
+      { name: '我的挂号', icon: 'calendar-days', iconBg: 'linear-gradient(135deg, #5bbcff 0%, #2f80ed 100%)', url: '/pages/appointments/index' },
+      { name: '待处置安排', icon: 'syringe', iconBg: 'linear-gradient(135deg, #ff9b7a 0%, #ff5c35 100%)', url: '/pages/disposals/index?mode=arrangement' },
+      { name: '待检查/检验安排', icon: 'microscope', iconBg: 'linear-gradient(135deg, #ffc928 0%, #ff9f1c 100%)', url: '/pages/medical-orders/index?mode=arrangement' },
+      { name: '待取药安排', icon: 'pill-bottle', iconBg: 'linear-gradient(135deg, #34d399 0%, #10b981 100%)', url: '/pages/prescriptions/index?mode=arrangement' }
     ]
   },
   {
     title: '记录',
     items: [
-      { name: '检查检验报告', icon: '报', url: '/pages/medical-orders/index?mode=report' },
-      { name: '电子病历', icon: '历', url: '/pages/medical-records/index' },
-      { name: '缴费记录', icon: '缴', url: '/pages/pending-payments/index?mode=record' },
-      { name: '处置记录', icon: '处', url: '/pages/disposals/index?mode=record' },
-      { name: '取药记录', icon: '药', url: '/pages/prescriptions/index?mode=record' }
+      { name: '检查检验报告', icon: 'microscope', iconBg: 'linear-gradient(135deg, #ffc928 0%, #ff9f1c 100%)', url: '/pages/medical-orders/index?mode=report' },
+      { name: '电子病历', icon: 'clipboard-list', iconBg: 'linear-gradient(135deg, #5bbcff 0%, #2f80ed 100%)', url: '/pages/medical-records/index' },
+      { name: '缴费记录', icon: 'wallet-cards', iconBg: 'linear-gradient(135deg, #2dd4bf 0%, #0ea5e9 100%)', url: '/pages/pending-payments/index?mode=record' },
+      { name: '处置记录', icon: 'syringe', iconBg: 'linear-gradient(135deg, #ff9b7a 0%, #ff5c35 100%)', url: '/pages/disposals/index?mode=record' },
+      { name: '取药记录', icon: 'pill-bottle', iconBg: 'linear-gradient(135deg, #34d399 0%, #10b981 100%)', url: '/pages/prescriptions/index?mode=record' }
     ]
   }
 ];
@@ -185,38 +188,18 @@ function go(url: string) {
   transform: rotate(45deg);
 }
 
-.banner-card {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  min-height: 184rpx;
+.banner-swiper {
+  height: 220rpx;
   margin-bottom: 22rpx;
-  padding: 30rpx;
   border-radius: 18rpx;
-  background: linear-gradient(135deg, #ff8a00 0%, #ff5c35 100%);
-  color: #fff;
-  box-shadow: 0 14rpx 34rpx rgba(255, 117, 24, 0.24);
+  overflow: hidden;
+  box-shadow: 0 14rpx 34rpx rgba(31, 84, 140, 0.12);
 }
 
-.banner-title {
-  font-size: 42rpx;
-  font-weight: 900;
-  line-height: 1.3;
-}
-
-.banner-desc {
-  margin-top: 12rpx;
-  color: rgba(255, 255, 255, 0.86);
-  font-size: 26rpx;
-}
-
-.banner-pill {
-  flex-shrink: 0;
-  padding: 12rpx 16rpx;
-  border-radius: 999rpx;
-  background: rgba(255, 255, 255, 0.18);
-  font-size: 24rpx;
-  font-weight: 700;
+.banner-image {
+  display: block;
+  width: 100%;
+  height: 220rpx;
 }
 
 .patient-card {
@@ -271,97 +254,137 @@ function go(url: string) {
 }
 
 .quick-card {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 20rpx;
-  min-height: 130rpx;
-  padding: 24rpx;
-  border-radius: 16rpx;
+  justify-content: space-between;
+  gap: 18rpx;
+  min-height: 148rpx;
+  padding: 28rpx 24rpx;
+  border-radius: 18rpx;
   background: #fff;
-  box-shadow: 0 10rpx 26rpx rgba(31, 84, 140, 0.08);
+  box-shadow: 0 12rpx 28rpx rgba(31, 84, 140, 0.1);
+  overflow: hidden;
+}
+
+.quick-card::after {
+  content: "";
+  position: absolute;
+  right: -22rpx;
+  bottom: -32rpx;
+  width: 128rpx;
+  height: 128rpx;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.55);
 }
 
 .quick-icon {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 78rpx;
-  height: 78rpx;
-  border-radius: 20rpx;
-  color: #fff;
-  font-size: 30rpx;
-  font-weight: 900;
+  flex-shrink: 0;
+  width: 84rpx;
+  height: 84rpx;
+  border-radius: 24rpx;
+  background: rgba(255, 255, 255, 0.62);
+  box-shadow: inset 0 -6rpx 12rpx rgba(47, 128, 237, 0.08), 0 8rpx 18rpx rgba(31, 84, 140, 0.08);
+  order: 2;
 }
 
-.tone-disease .quick-icon {
-  background: linear-gradient(135deg, #ffc928 0%, #ff8a00 100%);
+.tone-disease {
+  background: linear-gradient(135deg, #fff6d9 0%, #ffe3b0 100%);
 }
 
-.tone-dept .quick-icon {
-  background: linear-gradient(135deg, #ff9f1c 0%, #ff5c35 100%);
+.tone-dept {
+  background: linear-gradient(135deg, #e7f5ff 0%, #c7e8ff 100%);
 }
 
-.tone-report .quick-icon {
-  background: linear-gradient(135deg, #5bbcff 0%, #2f80ed 100%);
+.tone-report {
+  background: linear-gradient(135deg, #e9fff4 0%, #c8f5de 100%);
 }
 
-.tone-payment .quick-icon {
-  background: linear-gradient(135deg, #2dd4bf 0%, #0ea5e9 100%);
+.tone-payment {
+  background: linear-gradient(135deg, #fff0e8 0%, #ffd9cb 100%);
 }
 
 .quick-name {
-  color: #0f172a;
-  font-size: 31rpx;
-  font-weight: 800;
+  position: relative;
+  z-index: 1;
+  color: #143450;
+  font-size: 34rpx;
+  font-weight: 900;
+  line-height: 1.2;
 }
 
 .quick-desc {
+  position: relative;
+  z-index: 1;
   margin-top: 8rpx;
-  color: #475569;
-  font-size: 25rpx;
+  color: #718096;
+  font-size: 26rpx;
+  font-weight: 500;
+  line-height: 1.35;
 }
 
 .service-panel {
-  padding: 26rpx 24rpx 18rpx;
-  border-radius: 18rpx;
+  overflow: hidden;
+  padding: 0 0 22rpx;
+  border: 2rpx solid #dbeafe;
+  border-radius: 22rpx;
   background: #fff;
-  box-shadow: 0 10rpx 30rpx rgba(31, 84, 140, 0.08);
+  box-shadow: 0 16rpx 38rpx rgba(31, 84, 140, 0.12);
 }
 
 .tab-row {
   display: flex;
-  justify-content: space-around;
-  margin-bottom: 28rpx;
+  align-items: center;
+  min-height: 86rpx;
+  padding: 0;
+  margin-bottom: 30rpx;
+  background: #48a4f5;
 }
 
 .tab-item {
   position: relative;
-  padding-bottom: 16rpx;
-  color: #2f3542;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  height: 86rpx;
+  padding: 0;
+  border-radius: 0;
+  color: rgba(255, 255, 255, 0.92);
   font-size: 34rpx;
   font-weight: 700;
 }
 
 .tab-item.active {
-  color: #2f80ed;
+  background: #fff;
+  color: #48a4f5;
+  box-shadow: none;
+}
+
+.tab-item:first-child.active {
+  border-top-left-radius: 20rpx;
+  border-top-right-radius: 20rpx;
+}
+
+.tab-item:last-child.active {
+  border-top-left-radius: 20rpx;
+  border-top-right-radius: 20rpx;
 }
 
 .tab-item.active::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  bottom: 0;
-  width: 48rpx;
-  height: 7rpx;
-  border-radius: 999rpx;
-  background: #2f80ed;
-  transform: translateX(-50%);
+  display: none;
 }
 
 .service-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  row-gap: 34rpx;
+  row-gap: 38rpx;
+  padding: 0 18rpx;
 }
 
 .service-item {
@@ -375,13 +398,11 @@ function go(url: string) {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 76rpx;
-  height: 76rpx;
-  border-radius: 18rpx;
-  background: linear-gradient(135deg, #37b3ff 0%, #2f80ed 68%, #ff9f1c 100%);
-  color: #fff;
-  font-size: 28rpx;
-  font-weight: 900;
+  width: 92rpx;
+  height: 92rpx;
+  border-radius: 24rpx;
+  background: #eef6ff;
+  box-shadow: inset 0 -8rpx 14rpx rgba(47, 128, 237, 0.08), 0 8rpx 18rpx rgba(47, 128, 237, 0.08);
 }
 
 .service-name {

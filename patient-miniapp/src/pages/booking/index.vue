@@ -11,7 +11,7 @@
       <view class="ai-meta">推荐科室：{{ aiConsultation.recommendedDepartmentName }} · 风险等级：{{ aiConsultation.riskLevel }}</view>
     </view>
 
-    <view class="section-card">
+    <view v-if="!isSearchDoctorEntry" class="section-card">
       <view class="section-title">选择科室</view>
       <view v-if="isSearchDepartmentEntry" class="single-chip-row">
         <view class="dept-chip active">{{ selectedDepartment?.name }}</view>
@@ -54,7 +54,6 @@
           <view class="detail-name">{{ selectedSchedule.doctorName }}</view>
           <view class="detail-meta">{{ selectedDepartment?.name }} · {{ doctorInfo(selectedSchedule.doctorId) }}</view>
         </view>
-        <button class="back-button" @click="selectedSchedule = null">返回</button>
       </view>
 
       <view class="level-row">
@@ -209,6 +208,8 @@ const aiConsultation = ref<AiConsultation>();
 const initialDepartmentId = ref('');
 const initialDoctorId = ref('');
 const focusedDoctorId = ref('');
+const isSearchDoctorEntry = ref(false);
+const EXCLUDED_PATIENT_DEPARTMENT_NAMES = ['检查科', '检验科', '处置室', '药房', '收费处'];
 
 const selectedDepartment = computed(() => departments.value.find((item) => item.id === selectedDepartmentId.value));
 const recommendedDoctorIds = computed(() => aiConsultation.value?.recommendedDoctors.map((item) => item.doctorId) ?? []);
@@ -299,6 +300,15 @@ function toDepartment(item: Record<string, unknown>): Department {
     id: normalizeText(item.id),
     name: normalizeText(item.name)
   };
+}
+
+function normalizeSearchText(value: string) {
+  return value.normalize('NFKC').toLocaleLowerCase().replace(/\s+/g, '');
+}
+
+function isPatientSelectableDepartment(department: Department) {
+  const departmentName = normalizeSearchText(department.name);
+  return !EXCLUDED_PATIENT_DEPARTMENT_NAMES.some((name) => departmentName.includes(normalizeSearchText(name)));
 }
 
 function toDoctor(item: Record<string, unknown>): Doctor {
@@ -553,7 +563,9 @@ async function confirmBooking() {
 async function initialize() {
   aiConsultation.value = uni.getStorageSync('last_ai_consultation') || undefined;
   const departmentList = await request<Record<string, unknown>[]>({ url: '/departments', method: 'GET' });
-  departments.value = departmentList.map(toDepartment);
+  departments.value = departmentList
+    .map(toDepartment)
+    .filter((item) => item.id && item.name && isPatientSelectableDepartment(item));
   selectedDepartmentId.value = resolveInitialDepartmentId();
   await loadDepartmentResources();
 }
@@ -561,6 +573,7 @@ async function initialize() {
 onLoad((options) => {
   initialDepartmentId.value = decodeURIComponent(String(options?.departmentId || ''));
   initialDoctorId.value = decodeURIComponent(String(options?.doctorId || ''));
+  isSearchDoctorEntry.value = String(options?.from || '') === 'doctorSearch' && !!initialDoctorId.value;
 });
 
 onMounted(initialize);
@@ -832,19 +845,6 @@ onMounted(initialize);
   font-size: 27rpx;
 }
 
-.back-button {
-  margin-left: auto;
-  width: 132rpx;
-  height: 62rpx;
-  padding: 0;
-  border-radius: 999rpx;
-  color: #2f80ed;
-  background: #fff;
-  font-size: 28rpx;
-  line-height: 62rpx;
-  white-space: nowrap;
-}
-
 .level-row {
   display: flex;
   align-items: center;
@@ -900,22 +900,43 @@ onMounted(initialize);
   padding: 0;
   border: 2rpx solid #30c47c;
   border-radius: 10rpx;
-  background: #30c47c;
-  color: #fff;
+  overflow: hidden;
+  background: #fff;
+  color: #30a873;
   font-size: 26rpx;
   font-weight: 800;
-  line-height: 38rpx;
+  line-height: 1;
+}
+
+.slot-button text {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  width: 100%;
+}
+
+.slot-button text:first-child {
+  background: #30c47c;
+  color: #fff;
 }
 
 .time-row.disabled .slot-button {
   border-color: #cbd5e1;
+  color: #94a3b8;
+}
+
+.time-row.disabled .slot-button text:first-child {
   background: #cbd5e1;
 }
 
 .slot-left {
-  margin-top: 2rpx;
   background: #fff;
   color: #30a873;
+}
+
+.time-row.disabled .slot-left {
+  color: #94a3b8;
 }
 
 .confirm-mask {

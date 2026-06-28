@@ -80,6 +80,7 @@ const departmentResults = ref<Department[]>([]);
 const doctorResults = ref<Doctor[]>([]);
 const loading = ref(false);
 const searched = ref(false);
+const EXCLUDED_PATIENT_DEPARTMENT_NAMES = ['检查科', '检验科', '处置室', '药房'];
 
 function normalizeText(value: unknown) {
   if (typeof value === 'string') {
@@ -156,6 +157,11 @@ function matches(value: string, query: string) {
   return normalizeSearchText(value).includes(normalizeSearchText(query));
 }
 
+function isPatientSelectableDepartment(department: Department) {
+  const departmentName = normalizeSearchText(department.name);
+  return !EXCLUDED_PATIENT_DEPARTMENT_NAMES.some((name) => departmentName.includes(normalizeSearchText(name)));
+}
+
 function onKeywordInput(event: { detail: { value?: string } }) {
   const value = event.detail.value ?? '';
   if (keyword.value !== value) {
@@ -210,7 +216,7 @@ function goDepartment(department: Department) {
 
 function goDoctor(doctor: Doctor) {
   uni.navigateTo({
-    url: `/pages/booking/index?departmentId=${encodeURIComponent(doctor.departmentId)}&doctorId=${encodeURIComponent(doctor.id)}`
+    url: `/pages/booking/index?departmentId=${encodeURIComponent(doctor.departmentId)}&doctorId=${encodeURIComponent(doctor.id)}&from=doctorSearch`
   });
 }
 
@@ -218,7 +224,9 @@ async function loadSearchData() {
   loading.value = true;
   try {
     const departmentList = await request<Record<string, unknown>[]>({ url: '/departments', method: 'GET' });
-    departments.value = departmentList.map(toDepartment).filter((item) => item.id && item.name);
+    departments.value = departmentList
+      .map(toDepartment)
+      .filter((item) => item.id && item.name && isPatientSelectableDepartment(item));
     applySearch();
 
     const doctorGroups = await Promise.allSettled(
