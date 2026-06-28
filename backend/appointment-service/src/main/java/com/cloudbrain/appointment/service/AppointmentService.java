@@ -165,9 +165,13 @@ public class AppointmentService {
     }
 
     @Transactional
-    public Appointment skip(String id,String doctorId) {
-        validateDoctor(get(id),doctorId);
-        return appointmentRepository.skipByPositions(id,3);
+    public Appointment skip(String id, String doctorId) {
+        Appointment appt = get(id);
+        validateDoctor(appt, doctorId);
+        int missed = appt.getMissedCount();
+        // 第1次过号挪3位，第2次挪5位，第3次及之后移至当日队尾
+        int positions = missed == 0 ? 3 : missed == 1 ? 5 : Integer.MAX_VALUE;
+        return appointmentRepository.skipByPositions(id, positions);
     }
 
     private void validateDoctor(Appointment appointment,String doctorId) {

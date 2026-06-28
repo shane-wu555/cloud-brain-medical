@@ -185,6 +185,14 @@ public class AppointmentRepository {
         return findById(id).orElseThrow();
     }
 
+    private static AppointmentStatus parseStatus(String raw) {
+        try {
+            return AppointmentStatus.valueOf(raw);
+        } catch (IllegalArgumentException e) {
+            return AppointmentStatus.CANCELLED;
+        }
+    }
+
     private static class AppointmentRowMapper implements RowMapper<Appointment> {
         @Override
         public Appointment mapRow(ResultSet rs, int rowNum) throws SQLException {
@@ -201,7 +209,7 @@ public class AppointmentRepository {
                     rs.getString("period"),
                     rs.getObject("start_time", java.time.LocalTime.class),
                     AppointmentSource.valueOf(rs.getString("source")),
-                    AppointmentStatus.valueOf(rs.getString("status")),
+                    parseStatus(rs.getString("status")),
                     PaymentStatus.valueOf(rs.getString("payment_status")),
                     rs.getString("triage_summary"),
                     rs.getString("risk_level"),

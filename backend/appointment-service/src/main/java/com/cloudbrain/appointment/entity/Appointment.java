@@ -177,13 +177,14 @@ public class Appointment {
     }
 
     public void markCalled() {
-        if(status!=AppointmentStatus.WAITING) throw new IllegalStateException("只有待诊患者可以叫号");
+        if(status!=AppointmentStatus.WAITING && status!=AppointmentStatus.REVISIT_WAITING)
+            throw new IllegalStateException("只有待诊或复诊等待中的患者可以叫号");
         status=AppointmentStatus.CALLED;
     }
 
     public void startVisit() {
-        if(status!=AppointmentStatus.WAITING && status!=AppointmentStatus.CALLED && status!=AppointmentStatus.REVISIT_WAITING)
-            throw new IllegalStateException("当前患者不能开始接诊");
+        if(status!=AppointmentStatus.WAITING && status!=AppointmentStatus.CALLED)
+            throw new IllegalStateException("请先叫号再接诊");
         status=AppointmentStatus.IN_VISIT;
     }
     public void waitForRevisit(int newQueueNumber){this.status=AppointmentStatus.REVISIT_WAITING;this.queueNumber=newQueueNumber;}

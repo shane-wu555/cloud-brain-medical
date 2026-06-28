@@ -58,9 +58,9 @@
               <span>{{ formatTime(item.startTime) }}</span>
             </div>
             <div class="qcard__ops" @click.stop>
-              <el-button v-if="item.status === 'WAITING'" size="small" type="primary" link @click="call(item)">叫号</el-button>
-              <el-button v-if="['WAITING','CALLED'].includes(item.status)" size="small" type="success" link @click="start(item)">接诊</el-button>
-              <el-button v-if="['WAITING','CALLED','IN_VISIT','REVISIT_WAITING'].includes(item.status)" size="small" link @click="skip(item)">过号</el-button>
+              <el-button v-if="['WAITING','REVISIT_WAITING'].includes(item.status)" size="small" type="primary" link @click="call(item)">叫号</el-button>
+              <el-button v-if="item.status === 'CALLED'" size="small" type="success" link @click="start(item)">接诊</el-button>
+              <el-button v-if="['WAITING','CALLED','REVISIT_WAITING'].includes(item.status)" size="small" link @click="skip(item)">过号</el-button>
             </div>
           </div>
           <div v-if="!filteredQueue.length" class="queue-empty">暂无患者</div>
@@ -464,14 +464,16 @@ const recordForm = reactive({
 
 const doctorDept = computed(() => appointments.value[0]?.departmentName ?? '');
 
-const waitingCount = computed(() => appointments.value.filter(a => ['WAITING', 'CALLED', 'IN_VISIT', 'REVISIT_WAITING'].includes(a.status)).length);
-const skippedCount = computed(() => appointments.value.filter(a => a.status === 'SKIPPED').length);
+const ACTIVE_STATUSES = ['WAITING', 'CALLED', 'IN_VISIT', 'REVISIT_WAITING'];
+const waitingCount = computed(() => appointments.value.filter(a => ACTIVE_STATUSES.includes(a.status)).length);
+// 过号 = 仍在等待但已过号至少一次（missedCount > 0）
+const skippedCount = computed(() => appointments.value.filter(a => ACTIVE_STATUSES.includes(a.status) && a.missedCount > 0).length);
 const finishedCount = computed(() => appointments.value.filter(a => a.status === 'FINISHED').length);
 
 const filteredQueue = computed(() => {
   let list = appointments.value;
-  if (queueTab.value === 'waiting') list = list.filter(a => ['WAITING', 'CALLED', 'IN_VISIT', 'REVISIT_WAITING'].includes(a.status));
-  else if (queueTab.value === 'skipped') list = list.filter(a => a.status === 'SKIPPED');
+  if (queueTab.value === 'waiting') list = list.filter(a => ACTIVE_STATUSES.includes(a.status));
+  else if (queueTab.value === 'skipped') list = list.filter(a => ACTIVE_STATUSES.includes(a.status) && a.missedCount > 0);
   else if (queueTab.value === 'finished') list = list.filter(a => a.status === 'FINISHED');
   const kw = queueKeyword.value.trim().toLowerCase();
   return kw ? list.filter(a => (a.patientName + a.businessNo).toLowerCase().includes(kw)) : list;
@@ -548,7 +550,7 @@ const aiModelLabel = computed(() => {
 function statusLabel(status: string) {
   const map: Record<string, string> = {
     WAITING: '待诊', CALLED: '已叫号', IN_VISIT: '接诊中',
-    FINISHED: '已接诊', SKIPPED: '过号', REVISIT_WAITING: '待复诊'
+    FINISHED: '已接诊', REVISIT_WAITING: '待复诊'
   };
   return map[status] ?? status;
 }
