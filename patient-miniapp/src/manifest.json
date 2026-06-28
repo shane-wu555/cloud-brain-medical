@@ -5,7 +5,11 @@
   "versionCode": 100,
   "mp-weixin": {
     "appid": "",
-    "setting": { "urlCheck": false },
+    "setting": {
+      "urlCheck": false,
+      "ignoreDevUnusedFiles": false,
+      "ignoreUploadUnusedFiles": false
+    },
     "usingComponents": true
   }
 }

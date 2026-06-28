@@ -16,6 +16,7 @@
   "globalStyle": {
     "navigationBarTextStyle": "white",
     "navigationBarBackgroundColor": "#48a4f5",
+    "navigationStyle": "custom",
     "backgroundColor": "#f2f7ff"
   }
 }

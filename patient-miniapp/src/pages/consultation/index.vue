@@ -1,10 +1,6 @@
 <template>
+  <patient-nav-bar title="AI 智能问诊" />
   <view class="page consultation-page">
-    <view class="consult-hero">
-      <view class="hero-title">AI 智能问诊</view>
-      <view class="hero-subtitle">请描述症状、持续时间和伴随表现，AI 将整理问诊建议和推荐科室</view>
-    </view>
-
     <view class="card consult-card">
       <view class="title">症状描述</view>
       <textarea
@@ -92,24 +88,7 @@ function goBooking() {
 <style scoped>
 .consultation-page {
   padding-top: 0;
-  background: linear-gradient(180deg, #48a4f5 0, #48a4f5 210rpx, #f2f7ff 210rpx, #f2f7ff 100%);
-}
-
-.consult-hero {
-  padding: 34rpx 4rpx 28rpx;
-  color: #fff;
-}
-
-.hero-title {
-  font-size: 46rpx;
-  font-weight: 900;
-}
-
-.hero-subtitle {
-  margin-top: 12rpx;
-  color: rgba(255, 255, 255, 0.86);
-  font-size: 27rpx;
-  line-height: 1.55;
+  background: #f2f7ff;
 }
 
 .consult-card {

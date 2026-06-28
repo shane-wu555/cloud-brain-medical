@@ -1,10 +1,6 @@
 <template>
+  <patient-nav-bar :title="pageTitle" />
   <view class="page">
-    <view class="card">
-      <view class="title">{{ pageTitle }}</view>
-      <view class="muted">{{ pageDesc }}</view>
-    </view>
-
     <view v-for="order in visibleOrders" :key="order.id" class="card row">
       <view class="row-between">
         <view class="title-sm">{{ orderTypeLabel(order.orderType) }}申请：{{ order.projectName }}</view>
@@ -88,11 +84,6 @@ const visibleReports = computed(() =>
     : []
 );
 const pageTitle = computed(() => (mode.value === 'arrangement' ? '检查检验安排' : '检查检验报告'));
-const pageDesc = computed(() =>
-  mode.value === 'arrangement'
-    ? '查看检查/检验项目、执行科室、地点和当前状态。'
-    : '查看医生已确认的检查/检验报告、结论和建议。'
-);
 const emptyText = computed(() => (mode.value === 'arrangement' ? '暂无待安排的检查检验项目' : '暂无已确认检查检验报告'));
 
 onLoad((options) => {

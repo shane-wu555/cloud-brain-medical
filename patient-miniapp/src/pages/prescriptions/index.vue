@@ -1,10 +1,6 @@
 <template>
+  <patient-nav-bar :title="pageTitle" />
   <view class="page">
-    <view class="card">
-      <view class="title">{{ pageTitle }}</view>
-      <view class="muted">{{ pageDesc }}</view>
-    </view>
-
     <view v-for="prescription in visiblePrescriptions" :key="prescription.id" class="card prescription-card">
       <view class="row-between">
         <view class="title-sm">{{ prescriptionTitle(prescription) }}</view>
@@ -101,11 +97,6 @@ const visiblePrescriptions = computed(() =>
     .sort((a, b) => prescriptionSortTime(b).localeCompare(prescriptionSortTime(a)))
 );
 const pageTitle = computed(() => (mode.value === 'arrangement' ? '待取药安排' : '取药记录'));
-const pageDesc = computed(() =>
-  mode.value === 'arrangement'
-    ? '查看待缴费、待发药和准备取药的处方。'
-    : '查看已发药、退药或取消的取药记录。'
-);
 const emptyText = computed(() => (mode.value === 'arrangement' ? '暂无待取药安排' : '暂无取药记录'));
 
 onLoad((options) => {
