@@ -383,17 +383,17 @@ const auth = useAuthStore();
 const router = useRouter();
 const role = computed(() => auth.user?.role ?? '');
 
-const roleLabel = computed(() => ({
+const roleLabel = computed(() => (({
   CHECK_DOCTOR: '检查医生工作台', LAB_DOCTOR: '检验医生工作台', DISPOSAL_DOCTOR: '处置医生工作台'
-}[role.value] ?? '医技工作台'));
+} as Record<string, string>)[role.value] ?? '医技工作台'));
 
-const workTabLabel = computed(() => ({
+const workTabLabel = computed(() => (({
   CHECK_DOCTOR: '影像上传', LAB_DOCTOR: '检验登记', DISPOSAL_DOCTOR: '处置记录'
-}[role.value] ?? '执行记录'));
+} as Record<string, string>)[role.value] ?? '执行记录'));
 
-const reportTitle = computed(() => ({
+const reportTitle = computed(() => (({
   CHECK_DOCTOR: '影像检查报告', LAB_DOCTOR: '临床检验报告', DISPOSAL_DOCTOR: '处置记录报告'
-}[role.value] ?? '医技报告'));
+} as Record<string, string>)[role.value] ?? '医技报告'));
 
 const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
 const today = new Date().toLocaleDateString('zh-CN');
