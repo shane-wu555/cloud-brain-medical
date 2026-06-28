@@ -58,15 +58,26 @@ public class PatientController {
 
     @GetMapping
     @PreAuthorize("hasAnyRole('CASHIER','ADMIN')")
-    public List<PatientRepository.PatientProfile> search(@RequestParam(name = "phone") String phone) {
-        return repository.findByPhone(phone);
+    public List<PatientRepository.PatientProfile> search(
+            @RequestParam(name = "phone", required = false) String phone,
+            @RequestParam(name = "idNumber", required = false) String idNumber) {
+        if (idNumber != null && !idNumber.isBlank()) {
+            return repository.findByIdNumber("ID_CARD", idNumber).map(List::of).orElse(List.of());
+        }
+        if (phone != null && !phone.isBlank()) {
+            return repository.findByPhone(phone);
+        }
+        throw new IllegalArgumentException("请提供 idNumber 或 phone 查询条件");
     }
 
     @PostMapping("/offline")
     @PreAuthorize("hasRole('CASHIER')")
     public PatientRepository.PatientProfile createOffline(@Valid @RequestBody OfflinePatientRequest request) {
-        return repository.findByPhone(request.phone()).stream().findFirst()
-                .orElseGet(() -> repository.createOffline(request.phone(), request.name()));
+        String idType = normalizeIdType(request.idType());
+        String idNumber = normalizeIdNumber(idType, request.idNumber());
+        // 按身份证查找，存在则直接返回，否则建档
+        return repository.findByIdNumber(idType, idNumber)
+                .orElseGet(() -> repository.createOffline(idType, idNumber, request.name(), request.phone()));
     }
 
     @PutMapping("/me/real-name")
@@ -126,7 +137,9 @@ public class PatientController {
     }
 
     public record OfflinePatientRequest(
-            @NotBlank @Pattern(regexp = "^1\\d{10}$") String phone,
-            @NotBlank String name) {
+            @NotBlank String idType,
+            @NotBlank String idNumber,
+            @NotBlank String name,
+            String phone) {      // 手机号可选，收银台若有则录入
     }
 }

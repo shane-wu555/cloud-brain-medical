@@ -36,6 +36,15 @@ public class PatientRepository {
         return jdbc.query("select * from patient_profile where phone = ? order by created_at desc", (rs, row) -> map(rs), phone);
     }
 
+    public Optional<PatientProfile> findByIdNumber(String idType, String idNumber) {
+        List<PatientProfile> rows = jdbc.query("""
+                select * from patient_profile
+                where id_type = ? and id_number = ?
+                limit 1
+                """, (rs, row) -> map(rs), idType, idNumber.trim().toUpperCase());
+        return rows.stream().findFirst();
+    }
+
     public Optional<PatientProfile> bound(String accountId) {
         List<PatientProfile> rows = jdbc.query("""
                 select p.* from patient_profile p
@@ -84,12 +93,18 @@ public class PatientRepository {
         return find(id).orElseThrow();
     }
 
-    public PatientProfile createOffline(String phone, String name) {
+    public PatientProfile createOffline(String idType, String idNumber, String name, String phone) {
         String id = "patient-offline-" + UUID.randomUUID();
+        String normalizedId = idNumber.trim().toUpperCase();
         jdbc.update("""
-                insert into patient_profile(id, user_id, phone, name)
-                values (?, ?, ?, ?)
-                """, id, id, phone, name);
+                insert into patient_profile(id, user_id, phone, name, id_type, id_number, id_card, real_name_verified, verified_at)
+                values (?, ?, ?, ?, ?, ?, ?, true, now())
+                """, id, id,
+                phone != null ? phone : "",
+                name,
+                idType,
+                normalizedId,
+                "ID_CARD".equals(idType) ? normalizedId : null);
         return find(id).orElseThrow();
     }
 

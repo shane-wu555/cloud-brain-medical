@@ -3,10 +3,14 @@
     <header class="topbar"><div><p class="eyebrow">窗口工作台</p><h1>建档、挂号与收费</h1><p class="muted">线上与窗口共用排班号源和支付状态。</p></div><el-button @click="logout">退出</el-button></header>
     <section class="grid">
       <el-card class="span-5" shadow="never"><template #header>患者查询 / 建档</template>
-        <el-form label-position="top"><el-form-item label="手机号"><el-input v-model="patientForm.phone" /></el-form-item>
-          <el-form-item label="姓名（新患者）"><el-input v-model="patientForm.name" /></el-form-item>
-          <el-button @click="findPatient">查询</el-button><el-button type="primary" @click="buildPatient">线下建档</el-button></el-form>
-        <el-alert v-if="patient" :title="`${patient.name} · ${patient.phone}`" :description="`患者编号：${patient.userId}`" type="success" :closable="false" />
+        <el-form label-position="top">
+          <el-form-item label="身份证号"><el-input v-model="patientForm.idNumber" placeholder="输入18位身份证号" maxlength="18" /></el-form-item>
+          <el-form-item label="姓名（新患者建档时填写）"><el-input v-model="patientForm.name" /></el-form-item>
+          <el-form-item label="手机号（选填）"><el-input v-model="patientForm.phone" placeholder="选填" /></el-form-item>
+          <el-button @click="findPatient">按身份证查询</el-button>
+          <el-button type="primary" :disabled="!patientForm.idNumber || !patientForm.name" @click="buildPatient">线下建档</el-button>
+        </el-form>
+        <el-alert v-if="patient" :title="`${patient.name} · ${patient.idNumber ?? patient.phone}`" :description="`患者编号：${patient.userId}`" type="success" :closable="false" />
       </el-card>
       <el-card class="span-7" shadow="never"><template #header>现场挂号收费</template>
         <el-form label-position="top"><el-form-item label="排班时间"><el-select v-model="scheduleId" class="full">
@@ -28,15 +32,27 @@ import { useRouter } from 'vue-router';
 import { useAuthStore } from '../../store/auth';
 import { getDepartments,getSchedules,type Department,type Schedule } from '../../api/doctor';
 import { cancelAppointment,createOfflineAppointment,getAppointments,type Appointment } from '../../api/appointment';
-import { createOfflinePatient,searchPatients,type PatientProfile } from '../../api/patient';
+import { createOfflinePatient,searchPatientByIdNumber,type PatientProfile } from '../../api/patient';
 import { appointmentStatusLabel, paymentStatusLabel } from '../../utils/status';
-const router=useRouter();const auth=useAuthStore();const patientForm=reactive({phone:'13800000000',name:''});
+const router=useRouter();const auth=useAuthStore();
+const patientForm=reactive({idNumber:'',name:'',phone:''});
 const patient=ref<PatientProfile>();const schedules=ref<Schedule[]>([]);const departments=ref<Department[]>([]);const scheduleId=ref('');const lastAppointment=ref<Appointment>();
 const patientAppointments=ref<Appointment[]>([]);
 const scheduleOptions=computed(()=>schedules.value.flatMap(schedule => (schedule.timeSlots??[]).map(slot => ({schedule,slot}))));
 async function loadPatientAppointments(){patientAppointments.value=patient.value?await getAppointments({patientId:patient.value.userId}):[]}
-async function findPatient(){patient.value=(await searchPatients(patientForm.phone))[0];if(!patient.value)ElMessage.warning('未找到患者，请线下建档');await loadPatientAppointments()}
-async function buildPatient(){patient.value=await createOfflinePatient(patientForm.phone,patientForm.name);ElMessage.success('建档成功');await loadPatientAppointments()}
+async function findPatient(){
+  if(!patientForm.idNumber.trim()){ElMessage.warning('请输入身份证号');return;}
+  const list=await searchPatientByIdNumber(patientForm.idNumber.trim());
+  patient.value=list[0];
+  if(!patient.value)ElMessage.warning('未找到该身份证对应患者，可点击「线下建档」新建');
+  await loadPatientAppointments();
+}
+async function buildPatient(){
+  if(!patientForm.idNumber.trim()||!patientForm.name.trim()){ElMessage.warning('身份证号和姓名必填');return;}
+  patient.value=await createOfflinePatient('ID_CARD',patientForm.idNumber.trim(),patientForm.name.trim(),patientForm.phone||undefined);
+  ElMessage.success('建档成功');
+  await loadPatientAppointments();
+}
 async function register(){const option=scheduleOptions.value.find(i=>i.slot.id===scheduleId.value);if(!option||!patient.value)return;const s=option.schedule;const d=departments.value.find(i=>i.id===s.departmentId);
   lastAppointment.value=await createOfflineAppointment({scheduleId:option.slot.id,patientId:patient.value.userId,patientName:patient.value.name,doctorId:s.doctorId,doctorName:s.doctorName,departmentId:s.departmentId,departmentName:d?.name??'',visitDate:s.workDate,period:s.period,startTime:option.slot.startTime.slice(0,5),riskLevel:'LOW'});
   ElMessage.success('挂号及 0.01 元窗口收费成功');schedules.value=await getSchedules();await loadPatientAppointments()}

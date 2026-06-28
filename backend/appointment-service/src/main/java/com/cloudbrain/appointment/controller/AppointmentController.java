@@ -82,6 +82,11 @@ public class AppointmentController {
     @PostMapping("/offline")
     @PreAuthorize("hasRole('CASHIER')")
     public Appointment createOffline(@RequestBody CreateAppointmentRequest request) {
+        // 线下挂号由收银台在前端完成"查找或建档"后传入 patientId，
+        // 此处只做存在性校验（患者档案是否存在于 patient-service）
+        if (!patientVerificationClient.isVerified(request.patientId())) {
+            throw new AccessDeniedException("患者档案不存在，请先在收银台完成患者建档（POST /api/patients/offline）再挂号");
+        }
         return appointmentService.createOffline(request);
     }
 
