@@ -136,9 +136,27 @@
                 <input class="med-doc__input" v-model="recordForm.allergyHistory" style="flex:1" />
               </div>
 
-              <div class="med-doc__row med-doc__row--top med-doc__row--grow">
+              <div class="med-doc__row med-doc__row--top">
                 <span class="med-doc__lbl med-doc__lbl--w">现病史</span>
-                <textarea class="med-doc__area med-doc__area--grow" v-model="recordForm.presentIllness" />
+                <textarea class="med-doc__area" v-model="recordForm.presentIllness" rows="2" />
+              </div>
+
+              <!-- 辅助检查：已确认报告 + 已开医嘱，始终显示 -->
+              <div class="med-doc__row med-doc__row--top">
+                <span class="med-doc__lbl med-doc__lbl--w">辅助检查</span>
+                <div class="med-doc__checklist">
+                  <div v-for="r in formalReports" :key="r.id" class="med-doc__check-item med-doc__check-item--done">
+                    <span class="check-tag">已回报</span>
+                    <span>{{ r.reportType }}：{{ r.conclusion }}</span>
+                  </div>
+                  <div v-for="o in currentOrders" :key="o.id" class="med-doc__check-item"
+                       :class="o.status === 'COMPLETED' ? 'med-doc__check-item--done' : 'med-doc__check-item--pending'">
+                    <span class="check-tag">{{ { CHECK:'检查', LAB:'检验', DISPOSAL:'处置' }[o.orderType] ?? o.orderType }}</span>
+                    <span>{{ o.projectName }}</span>
+                    <span v-if="o.status === 'COMPLETED'" class="check-done-mark">✓</span>
+                  </div>
+                  <div v-if="!formalReports.length && !currentOrders.length" class="med-doc__check-placeholder">暂无检查/检验记录，可在「医嘱开立」页开单</div>
+                </div>
               </div>
 
               <div class="med-doc__row">
@@ -164,7 +182,7 @@
 
           <!-- 处方 -->
           <div v-show="mainTab === 'rx'" class="main-content">
-            <!-- AI 建议摘要 -->
+            <!-- AI 建议 -->
             <div v-if="rxSuggestions.length" class="rx-ai-hint">
               <div class="rx-ai-hint__hdr">
                 <span>AI 处方建议</span>
@@ -177,17 +195,17 @@
               </div>
             </div>
 
-            <!-- 已开处方 -->
+            <!-- 已开处方（紧凑） -->
             <div class="rx-section-hdr">
               <span>本次处方</span>
-              <el-button size="small" text @click="loadPrescriptions">刷新</el-button>
+              <el-button size="small" text @click="loadPrescriptions">↺ 刷新</el-button>
             </div>
             <div v-if="!prescriptions.length" class="rx-empty">暂无处方记录</div>
-            <div v-for="rx in prescriptions" :key="rx.id" class="rx-card">
+            <div v-for="rx in prescriptions" :key="rx.id" class="rx-card rx-card--compact">
               <div class="rx-card__hdr">
                 <span class="rx-card__no">{{ rx.prescriptionNo }}</span>
                 <el-tag :type="rxStatusType(rx.status)" size="small" effect="light">{{ rxStatusLabel(rx.status) }}</el-tag>
-                <span class="rx-card__amount">合计 ¥{{ rx.totalAmount?.toFixed(2) }}</span>
+                <span class="rx-card__amount">¥{{ rx.totalAmount?.toFixed(2) }}</span>
               </div>
               <div class="rx-card__body">
                 <div v-for="item in rx.items" :key="item.id" class="rx-card__item">
@@ -196,31 +214,31 @@
               </div>
             </div>
 
-            <!-- 手动开处方 -->
-            <div class="rx-section-hdr" style="margin-top:20px">手动开处方</div>
-            <div class="toolbar">
-              <el-input v-model="drugKeyword" clearable placeholder="搜索药品名称" style="width:220px" />
+            <!-- 药品目录 -->
+            <div class="rx-section-hdr" style="margin-top:16px">
+              <span>手动开处方</span>
             </div>
-            <el-table :data="filteredDrugs" size="small" max-height="180">
+            <el-input v-model="drugKeyword" clearable placeholder="搜索药品名称或规格" style="margin-bottom:10px" />
+            <el-table :data="filteredDrugs" size="small" :max-height="220">
               <el-table-column prop="drugName" label="药品" />
               <el-table-column prop="specification" label="规格" width="120" />
               <el-table-column prop="unitPrice" label="单价(元)" width="90" />
-              <el-table-column label="" width="70">
+              <el-table-column label="" width="60">
                 <template #default="{ row }">
                   <el-button size="small" link type="primary" @click="addDrugToRx(row)">加入</el-button>
                 </template>
               </el-table-column>
             </el-table>
 
-            <div v-if="manualRxItems.length" class="rx-manual">
+            <div v-if="manualRxItems.length" class="rx-manual" style="margin-top:12px">
               <div v-for="(item, idx) in manualRxItems" :key="idx" class="rx-manual-row">
                 <span class="rx-manual-name">{{ item.drugName }}</span>
-                <el-input v-model="item.dosage" placeholder="用量" size="small" style="width:90px" />
-                <el-input v-model="item.usage" placeholder="用法" size="small" style="width:80px" />
-                <el-input v-model="item.frequency" placeholder="频次" size="small" style="width:90px" />
-                <el-input-number v-model="item.days" :min="1" :max="30" size="small" style="width:80px" controls-position="right" />
-                <span style="font-size:13px;color:#6b7280">天</span>
-                <el-button size="small" link type="danger" @click="manualRxItems.splice(idx,1)">删除</el-button>
+                <el-input v-model="item.dosage" placeholder="用量" size="small" style="width:80px" />
+                <el-input v-model="item.usage" placeholder="用法" size="small" style="width:70px" />
+                <el-input v-model="item.frequency" placeholder="频次" size="small" style="width:80px" />
+                <el-input-number v-model="item.days" :min="1" :max="30" size="small" style="width:70px" controls-position="right" />
+                <span class="muted">天</span>
+                <el-button size="small" link type="danger" @click="manualRxItems.splice(idx,1)">✕</el-button>
               </div>
               <el-button type="primary" size="small" style="margin-top:10px" @click="submitManualRx">提交处方</el-button>
             </div>
@@ -247,7 +265,9 @@
               <el-table-column type="selection" width="50" />
               <el-table-column prop="code" label="编码" width="130" />
               <el-table-column prop="name" label="项目" />
-              <el-table-column prop="category" label="分类" width="90" />
+              <el-table-column label="分类" width="80">
+                <template #default="{ row }">{{ ({ CHECK:'检查', LAB:'检验', DISPOSAL:'处置' } as Record<string,string>)[row.category] ?? row.category }}</template>
+              </el-table-column>
               <el-table-column prop="price" label="价格" width="90" />
             </el-table>
           </div>
@@ -337,7 +357,7 @@ import { useAuthStore } from '../../store/auth';
 import { callAppointment, getTodayQueue, skipAppointment, startAppointment, updateAppointmentStatus, type Appointment } from '../../api/appointment';
 import { getMedicalRecords, getPatientHistory, initDoctorRecord, writeDoctorNote, type MedicalRecord } from '../../api/medical-record';
 import { getClinicalAssistance, getPrescriptionSuggestions, type ClinicalSuggestion } from '../../api/ai';
-import { createMedicalOrder, getMedicalItems, getReports, type MedicalItem, type MedicalReport } from '../../api/medical-order';
+import { createMedicalOrder, getMedicalItems, getMedicalOrders, getReports, type MedicalItem, type MedicalOrder, type MedicalReport } from '../../api/medical-order';
 import { createPrescription, getDrugs, getPrescriptions, type Drug, type Prescription } from '../../api/pharmacy';
 
 const router = useRouter();
@@ -377,6 +397,7 @@ const mainTabs = [
   { key: 'history', label: '历史病历' },
 ];
 
+const currentOrders = ref<MedicalOrder[]>([]);
 const prescriptions = ref<Prescription[]>([]);
 const drugKeyword = ref('');
 const manualRxItems = ref<Array<{ drugId: string; drugName: string; dosage: string; usage: string; frequency: string; days: number }>>([]);
@@ -427,13 +448,13 @@ const filteredDrugs = computed(() => {
 
 function rxStatusLabel(status: string) {
   const map: Record<string, string> = {
-    PENDING_PAYMENT: '待缴费', PAID: '已缴费', DISPENSED: '已取药', RETURNED: '已退药', CANCELLED: '已取消'
+    PENDING_PAYMENT: '待缴费', PAID: '已缴费', WAITING_DISPENSE: '待取药', DISPENSED: '已取药', RETURNED: '已退药', CANCELLED: '已取消'
   };
   return map[status] ?? status;
 }
 function rxStatusType(status: string): '' | 'primary' | 'success' | 'info' | 'warning' | 'danger' {
   if (status === 'PENDING_PAYMENT') return 'warning';
-  if (status === 'PAID') return 'primary';
+  if (status === 'PAID' || status === 'WAITING_DISPENSE') return 'primary';
   if (status === 'DISPENSED') return 'success';
   if (status === 'RETURNED' || status === 'CANCELLED') return 'info';
   return '';
@@ -449,7 +470,12 @@ function addDrugToRx(drug: Drug) {
 
 async function loadPrescriptions() {
   if (!current.value) return;
-  prescriptions.value = await getPrescriptions({ patientId: current.value.patientId });
+  const [rxList, drugList] = await Promise.all([
+    getPrescriptions({ patientId: current.value.patientId }),
+    drugs.value.length ? Promise.resolve(drugs.value) : getDrugs()
+  ]);
+  prescriptions.value = rxList;
+  if (drugList !== drugs.value) drugs.value = drugList;
 }
 
 async function submitManualRx() {
@@ -513,6 +539,8 @@ async function selectAppointment(row?: Appointment) {
   recordVersion.value = undefined;
   currentRecordId.value = undefined;
   historyRecords.value = [];
+  currentOrders.value = [];
+  formalReports.value = [];
   if (row) {
     const currentRecords = await getMedicalRecords({ appointmentId: row.id });
     const currentRecord = currentRecords[0];
@@ -526,6 +554,11 @@ async function selectAppointment(row?: Appointment) {
       recordVersion.value = currentRecord.version;
       currentRecordId.value = currentRecord.id;
     }
+    const [orders] = await Promise.all([
+      getMedicalOrders({ appointmentId: row.id }),
+    ]);
+    currentOrders.value = orders;
+    formalReports.value = await getReports();
   }
   mainTab.value = 'record';
   loadingRecord = false;
@@ -616,6 +649,12 @@ async function loadHistory() {
 
 async function submitOrders() {
   if (!current.value) return;
+  const existingCodes = new Set(currentOrders.value.map(o => o.projectCode));
+  const duplicates = selectedItems.value.filter(i => existingCodes.has(i.code));
+  if (duplicates.length) {
+    ElMessage.warning(`以下项目本次已开单，请勿重复：${duplicates.map(d => d.name).join('、')}`);
+    return;
+  }
   await Promise.all(selectedItems.value.map(item => createMedicalOrder({
     appointmentId: current.value!.id,
     patientId: current.value!.patientId,
@@ -630,6 +669,9 @@ async function submitOrders() {
   })));
   selectedItems.value = [];
   ElMessage.success('医技申请已生成');
+  if (current.value) {
+    currentOrders.value = await getMedicalOrders({ appointmentId: current.value.id });
+  }
 }
 
 async function generateAssistance() {
@@ -708,12 +750,22 @@ onMounted(async () => {
   await loadQueue();
   records.value = await getMedicalRecords({});
   medicalItems.value = (await getMedicalItems()).filter(item => item.category !== 'DRUG');
-  formalReports.value = await getReports();
-  drugs.value = await getDrugs();
+  getDrugs().then(list => { drugs.value = list; }).catch(() => {});
 });
 
 watch(recordForm, () => { if (!loadingRecord) dirty.value = true; }, { deep: true });
-watch(mainTab, (tab) => { if (tab === 'rx') loadPrescriptions(); });
+watch(mainTab, (tab) => {
+  if (tab === 'rx') loadPrescriptions();
+  if (tab === 'orders' && !medicalItems.value.length) {
+    getMedicalItems().then(list => { medicalItems.value = list.filter(i => i.category !== 'DRUG'); }).catch(() => {});
+  }
+  if (tab === 'history') loadHistory();
+  if (tab === 'record' && current.value) {
+    getMedicalOrders({ appointmentId: current.value.id })
+      .then(list => { currentOrders.value = list; })
+      .catch(() => {});
+  }
+});
 </script>
 
 <style scoped>
@@ -888,7 +940,6 @@ watch(mainTab, (tab) => { if (tab === 'rx') loadPrescriptions(); });
 .med-doc {
   font-family: "SimSun", "宋体", "Microsoft YaHei", sans-serif;
   font-size: 14px; color: #111;
-  flex: 1; display: flex; flex-direction: column;
 }
 .med-doc__title { text-align: center; font-size: 18px; font-weight: bold; letter-spacing: 5px; padding-bottom: 10px; }
 .med-doc__rule-thick { border: none; border-top: 3px double #444; margin-bottom: 14px; }
@@ -921,7 +972,20 @@ watch(mainTab, (tab) => { if (tab === 'rx') loadPrescriptions(); });
   resize: vertical; padding: 2px 4px; line-height: 1.8; min-height: 80px;
 }
 .med-doc__area:focus { border-bottom-color: #0899a5; }
-.med-doc__area--grow { flex: 1; resize: none; }
+.med-doc__area--grow { resize: vertical; }
+.med-doc__check-placeholder { font-size: 12px; color: #9ca3af; font-style: italic; padding: 2px 0; }
+.check-done-mark { color: #0899a5; font-size: 12px; margin-left: 4px; }
+.med-doc__checklist { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+.med-doc__check-item { display: flex; align-items: baseline; gap: 6px; font-size: 13.5px; line-height: 1.6; }
+.med-doc__check-item--done { color: #0899a5; }
+.med-doc__check-item--pending { color: #6b7280; }
+.check-tag {
+  font-size: 11px; padding: 1px 5px; border-radius: 3px; flex-shrink: 0;
+  background: #e6f9fa; color: #0899a5; border: 1px solid #a8e8ec;
+}
+.med-doc__check-item--pending .check-tag {
+  background: #f3f4f6; color: #6b7280; border-color: #d1d5db;
+}
 .med-doc__footer { display: flex; justify-content: space-between; align-items: center; margin-top: auto; padding-top: 12px; }
 
 /* ── Prescription tab ── */
@@ -935,7 +999,9 @@ watch(mainTab, (tab) => { if (tab === 'rx') loadPrescriptions(); });
 .rx-card__hdr { display: flex; align-items: center; gap: 10px; background: #f9fafb; padding: 8px 12px; border-bottom: 1px solid #e5e7eb; }
 .rx-card__no { font-size: 12px; color: #6b7280; flex: 1; }
 .rx-card__amount { font-size: 13px; font-weight: 600; color: #0899a5; margin-left: auto; }
-.rx-card__body { padding: 10px 12px; }
+.rx-card__body { padding: 8px 12px; }
+.rx-card--compact .rx-card__hdr { padding: 6px 12px; }
+.rx-card--compact .rx-card__item { font-size: 12px; padding: 1px 0; }
 .rx-card__item { font-size: 13px; color: #374151; padding: 2px 0; }
 .rx-manual { margin-top: 12px; padding: 12px; background: #f9fafb; border-radius: 6px; border: 1px solid #e5e7eb; }
 .rx-manual-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }

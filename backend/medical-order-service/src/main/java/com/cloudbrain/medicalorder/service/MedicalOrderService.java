@@ -37,6 +37,9 @@ public class MedicalOrderService {
         if (!Set.of("ROUTINE", "EMERGENCY").contains(urgency)) {
             throw new IllegalArgumentException("urgency 必须为 ROUTINE 或 EMERGENCY");
         }
+        if (repository.existsActiveOrder(request.appointmentId(), request.projectCode())) {
+            throw new IllegalStateException("该检查/检验项目已在本次就诊中开单，不可重复申请：" + request.projectName());
+        }
         return repository.create(new MedicalOrder(
                 "order-" + UUID.randomUUID(), request.appointmentId(), request.patientId(), request.patientName(), doctorId,
                 type, request.projectCode(), request.projectName(), request.purpose(), request.bodyPart(),
@@ -45,18 +48,18 @@ public class MedicalOrderService {
                 null, null, java.time.LocalDateTime.now(), null, null));
     }
 
-    public List<MedicalOrder> list(String type, String status, String patientId) {
-        return repository.find(type == null ? null : requireType(type), status, patientId);
+    public List<MedicalOrder> list(String type, String status, String patientId, String appointmentId) {
+        return repository.find(type == null ? null : requireType(type), status, patientId, appointmentId);
     }
 
-    public List<MedicalOrder> listAuthorized(String type, String status, String patientId, String actorId, String role) {
+    public List<MedicalOrder> listAuthorized(String type, String status, String patientId, String appointmentId, String actorId, String role) {
         String forcedType = switch (role) {
             case "CHECK_DOCTOR" -> "CHECK";
             case "LAB_DOCTOR" -> "LAB";
             case "DISPOSAL_DOCTOR" -> "DISPOSAL";
             default -> type;
         };
-        List<MedicalOrder> orders = list(forcedType, status, patientId);
+        List<MedicalOrder> orders = list(forcedType, status, patientId, appointmentId);
         if (TECH_ROLES.contains(role)) {
             String workspaceId = technician(actorId).workspaceId();
             return orders.stream().filter(order -> workspaceId.equals(order.executorId())).toList();

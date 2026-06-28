@@ -31,7 +31,14 @@ public class MedicalOrderRepository {
         return findById(order.id()).orElseThrow();
     }
 
-    public List<MedicalOrder> find(String type, String status, String patientId) {
+    public boolean existsActiveOrder(String appointmentId, String projectCode) {
+        Integer count = jdbcTemplate.queryForObject(
+                "select count(*) from medical_order where appointment_id=? and project_code=? and status not in ('CANCELLED','MISSED')",
+                Integer.class, appointmentId, projectCode);
+        return count != null && count > 0;
+    }
+
+    public List<MedicalOrder> find(String type, String status, String patientId, String appointmentId) {
         StringBuilder sql = new StringBuilder("""
                 select * from medical_order
                 where 1 = 1
@@ -49,6 +56,10 @@ public class MedicalOrderRepository {
         if (patientId != null && !patientId.isBlank()) {
             sql.append(" and patient_id = ?");
             args.add(patientId);
+        }
+        if (appointmentId != null && !appointmentId.isBlank()) {
+            sql.append(" and appointment_id = ?");
+            args.add(appointmentId);
         }
 
         sql.append("""
