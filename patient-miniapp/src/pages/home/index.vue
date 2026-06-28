@@ -1,7 +1,7 @@
 <template>
+  <patient-nav-bar title="智慧云脑诊疗" />
   <view class="page home-page">
     <view class="top-band">
-      <view class="hospital-name">智慧云脑诊疗平台</view>
       <view class="search-box" @tap="go('/pages/search/index')">
         <view class="search-icon"></view>
         <text>搜索科室、医生</text>
@@ -144,14 +144,8 @@ function go(url: string) {
 }
 
 .top-band {
-  padding: 30rpx 6rpx 24rpx;
+  padding: 24rpx 6rpx;
   color: #fff;
-}
-
-.hospital-name {
-  font-size: 38rpx;
-  font-weight: 800;
-  line-height: 1.3;
 }
 
 .search-box {
@@ -159,7 +153,6 @@ function go(url: string) {
   align-items: center;
   gap: 16rpx;
   height: 78rpx;
-  margin-top: 24rpx;
   padding: 0 24rpx;
   border-radius: 14rpx;
   background: #fff;

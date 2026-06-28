@@ -1,10 +1,6 @@
 <template>
+  <patient-nav-bar title="线上挂号" />
   <view class="page booking-page">
-    <view class="booking-hero">
-      <view class="hero-title">线上挂号</view>
-      <view class="hero-subtitle">选择科室、日期和医生时段，确认后前往待缴费</view>
-    </view>
-
     <view v-if="aiConsultation" class="ai-card">
       <view class="ai-title">AI 推荐</view>
       <view class="ai-desc">{{ aiConsultation.summary }}</view>
@@ -582,23 +578,7 @@ onMounted(initialize);
 <style scoped>
 .booking-page {
   padding-top: 0;
-  background: linear-gradient(180deg, #48a4f5 0, #48a4f5 210rpx, #f2f7ff 210rpx, #f2f7ff 100%);
-}
-
-.booking-hero {
-  padding: 34rpx 4rpx 28rpx;
-  color: #fff;
-}
-
-.hero-title {
-  font-size: 46rpx;
-  font-weight: 900;
-}
-
-.hero-subtitle {
-  margin-top: 12rpx;
-  color: rgba(255, 255, 255, 0.86);
-  font-size: 27rpx;
+  background: #f2f7ff;
 }
 
 .ai-card,

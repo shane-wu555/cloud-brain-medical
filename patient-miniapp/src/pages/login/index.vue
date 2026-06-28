@@ -1,14 +1,7 @@
 <template>
+  <patient-nav-bar title="患者登录" />
   <view class="page login-page">
-    <view class="login-hero">
-      <view class="hero-title">智慧云脑诊疗</view>
-      <view class="hero-subtitle">登录后使用 AI 问诊、预约挂号、缴费和报告查询</view>
-    </view>
-
     <view class="login-card">
-      <view class="title">患者登录</view>
-      <view class="muted">请选择登录方式并完成身份验证</view>
-
       <view class="tabs">
         <text
           v-for="item in modeTabs"
@@ -189,24 +182,7 @@ async function submit() {
 <style scoped>
 .login-page {
   padding-top: 0;
-  background: linear-gradient(180deg, #48a4f5 0, #48a4f5 280rpx, #f2f7ff 280rpx, #f2f7ff 100%);
-}
-
-.login-hero {
-  padding: 58rpx 8rpx 56rpx;
-  color: #fff;
-}
-
-.hero-title {
-  font-size: 50rpx;
-  font-weight: 900;
-}
-
-.hero-subtitle {
-  margin-top: 16rpx;
-  color: rgba(255, 255, 255, 0.86);
-  font-size: 28rpx;
-  line-height: 1.55;
+  background: #f2f7ff;
 }
 
 .login-card {

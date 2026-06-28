@@ -1,12 +1,6 @@
 <template>
+  <patient-nav-bar title="就诊人管理" />
   <view class="page patient-page">
-    <view class="page-header">
-      <view class="header-title">添加就诊人</view>
-      <view class="header-subtitle">实名制就诊，请如实填写就诊信息</view>
-    </view>
-
-    <view class="notice">实名制就诊，请如实填写就诊信息</view>
-
     <view class="form-card">
       <view class="block-title"><text></text>就诊人信息</view>
       <view v-if="auth.patients.length" class="patient-list">
@@ -200,34 +194,7 @@ function buildBirthDate() {
 <style scoped>
 .patient-page {
   padding-top: 0;
-  background: linear-gradient(180deg, #48a4f5 0, #48a4f5 176rpx, #f6f8fb 176rpx, #f6f8fb 100%);
-}
-
-.page-header {
-  padding: 34rpx 4rpx 28rpx;
-  color: #fff;
-  text-align: center;
-}
-
-.header-title {
-  font-size: 46rpx;
-  font-weight: 900;
-}
-
-.header-subtitle {
-  margin-top: 10rpx;
-  color: rgba(255, 255, 255, 0.84);
-  font-size: 27rpx;
-}
-
-.notice {
-  margin: 0 -24rpx 24rpx;
-  padding: 24rpx;
-  background: #fff8e6;
-  color: #b96b18;
-  font-size: 30rpx;
-  font-weight: 700;
-  text-align: center;
+  background: #f6f8fb;
 }
 
 .form-card {

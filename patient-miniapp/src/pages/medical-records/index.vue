@@ -1,10 +1,6 @@
 <template>
+  <patient-nav-bar title="电子病历" />
   <view class="page">
-    <view class="card">
-      <view class="title">电子病历</view>
-      <view class="muted">查看本次和历史就诊病历摘要</view>
-    </view>
-
     <view v-for="record in visibleRecords" :key="record.id" class="card record-card">
       <view class="row-between">
         <view class="title-sm">{{ record.departmentName }} · {{ record.visitDate }} {{ record.period }}</view>

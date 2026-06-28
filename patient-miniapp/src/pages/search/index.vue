@@ -1,4 +1,5 @@
 <template>
+  <patient-nav-bar title="搜索" />
   <view class="page search-page">
     <view class="search-panel">
       <view class="search-row">

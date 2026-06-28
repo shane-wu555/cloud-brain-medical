@@ -1,10 +1,6 @@
 <template>
+  <patient-nav-bar :title="mode === 'record' ? '缴费记录' : '待缴费项目'" />
   <view class="page">
-    <view class="card">
-      <view class="title">{{ mode === 'record' ? '缴费记录' : '待缴费项目' }}</view>
-      <view class="muted">{{ mode === 'record' ? '查看历史支付单和支付状态。' : '集中查看挂号费、检查费、检验费、处置费和药费，按费用类别分开展示。' }}</view>
-    </view>
-
     <view v-if="mode === 'record'">
       <view
         v-for="item in sortedPaymentRecords"

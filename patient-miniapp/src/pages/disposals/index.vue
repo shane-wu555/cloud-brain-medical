@@ -1,10 +1,6 @@
 <template>
+  <patient-nav-bar :title="pageTitle" />
   <view class="page">
-    <view class="card">
-      <view class="title">{{ pageTitle }}</view>
-      <view class="muted">{{ pageDesc }}</view>
-    </view>
-
     <view v-for="item in visibleDisposals" :key="item.id" class="card disposal-card">
       <view class="row-between">
         <view class="title-sm">{{ item.projectName }}</view>
@@ -99,11 +95,6 @@ const visibleDisposals = computed(() =>
   )
 );
 const pageTitle = computed(() => (mode.value === 'arrangement' ? '待处置安排' : '处置记录'));
-const pageDesc = computed(() =>
-  mode.value === 'arrangement'
-    ? '查看待处理处置项目、执行科室、地点和当前状态。'
-    : '查看已完成或已顺延的处置项目和结果信息。'
-);
 const emptyText = computed(() => (mode.value === 'arrangement' ? '暂无待处置项目' : '暂无处置记录'));
 
 onLoad((options) => {

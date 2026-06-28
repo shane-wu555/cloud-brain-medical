@@ -1,10 +1,6 @@
 <template>
+  <patient-nav-bar title="我的挂号" />
   <view class="page">
-    <view class="card">
-      <view class="title">我的挂号</view>
-      <view class="muted">查看预约时间、就诊医生和当前状态</view>
-    </view>
-
     <view v-for="item in visibleAppointments" :key="item.id" class="card appointment-card">
       <view class="row-between">
         <view class="appointment-main">
