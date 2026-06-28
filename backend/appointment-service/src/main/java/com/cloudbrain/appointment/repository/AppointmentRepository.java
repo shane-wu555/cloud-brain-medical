@@ -136,23 +136,18 @@ public class AppointmentRepository {
                 locked.getDoctorId(), locked.getVisitDate(),
                 locked.getDoctorId(), locked.getVisitDate());
 
-        int target;
         if (servingPos == null) {
-            // No active patients — append after last
-            Integer max = jdbcTemplate.queryForObject(
-                    "select coalesce(max(queue_number),0) from appointment where doctor_id=? and visit_date=?",
-                    Integer.class, locked.getDoctorId(), locked.getVisitDate());
-            target = (max == null ? 0 : max) + 1;
-        } else {
-            target = servingPos + positions;
-            // Push active patients at or beyond target back by one slot
-            jdbcTemplate.update("""
-                    update appointment set queue_number = queue_number + 1
-                    where doctor_id=? and visit_date=?
-                      and status in ('WAITING','CALLED','REVISIT_WAITING')
-                      and queue_number >= ?
-                    """, locked.getDoctorId(), locked.getVisitDate(), target);
+            throw new IllegalStateException("医生今日出诊已结束，无法加入复诊队列，请改天重新挂号");
         }
+
+        int target = servingPos + positions;
+        // Push active patients at or beyond target back by one slot
+        jdbcTemplate.update("""
+                update appointment set queue_number = queue_number + 1
+                where doctor_id=? and visit_date=?
+                  and status in ('WAITING','CALLED','REVISIT_WAITING')
+                  and queue_number >= ?
+                """, locked.getDoctorId(), locked.getVisitDate(), target);
 
         locked.waitForRevisit(target);
         return save(locked);

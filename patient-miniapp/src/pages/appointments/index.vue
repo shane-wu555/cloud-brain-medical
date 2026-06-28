@@ -18,7 +18,7 @@
 
       <view v-if="canCancel(item) || canRevisit(item)" class="action-row">
         <button v-if="canCancel(item)" class="cancel-button" @click="cancel(item)">{{ cancelLabel(item) }}</button>
-        <button v-if="canRevisit(item)" class="revisit-button" @click="revisit(item)">申请复诊</button>
+        <button v-if="canRevisit(item)" class="revisit-button" @click="revisit(item)">复诊报到</button>
       </view>
     </view>
 

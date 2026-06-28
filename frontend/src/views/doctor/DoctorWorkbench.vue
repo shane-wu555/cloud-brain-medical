@@ -274,13 +274,52 @@
 
           <!-- 已完成报告 -->
           <div v-show="mainTab === 'reports'" class="main-content">
-            <el-table :data="formalReports">
-              <el-table-column prop="reportType" label="类型" width="100" />
-              <el-table-column prop="findings" label="所见/过程" />
+            <el-table :data="formalReports" row-class-name="report-row">
+              <el-table-column label="类型" width="80">
+                <template #default="{ row }">
+                  {{ ({ CHECK:'检查', LAB:'检验', DISPOSAL:'处置' } as Record<string,string>)[row.reportType] ?? row.reportType }}
+                </template>
+              </el-table-column>
               <el-table-column prop="conclusion" label="结论" />
-              <el-table-column prop="advice" label="建议" />
+              <el-table-column label="" width="80" align="right">
+                <template #default="{ row }">
+                  <el-button size="small" link type="primary" @click="viewReport(row)">查看报告</el-button>
+                </template>
+              </el-table-column>
             </el-table>
           </div>
+
+          <!-- 报告详情弹窗 -->
+          <el-dialog v-model="reportDialogVisible" title="检查报告" width="600px" :destroy-on-close="true">
+            <div v-if="selectedReport" class="report-dialog">
+              <div class="report-dialog__header">
+                <span class="report-dialog__type">
+                  {{ ({ CHECK:'检查报告', LAB:'检验报告', DISPOSAL:'处置记录' } as Record<string,string>)[selectedReport.reportType] ?? selectedReport.reportType }}
+                </span>
+                <span class="report-dialog__meta">
+                  {{ selectedReport.confirmedBy ? `审核：${selectedReport.confirmedBy}` : '' }}
+                  {{ selectedReport.confirmedAt ? ' · ' + selectedReport.confirmedAt.slice(0,10) : '' }}
+                </span>
+              </div>
+              <div class="report-dialog__rule"></div>
+              <div class="report-dialog__section">
+                <div class="report-dialog__label">所见 / 过程</div>
+                <div class="report-dialog__body">{{ selectedReport.findings || '——' }}</div>
+              </div>
+              <div class="report-dialog__section">
+                <div class="report-dialog__label">结论</div>
+                <div class="report-dialog__body report-dialog__body--emphasis">{{ selectedReport.conclusion || '——' }}</div>
+              </div>
+              <div v-if="selectedReport.advice" class="report-dialog__section">
+                <div class="report-dialog__label">建议</div>
+                <div class="report-dialog__body">{{ selectedReport.advice }}</div>
+              </div>
+            </div>
+            <template #footer>
+              <el-button @click="reportDialogVisible = false">关闭</el-button>
+              <el-button type="primary" @click="applyReportToRecord(selectedReport!)">导入辅助检查</el-button>
+            </template>
+          </el-dialog>
 
           <!-- 历史病历 -->
           <div v-show="mainTab === 'history'" class="main-content">
@@ -392,13 +431,15 @@ let loadingRecord = false;
 const mainTabs = [
   { key: 'record', label: '病历书写' },
   { key: 'rx', label: '处方' },
-  { key: 'orders', label: '医嘱开立' },
+  { key: 'orders', label: '检查申请' },
   { key: 'reports', label: '已完成报告' },
   { key: 'history', label: '历史病历' },
 ];
 
 const currentOrders = ref<MedicalOrder[]>([]);
 const prescriptions = ref<Prescription[]>([]);
+const reportDialogVisible = ref(false);
+const selectedReport = ref<MedicalReport>();
 const drugKeyword = ref('');
 const manualRxItems = ref<Array<{ drugId: string; drugName: string; dosage: string; usage: string; frequency: string; days: number }>>([]);
 
@@ -736,6 +777,22 @@ async function createRxFromSuggestion() {
   ElMessage.success('处方已生成，待患者缴费');
 }
 
+function viewReport(report: MedicalReport) {
+  selectedReport.value = report;
+  reportDialogVisible.value = true;
+}
+
+function applyReportToRecord(report: MedicalReport) {
+  const typeLabel = ({ CHECK: '检查', LAB: '检验', DISPOSAL: '处置' } as Record<string, string>)[report.reportType] ?? report.reportType;
+  const line = `${typeLabel}：${report.conclusion}`;
+  recordForm.presentIllness = recordForm.presentIllness
+    ? `${recordForm.presentIllness}\n${line}`
+    : line;
+  reportDialogVisible.value = false;
+  mainTab.value = 'record';
+  ElMessage.success('已导入至现病史');
+}
+
 function printRecord() {
   mainTab.value = 'record';
   nextTick(() => window.print());
@@ -1006,6 +1063,17 @@ watch(mainTab, (tab) => {
 .rx-manual { margin-top: 12px; padding: 12px; background: #f9fafb; border-radius: 6px; border: 1px solid #e5e7eb; }
 .rx-manual-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
 .rx-manual-name { font-size: 13px; font-weight: 500; min-width: 80px; }
+
+/* ── Report dialog ── */
+.report-dialog { font-size: 14px; color: #111; }
+.report-dialog__header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.report-dialog__type { font-size: 16px; font-weight: 700; color: #0899a5; }
+.report-dialog__meta { font-size: 12px; color: #9ca3af; }
+.report-dialog__rule { border: none; border-top: 2px solid #e5e7eb; margin-bottom: 16px; }
+.report-dialog__section { margin-bottom: 16px; }
+.report-dialog__label { font-size: 12px; color: #6b7280; margin-bottom: 6px; font-weight: 600; letter-spacing: 0.5px; }
+.report-dialog__body { line-height: 1.8; color: #1f2937; background: #f9fafb; border-radius: 6px; padding: 10px 14px; }
+.report-dialog__body--emphasis { color: #0899a5; font-weight: 600; font-size: 15px; }
 
 /* ── Print ── */
 @media print {
