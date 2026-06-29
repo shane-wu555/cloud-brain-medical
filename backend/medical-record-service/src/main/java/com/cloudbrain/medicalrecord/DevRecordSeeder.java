@@ -64,18 +64,19 @@ public class DevRecordSeeder implements CommandLineRunner {
                 "急查头颅MRI+MRA；倍他司汀6mg tid；卧床休息")
         );
 
+        // 新 schema：无 period / ai_risk_level 列；id 由 DB 自动生成（uuid）
         String sql = """
             insert into medical_record (
-              id, appointment_id, patient_id, patient_name,
-              doctor_id, doctor_name, department_name, visit_date, period,
-              ai_triage_summary, ai_risk_level,
+              appointment_id, patient_id, patient_name,
+              doctor_id, doctor_name, department_name, visit_date,
+              ai_triage_summary,
               chief_complaint, present_illness, past_history, allergy_history,
               preliminary_diagnosis, treatment_plan,
               status, version, created_at, updated_at
             ) values (
-              'record-' || ?::text, ?::uuid, ?::uuid, ?,
-              '00010001', '张医生', '神经内科', current_date, '上午',
-              ?, ?,
+              ?::uuid, ?::uuid, ?,
+              '00010001', '张医生', '神经内科', current_date,
+              ?,
               ?, ?, ?, ?,
               ?, ?,
               'DRAFT', 0, now(), now()
@@ -85,8 +86,8 @@ public class DevRecordSeeder implements CommandLineRunner {
         int inserted = 0;
         for (R r : rows) {
             inserted += jdbc.update(sql,
-                r.apptId(), r.apptId(), r.patId(), r.name(),
-                r.triage(), r.risk(),
+                r.apptId(), r.patId(), r.name(),
+                r.triage(),
                 r.cc(), r.pi(), r.ph(), r.ah(),
                 r.pd(), r.tp());
         }
