@@ -61,8 +61,9 @@ public class MedicalOrderService {
         };
         List<MedicalOrder> orders = list(forcedType, status, patientId, appointmentId);
         if (TECH_ROLES.contains(role)) {
-            String workspaceId = technician(actorId).workspaceId();
-            return orders.stream().filter(order -> workspaceId.equals(order.executorId())).toList();
+            return repository.technician(actorId)
+                    .map(t -> orders.stream().filter(o -> t.workspaceId().equals(o.executorId())).toList())
+                    .orElse(List.of());
         }
         if ("OUTPATIENT_DOCTOR".equals(role)) {
             return orders.stream().filter(order -> actorId.equals(order.orderingDoctorId())).toList();

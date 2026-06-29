@@ -1,34 +1,27 @@
 -- ══════════════════════════════════════════════════════════════════════
--- V5: 为每种医技类型新增 2 个诊室，使 AI 分诊有真实的调度决策空间。
+-- V5: 修正医技人员设计 + 扩充工作室。
 --
--- CHECK（检查）：
---   doctor-check-001  综合影像室  CT+MRI（已有）
---   workspace-check-002  CT专科室   仅CT，容量较小
---   workspace-check-003  MRI专科室  仅MRI，容量更小
+-- 设计原则（承接 V4/V8 规范）：
+--   medical_workspace.id  → 工作室（地点）
+--   medical_technician.id → 医生本人 = auth.user_account.id = doctor.id
 --
--- LAB（检验）：
---   doctor-lab-001    综合检验室  CBC+LIVER+神经免疫（已有）
---   workspace-lab-002 常规检验室B CBC+LIVER
---   workspace-lab-003 急诊检验室  仅CBC，容量小但优先保障急诊
---
--- DISPOSAL（处置）：
---   doctor-disposal-001    综合处置室  输液+换药+康复（已有）
---   workspace-disposal-002 输液处置室B 仅输液
---   workspace-disposal-003 急诊处置室  仅输液，低容量急诊专用
+-- V4 错误：将工作室 ID（doctor-check-001 等）同时用作技术员 ID，导致
+--           真实医生账号（doctor-002 等）无法匹配队列。
+-- 本迁移删除 V4 的错误占位记录，改为正确的「人 → 工作室」映射。
 -- ══════════════════════════════════════════════════════════════════════
 
--- ── 1. 新增诊室 ──────────────────────────────────────────────────────
+-- ── 1. 删除 V4 写入的错误技术员占位记录 ──────────────────────────────
+--    这些记录用工作室 ID 冒充人员 ID，不对应任何真实 auth 账号。
+delete from medical_technician
+where id in ('doctor-check-001', 'doctor-lab-001', 'doctor-disposal-001');
+
+-- ── 2. 新增第二检查室 / 检验室 / 处置室 ──────────────────────────────
+--    使用以 room- 为前缀的地点 ID，与人员 ID 明确区分。
 insert into medical_workspace (id, room_code, name, workspace_type, specialties, location, equipment_ids, capacity, active)
 values
-  -- CHECK
-  ('workspace-check-002', 'workspace-check-002', 'CT专科室',    'CHECK', '头部CT,神经影像',  '医技楼2层CT室B',   'CT-02',  15, true),
-  ('workspace-check-003', 'workspace-check-003', 'MRI专科室',   'CHECK', '颅脑MRI,神经影像', '医技楼3层MRI室',   'MRI-02', 10, true),
-  -- LAB
-  ('workspace-lab-002',   'workspace-lab-002',   '常规检验室B', 'LAB',   '血常规,生化检验',  '医技楼1层检验科B', 'LAB-02', 30, true),
-  ('workspace-lab-003',   'workspace-lab-003',   '急诊检验室',  'LAB',   '血常规',           '急诊楼2层急检室',  'LAB-03', 15, true),
-  -- DISPOSAL
-  ('workspace-disposal-002', 'workspace-disposal-002', '输液处置室B', 'DISPOSAL', '静脉输液', '门诊楼3层处置室B', null, 25, true),
-  ('workspace-disposal-003', 'workspace-disposal-003', '急诊处置室',  'DISPOSAL', '静脉输液', '急诊楼1层处置室',  null, 15, true)
+  ('room-check-02', 'room-check-02', 'CT专科室',    'CHECK', '头部CT,神经影像',  '医技楼2层CT室B',   'CT-02',  15, true),
+  ('room-lab-02',   'room-lab-02',   '常规检验室B', 'LAB',   '血常规,生化检验',  '医技楼1层检验科B', 'LAB-02', 30, true),
+  ('room-disposal-02', 'room-disposal-02', '输液处置室B', 'DISPOSAL', '静脉输液', '门诊楼3层处置室B', null, 25, true)
 on conflict (id) do update
   set room_code      = excluded.room_code,
       name           = excluded.name,
@@ -39,50 +32,38 @@ on conflict (id) do update
       capacity       = excluded.capacity,
       active         = excluded.active;
 
--- ── 2. 绑定各诊室可执行的项目 ──────────────────────────────────────────
+-- ── 3. 新工作室支持的项目 ─────────────────────────────────────────────
 insert into medical_workspace_project (workspace_id, project_code, project_name, priority, active)
 values
-  -- workspace-check-002：CT专科，只做CT
-  ('workspace-check-002', 'CT-HEAD',   '头部CT平扫',   10, true),
-  ('workspace-check-002', '头部CT',    '头部CT',        20, true),
-  ('workspace-check-002', '神经影像',   '神经影像',      30, true),
-
-  -- workspace-check-003：MRI专科，只做MRI
-  ('workspace-check-003', 'MRI-BRAIN', '颅脑MRI',      10, true),
-  ('workspace-check-003', '颅脑MRI',   '颅脑MRI',       20, true),
-  ('workspace-check-003', '神经影像',   '神经影像',      30, true),
-
-  -- workspace-lab-002：常规检验，CBC+LIVER
-  ('workspace-lab-002', 'CBC',       '血常规',          10, true),
-  ('workspace-lab-002', 'LIVER',     '肝功能',          20, true),
-  ('workspace-lab-002', '血常规',    '血常规',           30, true),
-  ('workspace-lab-002', '生化检验',  '生化检验',         40, true),
-
-  -- workspace-lab-003：急诊检验，仅CBC（快速出结果）
-  ('workspace-lab-003', 'CBC',       '血常规（急检）',  10, true),
-  ('workspace-lab-003', '血常规',    '血常规',           20, true),
-
-  -- workspace-disposal-002：普通输液处置
-  ('workspace-disposal-002', 'DISP-INFUSION', '静脉输液处置', 10, true),
-  ('workspace-disposal-002', '静脉输液',       '静脉输液',      20, true),
-
-  -- workspace-disposal-003：急诊处置
-  ('workspace-disposal-003', 'DISP-INFUSION', '静脉输液处置（急诊）', 10, true),
-  ('workspace-disposal-003', '静脉输液',       '静脉输液',              20, true)
+  -- CT专科室：只做 CT
+  ('room-check-02', 'CT-HEAD',  '头部CT平扫', 10, true),
+  ('room-check-02', '头部CT',   '头部CT',      20, true),
+  ('room-check-02', '神经影像', '神经影像',    30, true),
+  -- 常规检验室B：CBC + 肝功能
+  ('room-lab-02', 'CBC',    '血常规',  10, true),
+  ('room-lab-02', 'LIVER',  '肝功能',  20, true),
+  ('room-lab-02', '血常规', '血常规',   30, true),
+  ('room-lab-02', '生化检验', '生化检验', 40, true),
+  -- 输液处置室B
+  ('room-disposal-02', 'DISP-INFUSION', '静脉输液处置', 10, true),
+  ('room-disposal-02', '静脉输液',       '静脉输液',      20, true)
 on conflict (workspace_id, project_code) do update
   set project_name = excluded.project_name,
       priority     = excluded.priority,
       active       = excluded.active;
 
--- ── 3. 新增医技人员（id 与 auth.user_account.id 对应）────────────────
+-- ── 4. 正确的技术员记录：id = doctor.id = auth.user_account.id ────────
 insert into medical_technician (id, employee_no, name, role_type, workspace_id, active)
 values
-  ('workspace-check-002',    'D0003', '吴影像师', 'CHECK_DOCTOR',    'workspace-check-002',    true),
-  ('workspace-check-003',    'D0004', '冯影像师', 'CHECK_DOCTOR',    'workspace-check-003',    true),
-  ('workspace-lab-002',      'L0002', '郑检验师', 'LAB_DOCTOR',      'workspace-lab-002',      true),
-  ('workspace-lab-003',      'L0003', '王急检师', 'LAB_DOCTOR',      'workspace-lab-003',      true),
-  ('workspace-disposal-002', 'T0002', '周处置师', 'DISPOSAL_DOCTOR', 'workspace-disposal-002', true),
-  ('workspace-disposal-003', 'T0003', '徐急处师', 'DISPOSAL_DOCTOR', 'workspace-disposal-003', true)
+  -- 检查科
+  ('doctor-002', '00030001', '李医生', 'CHECK_DOCTOR',    'doctor-check-001', true),
+  ('doctor-006', '00070001', '吴医生', 'CHECK_DOCTOR',    'room-check-02',    true),
+  -- 检验科
+  ('doctor-004', '00050001', '王医生', 'LAB_DOCTOR',      'doctor-lab-001',   true),
+  ('doctor-007', '00080001', '钱医生', 'LAB_DOCTOR',      'room-lab-02',      true),
+  -- 处置科
+  ('doctor-005', '00060001', '赵医生', 'DISPOSAL_DOCTOR', 'doctor-disposal-001', true),
+  ('doctor-008', '00090001', '周医生', 'DISPOSAL_DOCTOR', 'room-disposal-02',    true)
 on conflict (id) do update
   set employee_no  = excluded.employee_no,
       name         = excluded.name,
