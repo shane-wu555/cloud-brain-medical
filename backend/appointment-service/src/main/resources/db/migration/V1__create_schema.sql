@@ -20,9 +20,9 @@ create sequence if not exists appt_business_no_seq start 1 increment 1;
 
 -- 挂号记录
 create table if not exists appointment (
-    id                        varchar(64)  primary key,
+    id                        uuid         primary key,
     slot_id                   varchar(64)  not null,
-    patient_id                varchar(64)  not null,
+    patient_id                uuid         not null,
     patient_name              varchar(64)  not null,
     doctor_id                 varchar(64)  not null,
     doctor_name               varchar(64)  not null,
@@ -46,11 +46,11 @@ create table if not exists appointment (
     lock_expires_at           timestamptz,
     created_at                timestamptz  not null default now()
 );
-create index  idx_appt_doctor_date  on appointment(doctor_id, visit_date, status);
-create index  idx_appt_patient      on appointment(patient_id);
-create index  idx_appt_lock_expires on appointment(lock_expires_at) where status = 'PENDING_PAYMENT';
-create unique index uk_appt_patient_slot on appointment(patient_id, slot_id) where status <> 'CANCELLED';
-create unique index uk_appt_doctor_date_queue on appointment(doctor_id, visit_date, queue_number)
+create index if not exists  idx_appt_doctor_date  on appointment(doctor_id, visit_date, status);
+create index if not exists  idx_appt_patient      on appointment(patient_id);
+create index if not exists  idx_appt_lock_expires on appointment(lock_expires_at) where status = 'PENDING_PAYMENT';
+create unique index if not exists uk_appt_patient_slot on appointment(patient_id, slot_id) where status <> 'CANCELLED';
+create unique index if not exists uk_appt_doctor_date_queue on appointment(doctor_id, visit_date, queue_number)
     where status <> 'CANCELLED' and queue_number is not null;
 
 -- 可靠事件投递（新名称 outbox_event）
@@ -68,5 +68,5 @@ create table if not exists outbox_event (
     completed_at    timestamptz,
     unique (aggregate_id, event_type)
 );
-create index idx_outbox_pending on outbox_event(status, next_attempt_at)
+create index if not exists idx_outbox_pending on outbox_event(status, next_attempt_at)
     where status in ('PENDING','RETRY','PROCESSING');

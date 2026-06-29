@@ -29,8 +29,8 @@ create table if not exists staff (
     active        boolean      not null default true,
     created_at    timestamptz  not null default now()
 );
-create index idx_staff_dept on staff(department_id, active);
-create index idx_staff_role on staff(role_type,     active);
+create index if not exists idx_staff_dept on staff(department_id, active);
+create index if not exists idx_staff_role on staff(role_type,     active);
 
 -- ══════════════════════════════════════════════════════════════════
 -- 排班（每医生每日每班次唯一）

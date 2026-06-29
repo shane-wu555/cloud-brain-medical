@@ -36,7 +36,7 @@ public class PharmacyService {
         if ("AI_ACCEPTED".equals(request.aiAdoptionStatus()) && blank(request.aiAssistanceId())) {
             throw new IllegalArgumentException("采纳 AI 建议必须关联 aiAssistanceId");
         }
-        String id = "rx-" + UUID.randomUUID();
+        String id = UUID.randomUUID().toString();
         List<PrescriptionItem> items = request.items().stream()
                 .map(requestItem -> item(id, requestItem))
                 .toList();
@@ -125,13 +125,17 @@ public class PharmacyService {
         }
         PharmacyRepository.Drug drug = repository.drug(request.drugId());
         BigDecimal amount = drug.unitPrice().multiply(BigDecimal.valueOf(request.quantity()));
-        return new PrescriptionItem("rx-item-" + UUID.randomUUID(), prescriptionId, drug.id(), drug.drugName(),
+        return new PrescriptionItem(UUID.randomUUID().toString(), prescriptionId, drug.id(), drug.drugName(),
                 request.quantity(), request.dosage(), request.usage(), request.frequency(), request.days(),
                 request.note(), drug.unitPrice(), amount);
     }
 
     private String normalizeAiStatus(String value) {
         if (blank(value)) return "HUMAN_ONLY";
+        if (List.of("AI_ACCEPTED", "FULL").contains(value)) return "FULL";
+        if (List.of("AI_MODIFIED", "PARTIAL").contains(value)) return "PARTIAL";
+        if (List.of("AI_REJECTED", "REJECTED").contains(value)) return "REJECTED";
+        if ("HUMAN_ONLY".equals(value)) return "HUMAN_ONLY";
         if (!List.of("AI_ACCEPTED", "AI_MODIFIED", "AI_REJECTED", "HUMAN_ONLY").contains(value)) {
             throw new IllegalArgumentException("AI 建议处理状态不合法");
         }

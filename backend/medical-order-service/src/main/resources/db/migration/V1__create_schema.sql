@@ -30,8 +30,8 @@ create table if not exists staff_room_assignment (
     assigned_at timestamptz not null default now(),
     primary key (staff_id, room_id)
 );
-create index idx_sra_staff on staff_room_assignment(staff_id, active);
-create index idx_sra_room  on staff_room_assignment(room_id,  active);
+create index if not exists idx_sra_staff on staff_room_assignment(staff_id, active);
+create index if not exists idx_sra_room  on staff_room_assignment(room_id,  active);
 
 -- ══════════════════════════════════════════════════════════════════
 -- 医技申请单（检查/检验/处置）
@@ -71,11 +71,11 @@ create table if not exists medical_order (
     completed_at         timestamptz,
     check (result_created_by_type = 'HUMAN' or result_ai_record_id is not null)
 );
-create index idx_order_appointment on medical_order(appointment_id);
-create index idx_order_patient     on medical_order(patient_id);
-create index idx_order_room_queue  on medical_order(room_id, status, urgency, queue_number);
-create index idx_order_type_status on medical_order(order_type, status, created_at);
-create unique index uk_order_appt_item
+create index if not exists idx_order_appointment on medical_order(appointment_id);
+create index if not exists idx_order_patient     on medical_order(patient_id);
+create index if not exists idx_order_room_queue  on medical_order(room_id, status, urgency, queue_number);
+create index if not exists idx_order_type_status on medical_order(order_type, status, created_at);
+create unique index if not exists uk_order_appt_item
     on medical_order(appointment_id, item_code)
     where status not in ('CANCELLED');
 
@@ -121,8 +121,8 @@ create table if not exists specimen (
     discard_reason varchar(255),
     created_at    timestamptz not null default now()
 );
-create index idx_specimen_order  on specimen(order_id);
-create index idx_specimen_status on specimen(status, created_at);
+create index if not exists idx_specimen_order  on specimen(order_id);
+create index if not exists idx_specimen_status on specimen(status, created_at);
 
 -- 检验结果项
 create table if not exists lab_result_item (
@@ -143,7 +143,7 @@ create table if not exists lab_result_item (
     unique (specimen_id, item_code),
     check (created_by_type = 'HUMAN' or ai_record_id is not null)
 );
-create index idx_lab_result_order on lab_result_item(order_id, item_code);
+create index if not exists idx_lab_result_order on lab_result_item(order_id, item_code);
 
 -- 附件（CT影像等）
 create table if not exists attachment (
@@ -157,7 +157,7 @@ create table if not exists attachment (
     uploaded_by   varchar(64)  not null,
     created_at    timestamptz  not null default now()
 );
-create index idx_attachment_order on attachment(order_id);
+create index if not exists idx_attachment_order on attachment(order_id);
 
 -- AI 任务记录
 create table if not exists ai_task (
@@ -172,4 +172,4 @@ create table if not exists ai_task (
     created_at       timestamptz not null default now(),
     updated_at       timestamptz not null default now()
 );
-create index idx_ai_task_order on ai_task(order_id);
+create index if not exists idx_ai_task_order on ai_task(order_id);

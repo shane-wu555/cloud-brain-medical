@@ -34,8 +34,8 @@ create table if not exists medical_record (
     created_at                timestamptz  not null default now(),
     updated_at                timestamptz  not null default now()
 );
-create index idx_record_patient on medical_record(patient_id,  visit_date desc);
-create index idx_record_doctor  on medical_record(doctor_id,   visit_date desc);
+create index if not exists idx_record_patient on medical_record(patient_id,  visit_date desc);
+create index if not exists idx_record_doctor  on medical_record(doctor_id,   visit_date desc);
 
 -- 病历修改历史（保留原有列结构供 repository 写入）
 create table if not exists medical_record_version (
@@ -68,15 +68,15 @@ create table if not exists medical_record_access_log (
     reason          text,
     accessed_at     timestamptz  not null default now()
 );
-create index idx_access_record  on medical_record_access_log(medical_record_id, accessed_at desc);
-create index idx_access_patient on medical_record_access_log(patient_id,        accessed_at desc);
+create index if not exists idx_access_record  on medical_record_access_log(medical_record_id, accessed_at desc);
+create index if not exists idx_access_patient on medical_record_access_log(patient_id,        accessed_at desc);
 
 -- 病历与报告关联
 create table if not exists medical_record_report_link (
     id               uuid         primary key default gen_random_uuid(),
     medical_record_id varchar(64) not null references medical_record(id),
-    medical_order_id  varchar(64) not null,
-    report_id         varchar(64) not null,
+    medical_order_id  uuid        not null,
+    report_id         uuid        not null,
     report_type       varchar(32) not null,
     conclusion        text,
     confirmed_by      varchar(64),

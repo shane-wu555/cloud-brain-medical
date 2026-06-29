@@ -15,9 +15,9 @@ create table if not exists payment (
     created_at       timestamptz  not null default now(),
     unique (business_type, business_id)
 );
-create unique index uk_payment_trade_no on payment(channel_trade_no) where channel_trade_no is not null;
-create index idx_payment_patient on payment(patient_id,  created_at desc);
-create index idx_payment_status  on payment(status,      created_at);
+create unique index if not exists uk_payment_trade_no on payment(channel_trade_no) where channel_trade_no is not null;
+create index if not exists idx_payment_patient on payment(patient_id,  created_at desc);
+create index if not exists idx_payment_status  on payment(status,      created_at);
 
 create table if not exists refund (
     id               uuid         primary key default gen_random_uuid(),
@@ -31,4 +31,4 @@ create table if not exists refund (
     refunded_at      timestamptz,
     created_at       timestamptz  not null default now()
 );
-create index idx_refund_payment on refund(payment_id);
+create index if not exists idx_refund_payment on refund(payment_id);

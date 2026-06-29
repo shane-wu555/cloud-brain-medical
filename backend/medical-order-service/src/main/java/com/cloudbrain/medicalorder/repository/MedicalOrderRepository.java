@@ -24,7 +24,7 @@ public class MedicalOrderRepository {
                 insert into medical_order
                     (id, appointment_id, patient_id, patient_name, ordering_doctor_id, order_type,
                      item_code, item_name, purpose, body_part, amount, payment_status, status, urgency)
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                values (?::uuid, ?::uuid, ?::uuid, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 order.id(), order.appointmentId(), order.patientId(), order.patientName(),
                 order.orderingDoctorId(), order.orderType(),
@@ -35,7 +35,7 @@ public class MedicalOrderRepository {
 
     public boolean existsActiveOrder(String appointmentId, String itemCode) {
         Integer count = jdbcTemplate.queryForObject(
-                "select count(*) from medical_order where appointment_id = ? and item_code = ? and status not in ('CANCELLED')",
+                "select count(*) from medical_order where appointment_id = ?::uuid and item_code = ? and status not in ('CANCELLED')",
                 Integer.class, appointmentId, itemCode);
         return count != null && count > 0;
     }
@@ -52,8 +52,8 @@ public class MedicalOrderRepository {
         List<Object> args = new ArrayList<>();
         if (type != null && !type.isBlank())            { sql.append(" and mo.order_type = ?");      args.add(type); }
         if (status != null && !status.isBlank())        { sql.append(" and mo.status = ?");           args.add(status); }
-        if (patientId != null && !patientId.isBlank())  { sql.append(" and mo.patient_id = ?");       args.add(patientId); }
-        if (appointmentId != null && !appointmentId.isBlank()) { sql.append(" and mo.appointment_id = ?"); args.add(appointmentId); }
+        if (patientId != null && !patientId.isBlank())  { sql.append(" and mo.patient_id = ?::uuid");       args.add(patientId); }
+        if (appointmentId != null && !appointmentId.isBlank()) { sql.append(" and mo.appointment_id = ?::uuid"); args.add(appointmentId); }
         sql.append("""
                  order by case when mo.urgency = 'EMERGENCY' then 0 else 1 end,
                           mo.queue_number nulls last, mo.created_at
@@ -66,7 +66,7 @@ public class MedicalOrderRepository {
                 select mo.*, er.name as room_name, er.location as room_location
                 from medical_order mo
                 left join examination_room er on er.id = mo.room_id
-                where mo.id = ?
+                where mo.id = ?::uuid
                 """, mapper, id).stream().findFirst();
     }
 
@@ -74,7 +74,7 @@ public class MedicalOrderRepository {
         return jdbcTemplate.update("""
                 update medical_order
                 set payment_status = 'PAID', status = 'WAITING_TRIAGE'
-                where id = ? and status = 'PENDING_PAYMENT'
+                where id = ?::uuid and status = 'PENDING_PAYMENT'
                 """, id) == 1;
     }
 
@@ -120,7 +120,7 @@ public class MedicalOrderRepository {
 
     public boolean assign(String id, String roomId, String triageSource, String reasons) {
         jdbcTemplate.query("select pg_advisory_xact_lock(hashtext(?))", rs -> null, "medical-order:" + roomId);
-        String urgency = jdbcTemplate.queryForObject("select urgency from medical_order where id = ?", String.class, id);
+        String urgency = jdbcTemplate.queryForObject("select urgency from medical_order where id = ?::uuid", String.class, id);
         Integer next = "EMERGENCY".equals(urgency)
                 ? jdbcTemplate.queryForObject("""
                         select coalesce(min(queue_number), 0) - 1
@@ -135,7 +135,7 @@ public class MedicalOrderRepository {
         return jdbcTemplate.update("""
                 update medical_order
                 set room_id = ?, queue_number = ?, triage_source = ?, triage_reasons = ?, status = 'WAITING'
-                where id = ? and status = 'WAITING_TRIAGE'
+                where id = ?::uuid and status = 'WAITING_TRIAGE'
                 """, roomId, next, triageSource, reasons, id) == 1;
     }
 
@@ -143,7 +143,7 @@ public class MedicalOrderRepository {
         return jdbcTemplate.update("""
                 update medical_order
                 set status = 'IN_PROGRESS', started_at = now(), executing_staff_id = ?
-                where id = ? and status = 'WAITING' and room_id = ?
+                where id = ?::uuid and status = 'WAITING' and room_id = ?
                 """, staffId, id, roomId) == 1;
     }
 
@@ -156,7 +156,7 @@ public class MedicalOrderRepository {
         if (jdbcTemplate.update("""
                 update medical_order
                 set queue_number = ?, missed_count = missed_count + 1
-                where id = ? and room_id = ? and status = 'WAITING'
+                where id = ?::uuid and room_id = ? and status = 'WAITING'
                 """, next, id, roomId) != 1) {
             throw new IllegalStateException("只有待执行医技单可以标记过号");
         }
@@ -173,7 +173,7 @@ public class MedicalOrderRepository {
                     result_confirmed_by = ?,
                     result_confirmed_at = now(),
                     completed_at = now()
-                where id = ? and status = 'IN_PROGRESS' and room_id = ?
+                where id = ?::uuid and status = 'IN_PROGRESS' and room_id = ?
                 """, summary, sourceType, aiRecordId, staffId, id, roomId) == 1;
     }
 

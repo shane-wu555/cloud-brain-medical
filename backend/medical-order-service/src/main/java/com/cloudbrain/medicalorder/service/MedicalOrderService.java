@@ -41,7 +41,7 @@ public class MedicalOrderService {
             throw new IllegalStateException("该检查/检验项目已在本次就诊中开单，不可重复申请：" + request.itemName());
         }
         return repository.create(new MedicalOrder(
-                "order-" + UUID.randomUUID(),
+                UUID.randomUUID().toString(),
                 request.appointmentId(), request.patientId(), request.patientName(), doctorId,
                 type, request.itemCode(), request.itemName(), request.purpose(), request.bodyPart(),
                 request.amount() == null ? BigDecimal.ZERO : request.amount(),

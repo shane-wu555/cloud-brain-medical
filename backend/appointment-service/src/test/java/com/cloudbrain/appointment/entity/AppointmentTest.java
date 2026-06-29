@@ -33,7 +33,7 @@ class AppointmentTest {
 
     private Appointment appointment(PaymentStatus paymentStatus, AppointmentStatus status) {
         return new Appointment(
-                "appt-test", "schedule-test-0800", "patient-test", "Patient", "doctor-test", "Doctor",
+                "00000000-0000-4000-8000-000000000001", "schedule-test-0800", "a0000000-0000-4000-8000-000000000001", "Patient", "doctor-test", "Doctor",
                 "dept-test", "Department", LocalDate.now().plusDays(1), "上午", LocalTime.of(8, 0),
                 AppointmentSource.ONLINE, status, paymentStatus, null, "LOW", null, 1);
     }

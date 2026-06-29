@@ -12,6 +12,6 @@ create table if not exists audit_log (
     details     jsonb
 );
 
-create index idx_audit_user    on audit_log(user_id,      occurred_at desc);
-create index idx_audit_service on audit_log(service,      occurred_at desc);
-create index idx_audit_resource on audit_log(resource_type, resource_id);
+create index if not exists idx_audit_user    on audit_log(user_id,      occurred_at desc);
+create index if not exists idx_audit_service on audit_log(service,      occurred_at desc);
+create index if not exists idx_audit_resource on audit_log(resource_type, resource_id);

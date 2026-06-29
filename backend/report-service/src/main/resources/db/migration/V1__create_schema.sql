@@ -12,5 +12,5 @@ create table if not exists report_task (
     completed_at timestamptz
 );
 
-create index idx_report_creator on report_task(created_by, created_at desc);
-create index idx_report_status  on report_task(status,      created_at desc);
+create index if not exists idx_report_creator on report_task(created_by, created_at desc);
+create index if not exists idx_report_status  on report_task(status,      created_at desc);

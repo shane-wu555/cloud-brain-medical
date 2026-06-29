@@ -41,8 +41,8 @@ create table if not exists prescription (
     created_at       timestamptz not null default now(),
     updated_at       timestamptz not null default now()
 );
-create index idx_prescription_patient on prescription(patient_id, created_at desc);
-create index idx_prescription_status  on prescription(status,     created_at);
+create index if not exists idx_prescription_patient on prescription(patient_id, created_at desc);
+create index if not exists idx_prescription_status  on prescription(status,     created_at);
 
 create table if not exists prescription_item (
     id              uuid        primary key default gen_random_uuid(),
@@ -57,7 +57,7 @@ create table if not exists prescription_item (
     unit_price      numeric(10,2) not null,
     amount          numeric(12,2) not null
 );
-create index idx_rx_item_prescription on prescription_item(prescription_id);
+create index if not exists idx_rx_item_prescription on prescription_item(prescription_id);
 
 create table if not exists stock_flow (
     id           uuid        primary key default gen_random_uuid(),
@@ -71,4 +71,4 @@ create table if not exists stock_flow (
     reason       varchar(128),
     created_at   timestamptz not null default now()
 );
-create index idx_stock_flow_drug on stock_flow(drug_id, created_at desc);
+create index if not exists idx_stock_flow_drug on stock_flow(drug_id, created_at desc);

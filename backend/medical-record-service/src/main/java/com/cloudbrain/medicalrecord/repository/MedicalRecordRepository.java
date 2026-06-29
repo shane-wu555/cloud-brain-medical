@@ -37,7 +37,7 @@ public class MedicalRecordRepository {
                 select mr.* from medical_record mr
                 where not exists (
                     select 1 from appointment.appointment a
-                    where a.id = mr.appointment_id::text
+                    where a.id = mr.appointment_id
                       and a.status = 'CANCELLED'
                 )
                 order by mr.created_at desc
@@ -46,7 +46,7 @@ public class MedicalRecordRepository {
 
     public Optional<MedicalRecord> findById(String id) {
         return jdbcTemplate.query(
-                "select * from medical_record where id = ?::uuid", rowMapper, id)
+                "select * from medical_record where id = ?", rowMapper, id)
                 .stream().findFirst();
     }
 
@@ -67,7 +67,7 @@ public class MedicalRecordRepository {
                     diagnosis_created_by_type = ?, diagnosis_ai_record_id = ?,
                     diagnosis_confirmed_by = ?, diagnosis_confirmed_at = ?,
                     version = ?
-                where id = ?::uuid and version = ?
+                where id = ? and version = ?
                 """,
                 record.getChiefComplaint(), record.getPresentIllness(), record.getPastHistory(),
                 record.getAllergyHistory(), record.getPhysicalExamination(),
@@ -83,11 +83,18 @@ public class MedicalRecordRepository {
 
         // 写入版本快照（content 用 JSON 字符串）
         jdbcTemplate.update("""
-                insert into record_version (record_id, version, content, author_id)
-                values (?::uuid, ?, ?::jsonb, ?)
+                insert into medical_record_version
+                    (medical_record_id, version, chief_complaint, present_illness, past_history,
+                     allergy_history, physical_examination, preliminary_diagnosis, treatment_plan,
+                     doctor_revision_note, diagnosis_created_by_type, diagnosis_ai_record_id, confirmed_by)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 record.getId(), record.getVersion(),
-                buildVersionJson(record),
+                record.getChiefComplaint(), record.getPresentIllness(), record.getPastHistory(),
+                record.getAllergyHistory(), record.getPhysicalExamination(),
+                record.getPreliminaryDiagnosis(), record.getTreatmentPlan(),
+                record.getDoctorRevisionNote(), record.getDiagnosisCreatedByType(),
+                record.getDiagnosisAiRecordId(),
                 record.getDiagnosisConfirmedBy() != null ? record.getDiagnosisConfirmedBy() : record.getDoctorId());
         return record;
     }
@@ -104,7 +111,7 @@ public class MedicalRecordRepository {
                 where mr.patient_id = ?::uuid
                   and not exists (
                       select 1 from appointment.appointment a
-                      where a.id = mr.appointment_id::text and a.status = 'CANCELLED'
+                      where a.id = mr.appointment_id and a.status = 'CANCELLED'
                   )
                 order by mr.visit_date desc, mr.created_at desc
                 """, rowMapper, patientId);
@@ -113,15 +120,15 @@ public class MedicalRecordRepository {
     public void recordAccess(String recordId, String patientId, String actorId,
             String actorRole, String scope, String reason) {
         jdbcTemplate.update("""
-                insert into access_log (record_id, patient_id, actor_id, actor_role, scope, reason)
-                values (?::uuid, ?::uuid, ?, ?, ?, ?)
+                insert into medical_record_access_log (medical_record_id, patient_id, actor_id, actor_role, access_scope, reason)
+                values (?, ?::uuid, ?, ?, ?, ?)
                 """, recordId, patientId, actorId, actorRole, scope, reason);
     }
 
     public List<AccessLog> accessLogs(String patientId) {
         StringBuilder sql = new StringBuilder("""
                 select id, record_id, patient_id, actor_id, actor_role, scope, reason, accessed_at
-                from access_log where 1 = 1
+                from medical_record_access_log where 1 = 1
                 """);
         List<Object> args = new ArrayList<>();
         if (patientId != null && !patientId.isBlank()) {
@@ -131,7 +138,7 @@ public class MedicalRecordRepository {
         sql.append(" order by accessed_at desc limit 200");
         return jdbcTemplate.query(sql.toString(),
                 (rs, row) -> new AccessLog(
-                        rs.getObject("id", java.util.UUID.class),
+                        rs.getLong("id"),
                         rs.getString("record_id"),
                         rs.getString("patient_id"),
                         rs.getString("actor_id"),
@@ -149,7 +156,7 @@ public class MedicalRecordRepository {
         jdbcTemplate.update("""
                 insert into medical_record_report_link
                     (medical_record_id, medical_order_id, report_id, report_type, conclusion, confirmed_by, confirmed_at)
-                values (?, ?, ?, ?, ?, ?, ?)
+                values (?, ?::uuid, ?::uuid, ?, ?, ?, ?)
                 on conflict (medical_order_id, report_id) do nothing
                 """, record.getId(), orderId, reportId, type, conclusion, confirmer, confirmedAt);
     }
@@ -158,15 +165,15 @@ public class MedicalRecordRepository {
         // id 由 DB 自动生成（uuid），不显式传入
         jdbcTemplate.update("""
                 insert into medical_record (
-                    appointment_id, patient_id, patient_name,
+                    id, appointment_id, patient_id, patient_name,
                     doctor_id, doctor_name, department_name,
                     visit_date, ai_triage_summary, status, updated_at)
-                values (?::uuid, ?::uuid, ?,
+                values (?, ?::uuid, ?::uuid, ?,
                         ?, ?, ?,
                         ?, ?, 'DRAFT', now())
                 on conflict (appointment_id) do nothing
                 """,
-                record.getAppointmentId(), record.getPatientId(), record.getPatientName(),
+                record.getId(), record.getAppointmentId(), record.getPatientId(), record.getPatientName(),
                 record.getDoctorId(), record.getDoctorName(), record.getDepartmentName(),
                 record.getVisitDate(), record.getAiTriageSummary());
         return findByAppointmentId(record.getAppointmentId()).orElseThrow();
@@ -232,7 +239,7 @@ public class MedicalRecordRepository {
         }
     }
 
-    public record AccessLog(java.util.UUID id, String medicalRecordId, String patientId,
+    public record AccessLog(Long id, String medicalRecordId, String patientId,
             String actorId, String actorRole, String accessScope, String reason,
             java.time.LocalDateTime accessedAt) {}
 }

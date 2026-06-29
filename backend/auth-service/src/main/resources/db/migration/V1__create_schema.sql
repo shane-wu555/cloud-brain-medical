@@ -24,7 +24,7 @@ create table if not exists auth_audit (
     ip         varchar(48),
     occurred_at timestamptz not null default now()
 );
-create index idx_auth_audit_user on auth_audit(user_id, occurred_at desc);
+create index if not exists idx_auth_audit_user on auth_audit(user_id, occurred_at desc);
 
 -- 短信验证码
 create table if not exists verification_code (
@@ -36,7 +36,7 @@ create table if not exists verification_code (
     used_at    timestamptz,
     created_at timestamptz not null default now()
 );
-create index idx_vcode_phone on verification_code(phone, purpose, created_at desc);
+create index if not exists idx_vcode_phone on verification_code(phone, purpose, created_at desc);
 
 -- 平台管理员（密码：abc12345）
 insert into user_account (id, username, password, name, role)

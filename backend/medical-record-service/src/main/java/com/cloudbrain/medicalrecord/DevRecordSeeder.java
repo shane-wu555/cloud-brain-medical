@@ -32,31 +32,31 @@ public class DevRecordSeeder implements CommandLineRunner {
 
         // appointment_id / patient_id 与 appointment V2 + patient V2 一致
         List<R> rows = List.of(
-            new R("c0000001-0000-4000-8000-000000000001",
+            new R("00000000-0000-4000-8000-000000000001",
                   "a0000000-0000-4000-8000-000000000001","刘建国",
                 "反复头晕3天，血压偏高（150/95mmHg），既往高血压病史5年","MEDIUM",
                 "反复头晕3天","患者3天前无明显诱因出现头晕，伴视物旋转，血压150/95mmHg。",
                 "高血压病史5年，规律服药","无","1.良性位置性眩晕 2.高血压病3级",
                 "耳石复位治疗；调整降压方案加用氨氯地平5mg qd"),
-            new R("c0000001-0000-4000-8000-000000000002",
+            new R("00000000-0000-4000-8000-000000000002",
                   "a0000000-0000-4000-8000-000000000002","张秀英",
                 "失眠2周，入睡困难，伴焦虑情绪，日间头痛","LOW",
                 "失眠2周","2周前因工作压力出现失眠，每晚约3-4小时，伴焦虑、情绪低落。",
                 "无特殊","无","1.失眠症 2.焦虑状态",
                 "认知行为治疗；艾司唑仑0.5mg qn短期使用"),
-            new R("c0000001-0000-4000-8000-000000000003",
+            new R("00000000-0000-4000-8000-000000000003",
                   "a0000000-0000-4000-8000-000000000003","王大力",
                 "持续头痛3天，颈部酸痛，伴恶心，无发热","MEDIUM",
                 "头痛3天","头痛呈持续性钝痛，颈部肌肉紧张，伴轻度恶心，无呕吐。",
                 "无特殊","青霉素过敏","1.紧张型头痛 2.颈椎病",
                 "布洛芬缓释0.3g bid；甲钴胺0.5mg tid；颈部理疗"),
-            new R("c0000001-0000-4000-8000-000000000004",
+            new R("00000000-0000-4000-8000-000000000004",
                   "a0000000-0000-4000-8000-000000000004","陈小梅",
                 "脑梗死后随访，左侧肢体活动较前好转","HIGH",
                 "脑梗死后随访","阿司匹林+他汀规律服用，左侧上肢肌力4级，血压130/80mmHg。",
                 "高血压、糖尿病","无","脑梗死恢复期",
                 "继续原方案；加强康复锻炼；3个月后复查MRI及血脂"),
-            new R("c0000001-0000-4000-8000-000000000005",
+            new R("00000000-0000-4000-8000-000000000005",
                   "a0000000-0000-4000-8000-000000000005","李明远",
                 "发作性眩晕2天，视物模糊，站立不稳","HIGH",
                 "发作性眩晕2天","突发眩晕，伴视物模糊、站立不稳，Romberg征(+)。",
@@ -67,14 +67,14 @@ public class DevRecordSeeder implements CommandLineRunner {
         // 新 schema：无 period / ai_risk_level 列；id 由 DB 自动生成（uuid）
         String sql = """
             insert into medical_record (
-              appointment_id, patient_id, patient_name,
+              id, appointment_id, patient_id, patient_name,
               doctor_id, doctor_name, department_name, visit_date,
               ai_triage_summary,
               chief_complaint, present_illness, past_history, allergy_history,
               preliminary_diagnosis, treatment_plan,
               status, version, created_at, updated_at
             ) values (
-              ?::uuid, ?::uuid, ?,
+              'record-' || gen_random_uuid(), ?::uuid, ?::uuid, ?,
               '00010001', '张医生', '神经内科', current_date,
               ?,
               ?, ?, ?, ?,

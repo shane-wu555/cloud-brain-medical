@@ -28,12 +28,12 @@ public class AppointmentRepository {
     }
 
     public Optional<Appointment> findById(String id) {
-        List<Appointment> result = jdbcTemplate.query("select * from appointment where id = ?", rowMapper, id);
+        List<Appointment> result = jdbcTemplate.query("select * from appointment where id = ?::uuid", rowMapper, id);
         return result.stream().findFirst();
     }
 
     public Optional<Appointment> findByIdForUpdate(String id) {
-        List<Appointment> result = jdbcTemplate.query("select * from appointment where id = ? for update", rowMapper, id);
+        List<Appointment> result = jdbcTemplate.query("select * from appointment where id = ?::uuid for update", rowMapper, id);
         return result.stream().findFirst();
     }
 
@@ -48,7 +48,7 @@ public class AppointmentRepository {
     public boolean existsActiveAtStartTime(String patientId, String visitDate, LocalTime startTime) {
         Integer count = jdbcTemplate.queryForObject("""
                 select count(*) from appointment
-                where patient_id = ?
+                where patient_id = ?::uuid
                   and visit_date = ?::date
                   and start_time = ?
                   and status <> 'CANCELLED'
@@ -63,7 +63,7 @@ public class AppointmentRepository {
                     visit_date, period, start_time, source, status, payment_status, payment_method, triage_summary, risk_level,
                     recommended_department_id, queue_number, missed_count, paid_at, cancelled_at, lock_expires_at
                 )
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                values (?::uuid, ?, ?::uuid, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                         case when ? = 'PENDING_PAYMENT' then now() + interval '15 minutes' else null end)
                 on conflict (id) do update set
                     status = excluded.status,
@@ -98,7 +98,7 @@ public class AppointmentRepository {
                 appointment.getCancelledAt(),
                 appointment.getStatus().name());
             appointment.restoreBusinessNo(jdbcTemplate.queryForObject(
-                "select business_no from appointment where id=?",String.class,appointment.getId()));
+                "select business_no from appointment where id=?::uuid",String.class,appointment.getId()));
         return appointment;
     }
 
@@ -166,11 +166,11 @@ public class AppointmentRepository {
                 order by queue_number limit ?
                 """,(rs,row)->rs.getInt(1),current.getDoctorId(),current.getVisitDate(),current.getQueueNumber(),positions);
         if(next.isEmpty()) {
-            jdbcTemplate.update("update appointment set missed_count=missed_count+1,status='WAITING' where id=?",id);
+            jdbcTemplate.update("update appointment set missed_count=missed_count+1,status='WAITING' where id=?::uuid",id);
             return findById(id).orElseThrow();
         }
         int from=current.getQueueNumber(),target=next.get(next.size()-1);
-        jdbcTemplate.update("update appointment set queue_number=? where id=?",-1000000-from,id);
+        jdbcTemplate.update("update appointment set queue_number=? where id=?::uuid",-1000000-from,id);
         jdbcTemplate.update("""
                 update appointment set queue_number=queue_number+1000000
                 where doctor_id=? and visit_date=? and status in ('WAITING','CALLED')
@@ -181,7 +181,7 @@ public class AppointmentRepository {
                 where doctor_id=? and visit_date=? and status in ('WAITING','CALLED')
                   and queue_number>? and queue_number<=?
                 """,current.getDoctorId(),current.getVisitDate(),from+1000000,target+1000000);
-        jdbcTemplate.update("update appointment set queue_number=?,missed_count=missed_count+1,status='WAITING' where id=?",target,id);
+        jdbcTemplate.update("update appointment set queue_number=?,missed_count=missed_count+1,status='WAITING' where id=?::uuid",target,id);
         return findById(id).orElseThrow();
     }
 

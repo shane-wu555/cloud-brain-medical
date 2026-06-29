@@ -24,62 +24,63 @@ public class PharmacyRepository {
     public List<Drug> drugs(String keyword) {
         String like = keyword == null || keyword.isBlank() ? null : "%" + keyword.trim() + "%";
         StringBuilder sql = new StringBuilder("""
-                select c.*, i.quantity, i.warning_threshold
-                from drug_catalog c join drug_inventory i on i.drug_id = c.id
-                where c.enabled = true
+                select d.*, s.quantity, s.warning_threshold
+                from drug d
+                join drug_stock s on s.drug_id = d.id
+                where d.active = true
                 """);
         List<Object> args = new ArrayList<>();
         if (like != null) {
-            sql.append(" and (c.drug_name like ? or c.drug_code like ?)");
+            sql.append(" and (d.drug_name like ? or d.code like ?)");
             args.add(like);
             args.add(like);
         }
-        sql.append(" order by c.drug_code");
-        return jdbc.query(sql.toString(), (rs, row) -> new Drug(rs.getString("id"), rs.getString("drug_code"), rs.getString("drug_name"),
-                rs.getString("specification"), rs.getString("unit"), rs.getBigDecimal("unit_price"),
-                rs.getInt("quantity"), rs.getInt("warning_threshold")), args.toArray());
+        sql.append(" order by d.code");
+        return jdbc.query(sql.toString(), (rs, row) -> drug(rs), args.toArray());
     }
 
     public Drug drug(String drugId) {
         return jdbc.query("""
-                select c.*, i.quantity, i.warning_threshold
-                from drug_catalog c join drug_inventory i on i.drug_id = c.id
-                where c.id = ? and c.enabled = true
-                """, (rs, row) -> new Drug(rs.getString("id"), rs.getString("drug_code"), rs.getString("drug_name"),
-                rs.getString("specification"), rs.getString("unit"), rs.getBigDecimal("unit_price"),
-                rs.getInt("quantity"), rs.getInt("warning_threshold")), drugId).stream().findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("药品不存在或已停用"));
+                select d.*, s.quantity, s.warning_threshold
+                from drug d
+                join drug_stock s on s.drug_id = d.id
+                where d.id = ?::uuid and d.active = true
+                """, (rs, row) -> drug(rs), drugId).stream().findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("drug does not exist or is inactive"));
     }
 
     public void insertPrescription(Prescription prescription) {
         jdbc.update("""
                 insert into prescription
-                    (id, prescription_no, appointment_id, medical_record_id, patient_id, patient_name, doctor_id,
-                     diagnosis, status, total_amount, ai_assistance_id, ai_adoption_status, ai_revision_note,
-                     confirmed_at)
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now())
+                    (id, prescription_no, appointment_id, medical_record_id, patient_id, patient_name,
+                     doctor_id, doctor_name, diagnosis, status, total_amount, ai_record_id, ai_adoption_status)
+                values (?::uuid, ?, ?::uuid, ?, ?::uuid, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, prescription.id(), prescription.prescriptionNo(), prescription.appointmentId(),
                 prescription.medicalRecordId(), prescription.patientId(), prescription.patientName(),
-                prescription.doctorId(), prescription.diagnosis(), prescription.status().name(),
-                prescription.totalAmount(), prescription.aiAssistanceId(), prescription.aiAdoptionStatus(),
-                prescription.aiRevisionNote());
+                prescription.doctorId(), prescription.doctorId(), prescription.diagnosis(),
+                prescription.status().name(), prescription.totalAmount(),
+                prescription.aiAssistanceId(), prescription.aiAdoptionStatus());
         for (PrescriptionItem item : prescription.items()) {
             jdbc.update("""
                     insert into prescription_item
-                        (id, prescription_id, drug_id, drug_name, quantity, dosage, usage, frequency,
-                         days, note, unit_price, amount)
-                    values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, item.id(), prescription.id(), item.drugId(), item.drugName(), item.quantity(),
-                    item.dosage(), item.usage(), item.frequency(), item.days(), item.note(),
+                        (id, prescription_id, drug_id, drug_name, quantity, dosage, usage,
+                         frequency, days, unit_price, amount)
+                    values (?::uuid, ?::uuid, ?::uuid, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, item.id(), prescription.id(), item.drugId(), item.drugName(),
+                    item.quantity(), item.dosage(), item.usage(), item.frequency(), item.days(),
                     item.unitPrice(), item.amount());
         }
     }
 
     public Prescription findPrescription(String id) {
-        Prescription base = jdbc.query("select * from prescription where id = ?", (rs, row) -> prescription(rs), id)
-                .stream().findFirst().orElseThrow(() -> new IllegalArgumentException("处方不存在"));
-        List<PrescriptionItem> items = jdbc.query("select * from prescription_item where prescription_id = ? order by id",
-                (rs, row) -> item(rs), id);
+        Prescription base = jdbc.query("select * from prescription where id = ?::uuid",
+                        (rs, row) -> prescription(rs), id)
+                .stream().findFirst().orElseThrow(() -> new IllegalArgumentException("prescription does not exist"));
+        List<PrescriptionItem> items = jdbc.query("""
+                select * from prescription_item
+                where prescription_id = ?::uuid
+                order by id
+                """, (rs, row) -> item(rs), id);
         return new Prescription(base.id(), base.prescriptionNo(), base.appointmentId(), base.medicalRecordId(),
                 base.patientId(), base.patientName(), base.doctorId(), base.diagnosis(), base.status(),
                 base.totalAmount(), base.paymentOrderId(), base.aiAssistanceId(), base.aiAdoptionStatus(),
@@ -89,13 +90,10 @@ public class PharmacyRepository {
     }
 
     public List<Prescription> list(String patientId, String status) {
-        StringBuilder sql = new StringBuilder("""
-                select * from prescription
-                where 1 = 1
-                """);
+        StringBuilder sql = new StringBuilder("select * from prescription where 1 = 1");
         List<Object> args = new ArrayList<>();
         if (patientId != null && !patientId.isBlank()) {
-            sql.append(" and patient_id = ?");
+            sql.append(" and patient_id = ?::uuid");
             args.add(patientId);
         }
         if (status != null && !status.isBlank()) {
@@ -103,72 +101,74 @@ public class PharmacyRepository {
             args.add(status);
         }
         sql.append(" order by created_at desc");
-        return jdbc.query(sql.toString(), (rs, row) -> {
-            Prescription base = prescription(rs);
-            return findPrescription(base.id());
-        }, args.toArray());
+        return jdbc.query(sql.toString(), (rs, row) -> findPrescription(rs.getString("id")), args.toArray());
     }
 
     public boolean markPaid(String id, String patientId, String paymentOrderId) {
         return jdbc.update("""
                 update prescription
-                set status = 'WAITING_DISPENSE', payment_order_id = ?, paid_at = now()
-                where id = ? and patient_id = ? and status in ('CONFIRMED', 'PENDING_PAYMENT', 'PAID')
-                """, paymentOrderId, id, patientId) == 1;
+                set status = 'WAITING_DISPENSE'
+                where id = ?::uuid and patient_id = ?::uuid and status in ('CONFIRMED', 'PENDING_PAYMENT', 'PAID')
+                """, id, patientId) == 1;
     }
 
     public boolean markDispensed(String id, String operatorId) {
         return jdbc.update("""
                 update prescription
                 set status = 'DISPENSED', dispensed_by = ?, dispensed_at = now()
-                where id = ? and status = 'WAITING_DISPENSE'
+                where id = ?::uuid and status = 'WAITING_DISPENSE'
                 """, operatorId, id) == 1;
     }
 
     public boolean markReturned(String id, String operatorId, String reason) {
         return jdbc.update("""
                 update prescription
-                set status = 'RETURNED', returned_by = ?, returned_at = now(), return_reason = ?
-                where id = ? and status = 'DISPENSED'
-                """, operatorId, reason, id) == 1;
+                set status = 'RETURNED', returned_by = ?, returned_at = now()
+                where id = ?::uuid and status = 'DISPENSED'
+                """, operatorId, id) == 1;
     }
 
     public StockChange deductStock(String drugId, String prescriptionId, int quantity, String operatorId) {
         int before = stock(drugId);
         int updated = jdbc.update("""
-                update drug_inventory
-                set quantity = quantity - ?, updated_at = now()
-                where drug_id = ? and quantity >= ?
+                update drug_stock
+                set quantity = quantity - ?
+                where drug_id = ?::uuid and quantity >= ?
                 """, quantity, drugId, quantity);
-        if (updated != 1) throw new IllegalStateException("药品库存不足");
+        if (updated != 1) throw new IllegalStateException("insufficient drug stock");
         int after = before - quantity;
-        flow(drugId, prescriptionId, "OUT", quantity, before, after, operatorId, "处方发药");
+        flow(drugId, prescriptionId, "OUT", quantity, before, after, operatorId, "prescription dispense");
         return new StockChange(before, after);
     }
 
     public StockChange restoreStock(String drugId, String prescriptionId, int quantity, String operatorId, String reason) {
         int before = stock(drugId);
-        jdbc.update("update drug_inventory set quantity = quantity + ?, updated_at = now() where drug_id = ?",
-                quantity, drugId);
+        jdbc.update("update drug_stock set quantity = quantity + ? where drug_id = ?::uuid", quantity, drugId);
         int after = before + quantity;
         flow(drugId, prescriptionId, "IN", quantity, before, after, operatorId, reason);
         return new StockChange(before, after);
     }
 
     private int stock(String drugId) {
-        return jdbc.query("select quantity from drug_inventory where drug_id = ? for update",
-                (rs, row) -> rs.getInt(1), drugId).stream().findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("药品库存不存在"));
+        return jdbc.query("select quantity from drug_stock where drug_id = ?::uuid for update",
+                        (rs, row) -> rs.getInt(1), drugId)
+                .stream().findFirst().orElseThrow(() -> new IllegalArgumentException("drug stock does not exist"));
     }
 
     private void flow(String drugId, String prescriptionId, String direction, int quantity, int before, int after,
-                      String operatorId, String reason) {
+            String operatorId, String reason) {
         jdbc.update("""
-                insert into inventory_flow
-                    (id, drug_id, prescription_id, direction, quantity, before_quantity, after_quantity, operator_id, reason)
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, "flow-" + UUID.randomUUID(), drugId, prescriptionId, direction, quantity,
+                insert into stock_flow
+                    (id, drug_id, prescription_id, direction, quantity, stock_before, stock_after, operator_id, reason)
+                values (?::uuid, ?::uuid, ?::uuid, ?, ?, ?, ?, ?, ?)
+                """, UUID.randomUUID().toString(), drugId, prescriptionId, direction, quantity,
                 before, after, operatorId, reason);
+    }
+
+    private Drug drug(ResultSet rs) throws SQLException {
+        return new Drug(rs.getString("id"), rs.getString("code"), rs.getString("drug_name"),
+                rs.getString("specification"), rs.getString("unit"), rs.getBigDecimal("unit_price"),
+                rs.getInt("quantity"), rs.getInt("warning_threshold"));
     }
 
     private Prescription prescription(ResultSet rs) throws SQLException {
@@ -176,20 +176,17 @@ public class PharmacyRepository {
                 rs.getString("appointment_id"), rs.getString("medical_record_id"), rs.getString("patient_id"),
                 rs.getString("patient_name"), rs.getString("doctor_id"), rs.getString("diagnosis"),
                 PrescriptionStatus.valueOf(rs.getString("status")), rs.getBigDecimal("total_amount"),
-                rs.getString("payment_order_id"), rs.getString("ai_assistance_id"),
-                rs.getString("ai_adoption_status"), rs.getString("ai_revision_note"),
-                time(rs.getTimestamp("created_at")), time(rs.getTimestamp("confirmed_at")),
-                time(rs.getTimestamp("paid_at")), time(rs.getTimestamp("dispensed_at")),
-                time(rs.getTimestamp("returned_at")), rs.getString("dispensed_by"),
-                rs.getString("returned_by"), rs.getString("return_reason"), List.of());
+                null, rs.getString("ai_record_id"), rs.getString("ai_adoption_status"), null,
+                time(rs.getTimestamp("created_at")), null, null,
+                time(rs.getTimestamp("dispensed_at")), time(rs.getTimestamp("returned_at")),
+                rs.getString("dispensed_by"), rs.getString("returned_by"), null, List.of());
     }
 
     private PrescriptionItem item(ResultSet rs) throws SQLException {
         return new PrescriptionItem(rs.getString("id"), rs.getString("prescription_id"),
                 rs.getString("drug_id"), rs.getString("drug_name"), rs.getInt("quantity"),
                 rs.getString("dosage"), rs.getString("usage"), rs.getString("frequency"),
-                rs.getInt("days"), rs.getString("note"), rs.getBigDecimal("unit_price"),
-                rs.getBigDecimal("amount"));
+                rs.getInt("days"), null, rs.getBigDecimal("unit_price"), rs.getBigDecimal("amount"));
     }
 
     private static LocalDateTime time(java.sql.Timestamp value) {
@@ -197,6 +194,6 @@ public class PharmacyRepository {
     }
 
     public record Drug(String id, String drugCode, String drugName, String specification, String unit,
-                       BigDecimal unitPrice, int quantity, int warningThreshold) {}
+            BigDecimal unitPrice, int quantity, int warningThreshold) {}
     public record StockChange(int beforeQuantity, int afterQuantity) {}
 }
