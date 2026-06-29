@@ -110,7 +110,7 @@ public class MedicalReportService {
         if (blank(finalConclusion)) throw new IllegalArgumentException("报告结论不能为空");
         MedicalReport report = reports.confirm(orderId, finalFindings, finalConclusion, finalAdvice, actor);
         String source = report.createdByType();
-        orderService.complete(orderId, actor, role, "{}", finalConclusion, source, "AI".equals(source) ? report.aiTaskId() : null);
+        orderService.complete(orderId, actor, role, finalConclusion, source, "AI".equals(source) ? report.aiTaskId() : null);
         workflow.publish(order, report);
         return report;
     }
@@ -159,8 +159,8 @@ public class MedicalReportService {
     }
 
     private boolean canAccessWorkspace(MedicalOrder o, String actor) {
-        return orders.technician(actor)
-                .map(technician -> technician.workspaceId().equals(o.executorId()))
+        return orders.staffRoom(actor)
+                .map(sr -> sr.roomId().equals(o.roomId()))
                 .orElse(false);
     }
 
