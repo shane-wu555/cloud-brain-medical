@@ -9,88 +9,82 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * 适配新 patient schema：
+ *   patient_profile       → patient（id 改为 uuid）
+ *   account_patient_binding → account_binding（bound_at → created_at）
+ */
 @Repository
 public class PatientRepository {
     private static final int MAX_PATIENTS_PER_ACCOUNT = 5;
     private final JdbcTemplate jdbc;
 
-    public PatientRepository(JdbcTemplate jdbc) {
-        this.jdbc = jdbc;
-    }
+    public PatientRepository(JdbcTemplate jdbc) { this.jdbc = jdbc; }
 
     public Optional<PatientProfile> find(String patientId) {
-        List<PatientProfile> rows = jdbc.query(
-                "select * from patient_profile where id = ?",
-                (rs, row) -> map(rs),
-                patientId);
-        return rows.stream().findFirst();
+        return jdbc.query(
+                "select * from patient where id = ?::uuid",
+                (rs, row) -> map(rs), patientId)
+                .stream().findFirst();
     }
 
     public List<PatientProfile> findByAccount(String accountId) {
         return jdbc.query("""
                 select p.*, b.account_id as account_id
-                from patient_profile p
-                join account_patient_binding b on b.patient_id = p.id
+                from patient p
+                join account_binding b on b.patient_id = p.id
                 where b.account_id = ?
-                order by b.bound_at desc, p.created_at desc
+                order by b.created_at desc, p.created_at desc
                 """, (rs, row) -> map(rs), accountId);
     }
 
     public List<PatientProfile> findByPhone(String phone) {
         return jdbc.query(
-                "select * from patient_profile where phone = ? order by created_at desc",
-                (rs, row) -> map(rs),
-                phone);
+                "select * from patient where phone = ? order by created_at desc",
+                (rs, row) -> map(rs), phone);
     }
 
     public List<PatientProfile> findByIdNumber(String idType, String idNumber) {
         return jdbc.query("""
-                select * from patient_profile
+                select * from patient
                 where id_type = ? and id_number = ?
                 order by created_at desc
                 """, (rs, row) -> map(rs), idType, normalizeIdNumber(idNumber));
     }
 
     public Optional<PatientProfile> findByIdentity(String name, String gender, String idType, String idNumber) {
-        List<PatientProfile> rows = jdbc.query("""
-                select * from patient_profile
+        return jdbc.query("""
+                select * from patient
                 where name = ? and gender = ? and id_type = ? and id_number = ?
-                order by created_at asc
-                limit 1
-                """, (rs, row) -> map(rs), name, gender, idType, normalizeIdNumber(idNumber));
-        return rows.stream().findFirst();
+                order by created_at asc limit 1
+                """, (rs, row) -> map(rs), name, gender, idType, normalizeIdNumber(idNumber))
+                .stream().findFirst();
     }
 
     public Optional<PatientProfile> bound(String accountId) {
-        List<PatientProfile> rows = jdbc.query("""
+        return jdbc.query("""
                 select p.*, b.account_id as account_id
-                from patient_profile p
-                join account_patient_binding b on b.patient_id = p.id
+                from patient p
+                join account_binding b on b.patient_id = p.id
                 where b.account_id = ?
-                order by b.bound_at desc, p.created_at desc
+                order by b.created_at desc, p.created_at desc
                 limit 1
-                """, (rs, row) -> map(rs), accountId);
-        return rows.stream().findFirst();
+                """, (rs, row) -> map(rs), accountId)
+                .stream().findFirst();
     }
 
     public boolean owns(String accountId, String patientId) {
         Integer count = jdbc.queryForObject("""
-                select count(*)
-                from account_patient_binding
-                where account_id = ? and patient_id = ?
+                select count(*) from account_binding
+                where account_id = ? and patient_id = ?::uuid
                 """, Integer.class, accountId, patientId);
         return count != null && count > 0;
     }
 
     @Transactional
     public PatientProfile createForAccount(
-            String accountId,
-            String phone,
-            String name,
-            String idType,
-            String idNumber,
-            String gender,
-            LocalDate birthDate) {
+            String accountId, String phone, String name,
+            String idType, String idNumber, String gender, LocalDate birthDate) {
         String normalizedIdNumber = normalizeIdNumber(idNumber);
         Optional<PatientProfile> existing = findByIdentity(name, gender, idType, normalizedIdNumber);
         if (existing.isPresent()) {
@@ -98,99 +92,58 @@ public class PatientRepository {
             upsertBinding(accountId, existing.get().id());
             return find(existing.get().id()).orElseThrow();
         }
-
         ensureCanAdd(accountId, null);
-
-        String id = "patient-" + UUID.randomUUID();
+        String id = UUID.randomUUID().toString();
         jdbc.update("""
-                insert into patient_profile
-                    (id, phone, name, id_type, id_number, gender, birth_date, real_name_verified, verified_at)
-                values (?, ?, ?, ?, ?, ?, ?, true, now())
-                """,
-                id,
-                phone == null ? "" : phone,
-                name,
-                idType,
-                normalizedIdNumber,
-                gender,
-                birthDate);
+                insert into patient (id, phone, name, id_type, id_number, gender, birth_date, real_name_verified, verified_at, created_source)
+                values (?::uuid, ?, ?, ?, ?, ?, ?, true, now(), 'ONLINE')
+                """, id, phone == null ? "" : phone, name, idType, normalizedIdNumber, gender, birthDate);
         upsertBinding(accountId, id);
         return find(id).orElseThrow();
     }
 
     @Transactional
     public PatientProfile createOffline(
-            String idType,
-            String idNumber,
-            String name,
-            String phone,
-            String gender,
-            LocalDate birthDate) {
+            String idType, String idNumber, String name,
+            String phone, String gender, LocalDate birthDate) {
         String normalizedIdNumber = normalizeIdNumber(idNumber);
         Optional<PatientProfile> existing = findByIdentity(name, gender, idType, normalizedIdNumber);
-        if (existing.isPresent()) {
-            return existing.get();
-        }
-
-        String id = "patient-offline-" + UUID.randomUUID();
+        if (existing.isPresent()) return existing.get();
+        String id = UUID.randomUUID().toString();
         jdbc.update("""
-                insert into patient_profile
-                    (id, phone, name, id_type, id_number, gender, birth_date, real_name_verified, verified_at)
-                values (?, ?, ?, ?, ?, ?, ?, true, now())
-                """,
-                id,
-                phone == null ? "" : phone,
-                name,
-                idType,
-                normalizedIdNumber,
-                gender,
-                birthDate);
+                insert into patient (id, phone, name, id_type, id_number, gender, birth_date, real_name_verified, verified_at, created_source)
+                values (?::uuid, ?, ?, ?, ?, ?, ?, true, now(), 'OFFLINE')
+                """, id, phone == null ? "" : phone, name, idType, normalizedIdNumber, gender, birthDate);
         return find(id).orElseThrow();
     }
 
     public PatientProfile bind(String accountId, String patientId) {
-        if (!owns(accountId, patientId)) {
-            throw new IllegalArgumentException("Patient is not added to this account");
-        }
-        jdbc.update("""
-                update account_patient_binding
-                set bound_at = now()
-                where account_id = ? and patient_id = ?
-                """, accountId, patientId);
+        if (!owns(accountId, patientId)) throw new IllegalArgumentException("Patient is not added to this account");
+        upsertBinding(accountId, patientId);
         return find(patientId).orElseThrow();
     }
 
     public PatientAccountState accountState(String accountId) {
-        List<PatientProfile> profiles = findByAccount(accountId);
-        Optional<PatientProfile> bound = bound(accountId);
-        return new PatientAccountState(profiles, bound.orElse(null));
+        return new PatientAccountState(findByAccount(accountId), bound(accountId).orElse(null));
     }
 
     private void ensureCanAdd(String accountId, String existingPatientId) {
-        if (existingPatientId != null && owns(accountId, existingPatientId)) {
-            return;
-        }
-        Integer count = jdbc.queryForObject("""
-                select count(*)
-                from account_patient_binding
-                where account_id = ?
-                """, Integer.class, accountId);
-        if (count != null && count >= MAX_PATIENTS_PER_ACCOUNT) {
+        if (existingPatientId != null && owns(accountId, existingPatientId)) return;
+        Integer count = jdbc.queryForObject(
+                "select count(*) from account_binding where account_id = ?", Integer.class, accountId);
+        if (count != null && count >= MAX_PATIENTS_PER_ACCOUNT)
             throw new IllegalStateException("One account can add at most 5 patients");
-        }
     }
 
     private void upsertBinding(String accountId, String patientId) {
         jdbc.update("""
-                insert into account_patient_binding (account_id, patient_id, bound_at)
-                values (?, ?, now())
-                on conflict (account_id, patient_id) do update set bound_at = excluded.bound_at
+                insert into account_binding (account_id, patient_id, is_default)
+                values (?, ?::uuid, false)
+                on conflict (account_id, patient_id) do nothing
                 """, accountId, patientId);
     }
 
-    private String normalizeIdNumber(String idNumber) {
-        return idNumber.trim().toUpperCase();
-    }
+    private String normalizeIdNumber(String idNumber) { return idNumber.trim().toUpperCase(); }
 
     private PatientProfile map(java.sql.ResultSet rs) throws java.sql.SQLException {
         return new PatientProfile(
@@ -203,7 +156,7 @@ public class PatientRepository {
                 rs.getString("gender"),
                 rs.getDate("birth_date") == null ? null : rs.getDate("birth_date").toLocalDate(),
                 rs.getObject("created_at", OffsetDateTime.class),
-                rs.getObject("updated_at", OffsetDateTime.class));
+                hasColumn(rs, "updated_at") ? rs.getObject("updated_at", OffsetDateTime.class) : null);
     }
 
     private boolean hasColumn(java.sql.ResultSet rs, String column) throws java.sql.SQLException {
@@ -215,28 +168,13 @@ public class PatientRepository {
     }
 
     public record PatientProfile(
-            String id,
-            String accountId,
-            String phone,
-            String name,
-            String idType,
-            String idNumber,
-            String gender,
-            LocalDate birthDate,
-            OffsetDateTime createdAt,
-            OffsetDateTime updatedAt) {
-        public String userId() {
-            return id;
-        }
-
-        public boolean realNameVerified() {
-            return true;
-        }
+            String id, String accountId, String phone, String name,
+            String idType, String idNumber, String gender, LocalDate birthDate,
+            OffsetDateTime createdAt, OffsetDateTime updatedAt) {
+        public String userId() { return id; }
     }
-
-    public record PatientAccountState(List<PatientProfile> patients, PatientProfile boundPatient) {
-        public boolean hasBoundPatient() {
-            return boundPatient != null;
-        }
+    public record PatientAccountState(List<PatientProfile> profiles, PatientProfile bound) {
+        public boolean hasBoundPatient() { return bound != null; }
+        public PatientProfile boundPatient() { return bound; }
     }
 }
