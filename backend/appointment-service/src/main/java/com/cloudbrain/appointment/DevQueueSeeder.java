@@ -5,21 +5,17 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 /**
- * 开发环境数据补种：每次启动时将测试队列的 visit_date 刷新为今天，
- * 保证每日重启后队列始终有效数据。
+ * 开发环境数据补种：每次启动时将测试队列的 visit_date 刷新为今天。
  *
- * 配合 appointment V2 seed migration：
- *   张医生（00010001）神经内科上午队列：queue_number 100-114
- *   CT验证下午队列：queue_number 200-214
+ * appointment.id 为 uuid 类型，不能用 LIKE 匹配；
+ * 改为按 doctor_id + queue_number 范围过滤。
  */
 @Component
 public class DevQueueSeeder implements CommandLineRunner {
 
     private final JdbcTemplate jdbc;
 
-    public DevQueueSeeder(JdbcTemplate jdbc) {
-        this.jdbc = jdbc;
-    }
+    public DevQueueSeeder(JdbcTemplate jdbc) { this.jdbc = jdbc; }
 
     @Override
     public void run(String... args) {
@@ -39,12 +35,10 @@ public class DevQueueSeeder implements CommandLineRunner {
                         when status in ('FINISHED', 'CANCELLED') then status
                         else 'WAITING'
                     end
-                where id like 'appt-00010001-%'
+                where doctor_id = '00010001'
                   and queue_number between 100 and 114
                 """);
-        if (updated > 0) {
-            System.out.println("[DevQueueSeeder] 刷新张医生今日神经内科队列：" + updated + " 人");
-        }
+        if (updated > 0) System.out.println("[DevQueueSeeder] 刷新张医生今日神经内科队列：" + updated + " 人");
     }
 
     private void refreshCtValidationQueue() {
@@ -59,11 +53,9 @@ public class DevQueueSeeder implements CommandLineRunner {
                         when status in ('FINISHED', 'CANCELLED') then status
                         else 'WAITING'
                     end
-                where id like 'appt-ct-00010001-%'
+                where doctor_id = '00010001'
                   and queue_number between 200 and 214
                 """);
-        if (updated > 0) {
-            System.out.println("[DevQueueSeeder] 刷新CT验证下午队列：" + updated + " 人");
-        }
+        if (updated > 0) System.out.println("[DevQueueSeeder] 刷新CT验证下午队列：" + updated + " 人");
     }
 }

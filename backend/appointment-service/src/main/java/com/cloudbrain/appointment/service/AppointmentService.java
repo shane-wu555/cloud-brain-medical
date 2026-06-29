@@ -240,7 +240,7 @@ public class AppointmentService {
             LocalTime startTime) {
         int queueNumber = appointmentRepository.nextQueueNumber(request.doctorId(), request.visitDate());
         return new Appointment(
-                "appt-" + UUID.randomUUID(),
+                UUID.randomUUID().toString(),
                 request.scheduleId(),
                 request.patientId(),
                 request.patientName(),
