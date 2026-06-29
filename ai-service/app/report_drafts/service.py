@@ -54,7 +54,7 @@ def _draft_with_llm(request: ReportDraftRequest, config) -> ReportDraftResponse:
 
 def _mock_draft(request: ReportDraftRequest, fallback_used: bool = False) -> ReportDraftResponse:
     knowledge_sources = _knowledge_sources(request)
-    project = request.project_name or request.report_type
+    project = request.item_name or request.report_type
     findings = request.findings or f"{project} 已完成，所见需由执行医生结合原始数据补充。"
     conclusion = request.conclusion or "AI 未形成正式结论，请医技医生复核后填写。"
     source_label = knowledge_sources[0].title if knowledge_sources else "本院规则"
@@ -71,7 +71,7 @@ def _mock_draft(request: ReportDraftRequest, fallback_used: bool = False) -> Rep
 def _knowledge_sources(request: ReportDraftRequest) -> list[ClinicalKnowledgeSource]:
     query = " ".join(
         value
-        for value in [request.report_type, request.project_name, request.findings, request.conclusion, request.context]
+        for value in [request.report_type, request.item_name, request.findings, request.conclusion, request.context]
         if value
     )
     return [

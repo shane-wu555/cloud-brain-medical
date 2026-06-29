@@ -6,7 +6,7 @@ from app.clinical_assistance.models import ClinicalKnowledgeSource
 class ReportDraftRequest(BaseModel):
     order_id: str = Field(alias="orderId")
     report_type: str = Field(default="CHECK", alias="reportType")
-    project_name: str = Field(default="", alias="projectName")
+    item_name: str = Field(default="", alias="itemName")
     findings: str = ""
     conclusion: str = ""
     context: str = ""

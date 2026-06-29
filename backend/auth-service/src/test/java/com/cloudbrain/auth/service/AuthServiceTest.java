@@ -90,21 +90,22 @@ class AuthServiceTest {
     @Test
     void failedLoginDoesNotIssueTokenAndIsAudited() {
         UserAccount account = account("$2a$10$7NukEsugMLsxrPkaBLnhuOHHhSQg2RjHt4RiGYxJNx7pq9cyG6bL.");
-        when(repository.findByUsername("doctor")).thenReturn(Optional.of(account));
+        when(repository.findByUsername("00010001")).thenReturn(Optional.of(account));
 
         assertThatThrownBy(() -> service.login(
-                new AuthController.LoginRequest("doctor", "wrong-password"),
+                new AuthController.LoginRequest("00010001", "wrong-password"),
                 new AuthService.ClientInfo("10.0.0.2", "test")))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("账号或密码错误");
 
         verify(tokenService, never()).issue(any());
-        verify(auditRepository).record("LOGIN", "doctor", "doctor-001", false,
+        verify(auditRepository).record("LOGIN", "00010001", "00010001", false,
                 "INVALID_CREDENTIALS", "10.0.0.2", "test");
     }
 
     private UserAccount account(String encodedPassword) {
-        return new UserAccount("doctor-001", "doctor", encodedPassword, "13900000000", "张医生",
+        // 新设计：员工 id = username = employee_no（工号）
+        return new UserAccount("00010001", "00010001", encodedPassword, "13700000101", "张医生",
                 "OUTPATIENT_DOCTOR", List.of("medical-record:write"), true, "00010001");
     }
 }

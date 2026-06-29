@@ -52,7 +52,7 @@ export interface ConsultationResponse {
 export async function createReportDraft(payload: {
   orderId: string;
   reportType: string;
-  projectName: string;
+  itemName: string;
   findings?: string;
   conclusion?: string;
   context?: string;
