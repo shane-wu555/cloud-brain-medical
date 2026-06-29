@@ -59,7 +59,7 @@ public class AppointmentRepository {
     public Appointment save(Appointment appointment) {
         jdbcTemplate.update("""
                 insert into appointment (
-                    id, schedule_id, patient_id, patient_name, doctor_id, doctor_name, department_id, department_name,
+                    id, slot_id, patient_id, patient_name, doctor_id, doctor_name, department_id, department_name,
                     visit_date, period, start_time, source, status, payment_status, payment_method, triage_summary, risk_level,
                     recommended_department_id, queue_number, missed_count, paid_at, cancelled_at, lock_expires_at
                 )
@@ -198,7 +198,7 @@ public class AppointmentRepository {
         public Appointment mapRow(ResultSet rs, int rowNum) throws SQLException {
             Appointment appointment = new Appointment(
                     rs.getString("id"),
-                    rs.getString("schedule_id"),
+                    rs.getString("slot_id"),
                     rs.getString("patient_id"),
                     rs.getString("patient_name"),
                     rs.getString("doctor_id"),

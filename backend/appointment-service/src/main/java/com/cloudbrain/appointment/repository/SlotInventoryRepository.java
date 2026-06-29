@@ -19,25 +19,25 @@ public class SlotInventoryRepository {
     }
 
     public List<SlotInventory> findAll() {
-        return jdbcTemplate.query("select * from slot_inventory order by schedule_id", rowMapper);
+        return jdbcTemplate.query("select * from slot_inventory order by slot_id", rowMapper);
     }
 
-    public Optional<SlotInventory> findByScheduleId(String scheduleId) {
+    public Optional<SlotInventory> findByScheduleId(String slotId) {
         List<SlotInventory> result = jdbcTemplate.query(
-                "select * from slot_inventory where schedule_id = ?",
+                "select * from slot_inventory where slot_id = ?",
                 rowMapper,
-                scheduleId);
+                slotId);
         return result.stream().findFirst();
     }
 
     public SlotInventory save(SlotInventory inventory) {
         jdbcTemplate.update("""
-                insert into slot_inventory (schedule_id, capacity, locked, booked)
+                insert into slot_inventory (slot_id, capacity, locked, booked)
                 values (?, ?, ?, ?)
-                on conflict (schedule_id) do update set
+                on conflict (slot_id) do update set
                     capacity = excluded.capacity,
-                    locked = excluded.locked,
-                    booked = excluded.booked
+                    locked   = excluded.locked,
+                    booked   = excluded.booked
                 """,
                 inventory.getScheduleId(),
                 inventory.getCapacity(),
@@ -46,43 +46,43 @@ public class SlotInventoryRepository {
         return inventory;
     }
 
-    public boolean tryLock(String scheduleId) {
+    public boolean tryLock(String slotId) {
         return jdbcTemplate.update("""
                 update slot_inventory
                 set locked = locked + 1
-                where schedule_id = ? and locked + booked < capacity
-                """, scheduleId) == 1;
+                where slot_id = ? and locked + booked < capacity
+                """, slotId) == 1;
     }
 
-    public boolean confirmLocked(String scheduleId) {
+    public boolean confirmLocked(String slotId) {
         return jdbcTemplate.update("""
                 update slot_inventory
                 set locked = locked - 1, booked = booked + 1
-                where schedule_id = ? and locked > 0
-                """, scheduleId) == 1;
+                where slot_id = ? and locked > 0
+                """, slotId) == 1;
     }
 
-    public boolean bookOffline(String scheduleId) {
+    public boolean bookOffline(String slotId) {
         return jdbcTemplate.update("""
                 update slot_inventory
                 set booked = booked + 1
-                where schedule_id = ? and locked + booked < capacity
-                """, scheduleId) == 1;
+                where slot_id = ? and locked + booked < capacity
+                """, slotId) == 1;
     }
 
-    public void releaseLocked(String scheduleId) {
-        jdbcTemplate.update("update slot_inventory set locked = locked - 1 where schedule_id = ? and locked > 0", scheduleId);
+    public void releaseLocked(String slotId) {
+        jdbcTemplate.update("update slot_inventory set locked = locked - 1 where slot_id = ? and locked > 0", slotId);
     }
 
-    public void releaseBooked(String scheduleId) {
-        jdbcTemplate.update("update slot_inventory set booked = booked - 1 where schedule_id = ? and booked > 0", scheduleId);
+    public void releaseBooked(String slotId) {
+        jdbcTemplate.update("update slot_inventory set booked = booked - 1 where slot_id = ? and booked > 0", slotId);
     }
 
     private static class SlotInventoryRowMapper implements RowMapper<SlotInventory> {
         @Override
         public SlotInventory mapRow(ResultSet rs, int rowNum) throws SQLException {
             SlotInventory inventory = new SlotInventory(
-                    rs.getString("schedule_id"),
+                    rs.getString("slot_id"),
                     rs.getInt("capacity"),
                     rs.getInt("booked"));
             for (int i = 0; i < rs.getInt("locked"); i++) {

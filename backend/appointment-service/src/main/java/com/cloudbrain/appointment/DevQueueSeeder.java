@@ -39,7 +39,7 @@ public class DevQueueSeeder implements CommandLineRunner {
                         when status in ('FINISHED', 'CANCELLED') then status
                         else 'WAITING'
                     end
-                where doctor_id = '00010001'
+                where id like 'appt-00010001-%'
                   and queue_number between 100 and 114
                 """);
         if (updated > 0) {
@@ -59,7 +59,7 @@ public class DevQueueSeeder implements CommandLineRunner {
                         when status in ('FINISHED', 'CANCELLED') then status
                         else 'WAITING'
                     end
-                where doctor_id = '00010001'
+                where id like 'appt-ct-00010001-%'
                   and queue_number between 200 and 214
                 """);
         if (updated > 0) {

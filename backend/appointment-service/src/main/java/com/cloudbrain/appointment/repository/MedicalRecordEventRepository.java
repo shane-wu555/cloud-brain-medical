@@ -33,7 +33,7 @@ public class MedicalRecordEventRepository {
                     "visitDate", appointment.getVisitDate().toString(),
                     "period", appointment.getPeriod()));
             jdbcTemplate.update("""
-                    insert into integration_event (id, aggregate_id, event_type, payload, status, next_attempt_at)
+                    insert into outbox_event (id, aggregate_id, event_type, payload, status, next_attempt_at)
                     values (?, ?, 'APPOINTMENT_PAID', ?::jsonb, 'PENDING', now())
                     on conflict (aggregate_id, event_type) do nothing
                     """, "event-" + UUID.randomUUID(), appointment.getId(), payload);
@@ -59,7 +59,7 @@ public class MedicalRecordEventRepository {
     private void enqueueBusinessEvent(String aggregateId, String eventType, Map<String, Object> payload) {
         try {
             jdbcTemplate.update("""
-                    insert into integration_event (id, aggregate_id, event_type, payload, status, next_attempt_at)
+                    insert into outbox_event (id, aggregate_id, event_type, payload, status, next_attempt_at)
                     values (?, ?, ?, ?::jsonb, 'PENDING', now())
                     on conflict (aggregate_id, event_type) do nothing
                     """, "event-" + UUID.randomUUID(), aggregateId, eventType, objectMapper.writeValueAsString(payload));
@@ -71,29 +71,29 @@ public class MedicalRecordEventRepository {
     public List<PendingEvent> findPending(int limit) {
         return jdbcTemplate.query("""
                 with candidates as (
-                    select id from integration_event
+                    select id from outbox_event
                     where ((status in ('PENDING', 'RETRY') and next_attempt_at <= now())
                            or (status = 'PROCESSING' and next_attempt_at <= now()))
                     order by created_at
                     limit ? for update skip locked
                 )
-                update integration_event event
+                update outbox_event ev
                 set status = 'PROCESSING', next_attempt_at = now() + interval '5 minutes'
                 from candidates
-                where event.id = candidates.id
-                returning event.id, event.event_type, event.payload::text, event.retry_count
+                where ev.id = candidates.id
+                returning ev.id, ev.event_type, ev.payload::text, ev.retry_count
                 """, (rs, rowNum) -> new PendingEvent(
                 rs.getString("id"), rs.getString("event_type"), rs.getString("payload"), rs.getInt("retry_count")), limit);
     }
 
     public void markCompleted(String id) {
-        jdbcTemplate.update("update integration_event set status = 'COMPLETED', completed_at = now(), last_error = null where id = ?", id);
+        jdbcTemplate.update("update outbox_event set status = 'COMPLETED', completed_at = now(), last_error = null where id = ?", id);
     }
 
     public void markFailed(String id, int retryCount, String error) {
         String status = retryCount >= 9 ? "FAILED" : "RETRY";
         jdbcTemplate.update("""
-                update integration_event
+                update outbox_event
                 set status = ?, retry_count = retry_count + 1, last_error = ?,
                     next_attempt_at = now() + ((retry_count + 1) * interval '30 seconds')
                 where id = ?
@@ -103,22 +103,23 @@ public class MedicalRecordEventRepository {
     public List<EventView> findEvents(String status) {
         return jdbcTemplate.query("""
                 select id,aggregate_id,event_type,status,retry_count,next_attempt_at,last_error,created_at,completed_at
-                from integration_event where (? is null or status=?) order by created_at desc limit 200
-                """,(rs,row)->new EventView(rs.getString("id"),rs.getString("aggregate_id"),rs.getString("event_type"),
-                rs.getString("status"),rs.getInt("retry_count"),rs.getTimestamp("next_attempt_at").toLocalDateTime(),
-                rs.getString("last_error"),rs.getTimestamp("created_at").toLocalDateTime(),
-                rs.getTimestamp("completed_at")==null?null:rs.getTimestamp("completed_at").toLocalDateTime()),status,status);
+                from outbox_event where (? is null or status=?) order by created_at desc limit 200
+                """, (rs, row) -> new EventView(rs.getString("id"), rs.getString("aggregate_id"), rs.getString("event_type"),
+                rs.getString("status"), rs.getInt("retry_count"), rs.getTimestamp("next_attempt_at").toLocalDateTime(),
+                rs.getString("last_error"), rs.getTimestamp("created_at").toLocalDateTime(),
+                rs.getTimestamp("completed_at") == null ? null : rs.getTimestamp("completed_at").toLocalDateTime()),
+                status, status);
     }
 
     public void retry(String id) {
-        if(jdbcTemplate.update("""
-                update integration_event set status='PENDING',next_attempt_at=now(),last_error=null
+        if (jdbcTemplate.update("""
+                update outbox_event set status='PENDING', next_attempt_at=now(), last_error=null
                 where id=? and status in ('FAILED','RETRY')
-                """,id)!=1) throw new IllegalArgumentException("事件不存在或当前状态不可重试");
+                """, id) != 1) throw new IllegalArgumentException("事件不存在或当前状态不可重试");
     }
 
     public record PendingEvent(String id, String eventType, String payload, int retryCount) {}
-    public record EventView(String id,String aggregateId,String eventType,String status,int retryCount,
-            java.time.LocalDateTime nextAttemptAt,String lastError,java.time.LocalDateTime createdAt,
+    public record EventView(String id, String aggregateId, String eventType, String status, int retryCount,
+            java.time.LocalDateTime nextAttemptAt, String lastError, java.time.LocalDateTime createdAt,
             java.time.LocalDateTime completedAt) {}
 }
