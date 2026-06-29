@@ -44,35 +44,35 @@ on conflict (workspace_id, project_code) do nothing;
 --    CHECK：工号 00030001（李医生）→ 综合影像室
 insert into medical_technician (id, employee_no, name, role_type, workspace_id, active)
 select d.id, d.employee_no, d.name, 'CHECK_DOCTOR', 'doctor-check-001', true
-from doctor d where d.employee_no = '00030001'
+from doctor.doctor d where d.employee_no = '00030001'
 on conflict (id) do update set workspace_id = 'doctor-check-001', active = true;
 
 --    CHECK：工号 00030002（吴医生）→ CT专科室
 insert into medical_technician (id, employee_no, name, role_type, workspace_id, active)
 select d.id, d.employee_no, d.name, 'CHECK_DOCTOR', 'room-check-02', true
-from doctor d where d.employee_no = '00030002'
+from doctor.doctor d where d.employee_no = '00030002'
 on conflict (id) do update set workspace_id = 'room-check-02', active = true;
 
 --    LAB：工号 00050001（检验科首席）→ 综合检验室
 insert into medical_technician (id, employee_no, name, role_type, workspace_id, active)
 select d.id, d.employee_no, d.name, 'LAB_DOCTOR', 'doctor-lab-001', true
-from doctor d where d.employee_no = '00050001'
+from doctor.doctor d where d.employee_no = '00050001'
 on conflict (id) do update set workspace_id = 'doctor-lab-001', active = true;
 
 --    LAB：工号 00050002（钱医生）→ 常规检验室B
 insert into medical_technician (id, employee_no, name, role_type, workspace_id, active)
 select d.id, d.employee_no, d.name, 'LAB_DOCTOR', 'room-lab-02', true
-from doctor d where d.employee_no = '00050002'
+from doctor.doctor d where d.employee_no = '00050002'
 on conflict (id) do update set workspace_id = 'room-lab-02', active = true;
 
 --    DISPOSAL：工号 00060001（赵医生）→ 综合处置室
 insert into medical_technician (id, employee_no, name, role_type, workspace_id, active)
 select d.id, d.employee_no, d.name, 'DISPOSAL_DOCTOR', 'doctor-disposal-001', true
-from doctor d where d.employee_no = '00060001'
+from doctor.doctor d where d.employee_no = '00060001'
 on conflict (id) do update set workspace_id = 'doctor-disposal-001', active = true;
 
 --    DISPOSAL：工号 00060002（周医生）→ 输液处置室B
 insert into medical_technician (id, employee_no, name, role_type, workspace_id, active)
 select d.id, d.employee_no, d.name, 'DISPOSAL_DOCTOR', 'room-disposal-02', true
-from doctor d where d.employee_no = '00060002'
+from doctor.doctor d where d.employee_no = '00060002'
 on conflict (id) do update set workspace_id = 'room-disposal-02', active = true;
