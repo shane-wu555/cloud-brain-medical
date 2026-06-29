@@ -139,11 +139,19 @@ public class MedicalOrderRepository {
                 """, roomId, next, triageSource, reasons, id) == 1;
     }
 
+    public boolean call(String id, String roomId) {
+        return jdbcTemplate.update("""
+                update medical_order
+                set status = 'CALLED'
+                where id = ?::uuid and status = 'WAITING' and room_id = ?
+                """, id, roomId) == 1;
+    }
+
     public boolean start(String id, String roomId, String staffId) {
         return jdbcTemplate.update("""
                 update medical_order
                 set status = 'IN_PROGRESS', started_at = now(), executing_staff_id = ?
-                where id = ?::uuid and status = 'WAITING' and room_id = ?
+                where id = ?::uuid and status in ('WAITING','CALLED') and room_id = ?
                 """, staffId, id, roomId) == 1;
     }
 
@@ -155,8 +163,8 @@ public class MedicalOrderRepository {
                 """, Integer.class, roomId);
         if (jdbcTemplate.update("""
                 update medical_order
-                set queue_number = ?, missed_count = missed_count + 1
-                where id = ?::uuid and room_id = ? and status = 'WAITING'
+                set queue_number = ?, missed_count = missed_count + 1, status = 'WAITING'
+                where id = ?::uuid and room_id = ? and status in ('WAITING','CALLED')
                 """, next, id, roomId) != 1) {
             throw new IllegalStateException("只有待执行医技单可以标记过号");
         }

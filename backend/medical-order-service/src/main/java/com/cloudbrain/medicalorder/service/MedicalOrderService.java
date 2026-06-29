@@ -107,6 +107,20 @@ public class MedicalOrderService {
     }
 
     @Transactional
+    public MedicalOrder call(String id, String actorId, String role) {
+        MedicalOrder order = get(id);
+        validateExecutor(order.orderType(), role);
+        MedicalOrderRepository.StaffRoom staffRoom = staffRoom(actorId);
+        if (!staffRoom.roomId().equals(order.roomId())) {
+            throw new AccessDeniedException("医技单未分配给当前执行房间");
+        }
+        if (!repository.call(id, staffRoom.roomId())) {
+            throw new IllegalStateException("只有待执行医技单可以叫号");
+        }
+        return get(id);
+    }
+
+    @Transactional
     public MedicalOrder start(String id, String actorId, String role) {
         MedicalOrder order = get(id);
         validateExecutor(order.orderType(), role);

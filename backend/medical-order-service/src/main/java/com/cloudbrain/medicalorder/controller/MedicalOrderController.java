@@ -61,6 +61,12 @@ public class MedicalOrderController {
         return service.pay(id, authentication.getToken().getSubject(), authentication.getToken().getClaimAsString("role"));
     }
 
+    @PostMapping("/{id}/call")
+    @PreAuthorize("hasAnyRole('CHECK_DOCTOR','LAB_DOCTOR','DISPOSAL_DOCTOR')")
+    public MedicalOrder call(@PathVariable("id") String id, JwtAuthenticationToken authentication) {
+        return service.call(id, authentication.getToken().getSubject(), authentication.getToken().getClaimAsString("role"));
+    }
+
     @PostMapping("/{id}/start")
     @PreAuthorize("hasAnyRole('CHECK_DOCTOR','LAB_DOCTOR','DISPOSAL_DOCTOR')")
     public MedicalOrder start(@PathVariable("id") String id, JwtAuthenticationToken authentication) {

@@ -55,8 +55,9 @@
               <span class="qcard__type">{{ formatOrderType(item.orderType) }}</span>
             </div>
             <div class="qcard__ops" @click.stop>
-              <el-button v-if="item.status === 'WAITING'" size="small" type="primary" link @click="start(item)">开始执行</el-button>
-              <el-button v-if="item.status === 'WAITING'" size="small" link @click="miss(item)">过号</el-button>
+              <el-button v-if="item.status === 'WAITING'" size="small" type="primary" link @click="call(item)">叫号</el-button>
+              <el-button v-if="item.status === 'CALLED'" size="small" type="success" link @click="start(item)">开始执行</el-button>
+              <el-button v-if="['WAITING','CALLED'].includes(item.status)" size="small" link @click="miss(item)">过号</el-button>
             </div>
           </div>
           <div v-if="!filteredOrders.length" class="queue-empty">暂无医嘱</div>
@@ -100,58 +101,189 @@
           </div>
 
           <!-- ── Work tab ── -->
-          <div v-show="mainTab === 'work'" class="main-content">
+          <div v-show="mainTab === 'work'" :class="['main-content', role === 'CHECK_DOCTOR' ? 'main-content--viewer' : '']">
 
-            <!-- CHECK_DOCTOR: imaging upload -->
+            <!-- CHECK_DOCTOR: professional CT viewer -->
             <template v-if="role === 'CHECK_DOCTOR'">
-              <div class="imaging-section">
-                <div
-                  class="imaging-upload-area"
-                  :class="{ 'has-preview': !!imagePreviewUrl || (file && !imagePreviewUrl) }"
-                  @dragover.prevent
-                  @drop.prevent="handleDrop"
-                >
-                  <template v-if="!file">
-                    <div class="imaging-placeholder">
-                      <div class="imaging-placeholder__icon">⬡</div>
-                      <div class="imaging-placeholder__text">拖拽或点击上传影像文件</div>
-                      <div class="imaging-placeholder__sub">支持 DICOM (.dcm)、X光片 (JPG / PNG / BMP)</div>
-                      <label class="imaging-upload-btn">
-                        选择文件
-                        <input type="file" accept=".dcm,.jpg,.jpeg,.png,.bmp,.tiff" @change="chooseFile" style="display:none" />
-                      </label>
-                    </div>
-                  </template>
-                  <template v-else>
-                    <img v-if="imagePreviewUrl" :src="imagePreviewUrl" class="imaging-preview-img" alt="影像预览" />
-                    <div v-else class="imaging-dicom-box">
-                      <div class="imaging-dicom-icon">📄</div>
-                      <div class="imaging-dicom-name">{{ file.name }}</div>
-                      <div class="imaging-dicom-hint">DICOM / 医学格式，已选择</div>
-                    </div>
-                    <button class="imaging-clear-btn" @click="clearFile">✕</button>
-                  </template>
+              <div class="ct-viewer">
+
+                <!-- Viewer toolbar -->
+                <div class="ct-toolbar">
+                  <button class="ct-tool" title="四格布局">
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+                      <rect x="0" y="0" width="6" height="6" rx="1"/><rect x="8" y="0" width="6" height="6" rx="1"/>
+                      <rect x="0" y="8" width="6" height="6" rx="1"/><rect x="8" y="8" width="6" height="6" rx="1"/>
+                    </svg>
+                  </button>
+                  <div class="ct-sep"></div>
+                  <button class="ct-tool" title="窗宽窗位">☀</button>
+                  <button class="ct-tool" title="旋转">↻</button>
+                  <button class="ct-tool" title="缩小">⊖</button>
+                  <button class="ct-tool" title="放大">⊕</button>
+                  <button class="ct-tool ct-tool--active" title="平移">✋</button>
+                  <button class="ct-tool" title="十字定位线">✛</button>
+                  <button class="ct-tool" title="反色">◑</button>
+                  <div class="ct-sep"></div>
+                  <button class="ct-tool" title="测量">▷</button>
+                  <button class="ct-tool" title="标注">✏</button>
+                  <button class="ct-tool" title="更多">···</button>
+                  <div class="ct-sep ct-sep--flex"></div>
+                  <span v-if="aiStatus === 'PROCESSING'" class="ct-ai-badge ct-ai-badge--running">AI 分析中…</span>
+                  <span v-else-if="aiStatus === 'COMPLETED'" class="ct-ai-badge ct-ai-badge--done">✓ AI 已完成</span>
                 </div>
 
-                <div class="imaging-meta">
-                  <div class="meta-row">
-                    <span class="meta-label">当前文件</span>
-                    <span class="meta-val">{{ file?.name || '未选择' }}</span>
+                <!-- 2×2 panels -->
+                <div class="ct-panels">
+
+                  <!-- Axial -->
+                  <div class="ct-panel" @dragover.prevent @drop.prevent="handleDrop" @wheel.prevent="onWheelPanel('axial', $event)">
+                    <span class="ct-panel__lbl">【轴检 Axial】</span>
+                    <span class="ct-panel__slice" v-if="volume">切片: {{ sliceZ + 1 }} / {{ volume.nz }}</span>
+
+                    <div v-if="volLoading" class="ct-loading">解析体积影像中…</div>
+
+                    <template v-else-if="volume">
+                      <canvas ref="canvasAxial" class="ct-panel__canvas"></canvas>
+                      <div class="ct-line ct-line--h"></div>
+                      <div class="ct-line ct-line--v"></div>
+                      <span class="ct-orient ct-orient--ml">R</span>
+                      <span class="ct-orient ct-orient--mr">L</span>
+                      <span class="ct-orient ct-orient--tl">S</span>
+                      <span class="ct-orient ct-orient--bl">I</span>
+                      <div class="ct-scale">{{ volume.dx.toFixed(2) }}mm/px</div>
+                      <button class="ct-clear" @click="clearFile">✕</button>
+                      <input class="ct-slider" type="range" :min="0" :max="volume.nz - 1" v-model.number="sliceZ" />
+                    </template>
+
+                    <template v-else-if="imagePreviewUrl">
+                      <img :src="imagePreviewUrl" class="ct-panel__img" alt="轴位" />
+                      <div class="ct-line ct-line--h"></div>
+                      <div class="ct-line ct-line--v"></div>
+                      <button class="ct-clear" @click="clearFile">✕</button>
+                    </template>
+
+                    <template v-else-if="file">
+                      <div class="ct-dicom-hint">
+                        <div class="ct-dicom-hint__icon">📄</div>
+                        <div class="ct-dicom-hint__name">{{ file.name }}</div>
+                        <div class="ct-dicom-hint__sub">DICOM 格式，可提交 AI 分析</div>
+                        <button class="ct-clear" @click="clearFile" style="position:static;margin-top:8px">✕ 移除</button>
+                      </div>
+                    </template>
+
+                    <template v-else>
+                      <label class="ct-drop">
+                        <div class="ct-drop__icon">⬡</div>
+                        <div class="ct-drop__text">拖拽或点击上传影像</div>
+                        <div class="ct-drop__sub">NIfTI · NRRD · MHA · DICOM · JPG/PNG</div>
+                        <input type="file" accept=".nii,.nii.gz,.nrrd,.nhdr,.mha,.dcm,.jpg,.jpeg,.png,.bmp,.tiff" @change="chooseFile" style="display:none" />
+                      </label>
+                    </template>
                   </div>
-                  <div class="meta-row">
-                    <span class="meta-label">AI 任务</span>
-                    <el-tag :type="aiStatusTagType(aiStatus)" size="small">{{ aiStatusLabel(aiStatus) }}</el-tag>
+
+                  <!-- 3D WebGL reconstruction -->
+                  <div class="ct-panel ct-panel--3d"
+                       @mousedown="on3DDown"
+                       @mousemove="on3DMove"
+                       @mouseup="on3DUp"
+                       @mouseleave="on3DUp">
+                    <span class="ct-panel__lbl">【3D 重建】</span>
+                    <span v-if="volume" class="ct-3d-hint">拖拽旋转</span>
+                    <template v-if="volume">
+                      <canvas ref="canvas3D" class="ct-panel__canvas ct-panel__canvas--3d"></canvas>
+                    </template>
+                    <template v-else>
+                      <div class="ct-placeholder">
+                        <div class="ct-placeholder__icon">⬡</div>
+                        <div class="ct-placeholder__text">3D 体积重建</div>
+                        <div class="ct-placeholder__sub">上传体积影像后显示（WebGL2）</div>
+                      </div>
+                    </template>
                   </div>
-                  <div class="meta-actions">
-                    <el-button type="primary" size="small" :disabled="!file || !current" @click="uploadCt">
-                      上传并提交 AI 分析
-                    </el-button>
-                    <el-button v-if="aiTaskId" size="small" @click="pollAi">刷新状态</el-button>
+
+                  <!-- Coronal -->
+                  <div class="ct-panel" @wheel.prevent="onWheelPanel('coronal', $event)">
+                    <span class="ct-panel__lbl">【冠状 Coronal】</span>
+                    <span class="ct-panel__slice" v-if="volume">切片: {{ sliceY + 1 }} / {{ volume.ny }}</span>
+                    <template v-if="volume">
+                      <canvas ref="canvasCoronal" class="ct-panel__canvas"></canvas>
+                      <div class="ct-line ct-line--h"></div>
+                      <div class="ct-line ct-line--v"></div>
+                      <span class="ct-orient ct-orient--ml">R</span>
+                      <span class="ct-orient ct-orient--mr">L</span>
+                      <span class="ct-orient ct-orient--tl">S</span>
+                      <span class="ct-orient ct-orient--bl">I</span>
+                      <div class="ct-scale">{{ volume.dy.toFixed(2) }}mm/px</div>
+                      <input class="ct-slider" type="range" :min="0" :max="volume.ny - 1" v-model.number="sliceY" />
+                    </template>
+                    <template v-else>
+                      <div class="ct-placeholder">
+                        <div class="ct-placeholder__icon">⬡</div>
+                        <div class="ct-placeholder__text">冠状面视图</div>
+                        <div class="ct-placeholder__sub">上传体积影像后显示</div>
+                      </div>
+                      <span class="ct-orient ct-orient--ml" style="opacity:.3">R</span>
+                      <span class="ct-orient ct-orient--mr" style="opacity:.3">L</span>
+                    </template>
                   </div>
-                  <div v-if="aiStatus === 'COMPLETED'" class="ai-done-hint">
-                    ✓ AI 分析完成，已同步至报告草稿
+
+                  <!-- Sagittal -->
+                  <div class="ct-panel" @wheel.prevent="onWheelPanel('sagittal', $event)">
+                    <span class="ct-panel__lbl">【矢状 Sagittal】</span>
+                    <span class="ct-panel__slice" v-if="volume">切片: {{ sliceX + 1 }} / {{ volume.nx }}</span>
+                    <template v-if="volume">
+                      <canvas ref="canvasSagittal" class="ct-panel__canvas"></canvas>
+                      <div class="ct-line ct-line--h"></div>
+                      <div class="ct-line ct-line--v"></div>
+                      <span class="ct-orient ct-orient--ml">A</span>
+                      <span class="ct-orient ct-orient--mr">P</span>
+                      <span class="ct-orient ct-orient--tl">S</span>
+                      <span class="ct-orient ct-orient--bl">I</span>
+                      <div class="ct-scale">{{ volume.dz.toFixed(2) }}mm/px</div>
+                      <input class="ct-slider" type="range" :min="0" :max="volume.nx - 1" v-model.number="sliceX" />
+                    </template>
+                    <template v-else>
+                      <div class="ct-placeholder">
+                        <div class="ct-placeholder__icon">⬡</div>
+                        <div class="ct-placeholder__text">矢状面视图</div>
+                        <div class="ct-placeholder__sub">上传体积影像后显示</div>
+                      </div>
+                      <span class="ct-orient ct-orient--ml" style="opacity:.3">A</span>
+                      <span class="ct-orient ct-orient--mr" style="opacity:.3">P</span>
+                    </template>
                   </div>
+
+                </div><!-- /ct-panels -->
+
+                <!-- Bottom action toolbar -->
+                <div class="ct-actions">
+                  <!-- W/L inline controls -->
+                  <span class="ct-wl-lbl">WL</span>
+                  <input class="ct-wl-inp" type="number" v-model.number="winC" @change="rerenderMpr" />
+                  <span class="ct-wl-lbl">WW</span>
+                  <input class="ct-wl-inp" type="number" v-model.number="winW" @change="rerenderMpr" />
+                  <div class="ct-sep ct-sep--sm"></div>
+                  <button class="ct-act" @click="setWindow('brain')">脑窗</button>
+                  <button class="ct-act" @click="setWindow('bone')">骨窗</button>
+                  <button class="ct-act" @click="setWindow('lung')">肺窗</button>
+                  <button class="ct-act" @click="setWindow('soft')">软组织</button>
+                  <div class="ct-act-gap"></div>
+                  <label class="ct-act" :class="{ 'ct-act--disabled': !current }">
+                    ⬆ 单文件影像
+                    <input type="file" accept=".nii,.nii.gz,.nrrd,.nhdr,.mha,.dcm,.jpg,.jpeg,.png,.bmp,.tiff" @change="chooseFile" style="display:none" :disabled="!current" />
+                  </label>
+                  <label class="ct-act" :class="{ 'ct-act--disabled': !current }" title="上传一整个 DICOM 文件夹">
+                    📂 DICOM 文件夹
+                    <input type="file" webkitdirectory multiple @change="loadDicomFolder" style="display:none" :disabled="!current" />
+                  </label>
+                  <button class="ct-act ct-act--primary" :disabled="!file || !current" @click="uploadCt">
+                    提交 AI 分析
+                  </button>
+                  <button class="ct-act ct-act--report" @click="mainTab = 'report'">
+                    📋 生成报告
+                  </button>
                 </div>
+
               </div>
             </template>
 
@@ -366,18 +498,20 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref } from 'vue';
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import { ElMessage } from 'element-plus';
 import { useRouter } from 'vue-router';
 import { useAuthStore } from '../../store/auth';
 import {
-  confirmReport, createReportDraft as saveReportDraft,
+  callMedicalOrder, confirmReport, createReportDraft as saveReportDraft,
   createSpecimen, getMedicalOrders, missMedicalOrder,
   refreshAiTask, saveLabResults, startMedicalOrder,
   submitCt, transitionSpecimen, uploadAttachment,
   type MedicalOrder
 } from '../../api/medical-order';
 import { createReportDraft as createAiReportDraft } from '../../api/ai';
+import { readVolume, readDicomSeries, renderAxial, renderCoronal, renderSagittal, type VolumeData } from '../../utils/volumeReader';
+import { VolumeRenderer3D } from '../../utils/volumeRenderer3D';
 
 const auth = useAuthStore();
 const router = useRouter();
@@ -424,28 +558,108 @@ const imagePreviewUrl = ref('');
 const aiTaskId = ref('');
 const aiStatus = ref('');
 
+// Volume state
+const volume = ref<VolumeData | null>(null);
+const volLoading = ref(false);
+const sliceZ = ref(0);
+const sliceY = ref(0);
+const sliceX = ref(0);
+const winC = ref(40);
+const winW = ref(80);
+
+// Canvas refs
+const canvasAxial    = ref<HTMLCanvasElement>();
+const canvasCoronal  = ref<HTMLCanvasElement>();
+const canvasSagittal = ref<HTMLCanvasElement>();
+const canvas3D       = ref<HTMLCanvasElement>();
+
+// 3D renderer
+const renderer3D = ref<VolumeRenderer3D | null>(null);
+const azim3D = ref(220);
+const elev3D = ref(18);
+
+let drag3D = false, lastX3D = 0, lastY3D = 0;
+function on3DDown(e: MouseEvent)  { drag3D = true; lastX3D = e.clientX; lastY3D = e.clientY; }
+function on3DMove(e: MouseEvent)  {
+  if (!drag3D) return;
+  azim3D.value = (azim3D.value + (e.clientX - lastX3D) * 0.5) % 360;
+  elev3D.value = Math.max(-85, Math.min(85, elev3D.value - (e.clientY - lastY3D) * 0.4));
+  lastX3D = e.clientX; lastY3D = e.clientY;
+}
+function on3DUp()   { drag3D = false; }
+
+// MPR render helpers
+function onWheelPanel(plane: 'axial' | 'coronal' | 'sagittal', e: WheelEvent) {
+  if (!volume.value) return
+  const delta = e.deltaY > 0 ? 1 : -1
+  if (plane === 'axial')    sliceZ.value = Math.max(0, Math.min(volume.value.nz - 1, sliceZ.value + delta))
+  else if (plane === 'coronal')  sliceY.value = Math.max(0, Math.min(volume.value.ny - 1, sliceY.value + delta))
+  else                           sliceX.value = Math.max(0, Math.min(volume.value.nx - 1, sliceX.value + delta))
+}
+
+function rerenderMpr() {
+  const vol = volume.value;
+  if (!vol) return;
+  if (canvasAxial.value)    renderAxial(canvasAxial.value,       vol, sliceZ.value, winC.value, winW.value);
+  if (canvasCoronal.value)  renderCoronal(canvasCoronal.value,   vol, sliceY.value, winC.value, winW.value);
+  if (canvasSagittal.value) renderSagittal(canvasSagittal.value, vol, sliceX.value, winC.value, winW.value);
+}
+function rerender3D() { renderer3D.value?.render(azim3D.value, elev3D.value, winC.value, winW.value); }
+
+watch(sliceZ, () => { const v = volume.value; if (v && canvasAxial.value)    renderAxial(canvasAxial.value,       v, sliceZ.value, winC.value, winW.value); });
+watch(sliceY, () => { const v = volume.value; if (v && canvasCoronal.value)  renderCoronal(canvasCoronal.value,   v, sliceY.value, winC.value, winW.value); });
+watch(sliceX, () => { const v = volume.value; if (v && canvasSagittal.value) renderSagittal(canvasSagittal.value, v, sliceX.value, winC.value, winW.value); });
+watch([azim3D, elev3D], rerender3D);
+watch([winC, winW], () => { rerenderMpr(); rerender3D(); });
+
+watch(volume, async (vol) => {
+  // destroy old renderer
+  renderer3D.value?.destroy();
+  renderer3D.value = null;
+  if (!vol) return;
+  sliceZ.value = Math.floor(vol.nz / 2);
+  sliceY.value = Math.floor(vol.ny / 2);
+  sliceX.value = Math.floor(vol.nx / 2);
+  await nextTick();
+  rerenderMpr();
+  if (canvas3D.value) {
+    try {
+      canvas3D.value.width  = canvas3D.value.clientWidth  || 400;
+      canvas3D.value.height = canvas3D.value.clientHeight || 400;
+      renderer3D.value = new VolumeRenderer3D(canvas3D.value, vol);
+      rerender3D();
+    } catch (e) { ElMessage.warning('WebGL2 不可用，3D 视图已跳过'); }
+  }
+});
+
+function setWindow(preset: 'brain' | 'bone' | 'lung' | 'soft') {
+  const map = { brain: [40, 80], bone: [400, 1800], lung: [-600, 1500], soft: [60, 400] } as const;
+  [winC.value, winW.value] = map[preset];
+}
+
 // Lab state (LAB_DOCTOR)
 const lab = reactive({ specimenType: '全血', barcode: `LAB-${Date.now()}`, itemName: '血红蛋白', value: '135', unit: 'g/L' });
 const specimenId = ref('');
 
 // Computed queue stats
-const waitingCount = computed(() => orders.value.filter(o => o.status === 'WAITING').length);
+const waitingCount = computed(() => orders.value.filter(o => ['WAITING','CALLED'].includes(o.status)).length);
 const doneCount = computed(() => orders.value.filter(o => o.status === 'COMPLETED').length);
 
 const filteredOrders = computed(() => {
   let list = orders.value;
-  if (queueTab.value === 'waiting') list = list.filter(o => o.status === 'WAITING');
+  if (queueTab.value === 'waiting') list = list.filter(o => ['WAITING','CALLED'].includes(o.status));
   else if (queueTab.value === 'done') list = list.filter(o => o.status === 'COMPLETED');
   const kw = queueKeyword.value.trim().toLowerCase();
   return kw ? list.filter(o => `${o.patientName}${o.itemName}`.toLowerCase().includes(kw)) : list;
 });
 
 function statusLabel(s: string) {
-  return { WAITING: '待执行', IN_PROGRESS: '执行中', COMPLETED: '已完成', MISSED: '过号' }[s] ?? s;
+  return { WAITING: '待执行', CALLED: '已叫号', IN_PROGRESS: '执行中', COMPLETED: '已完成', MISSED: '过号' }[s] ?? s;
 }
 
 function statusTagType(s: string): '' | 'primary' | 'success' | 'info' | 'warning' | 'danger' {
   if (s === 'WAITING') return 'warning';
+  if (s === 'CALLED') return 'primary';
   if (s === 'IN_PROGRESS') return 'primary';
   if (s === 'COMPLETED') return 'success';
   return 'info';
@@ -478,6 +692,7 @@ function select(row: MedicalOrder) {
   Object.assign(report, { findings: '', conclusion: '', advice: '' });
   file.value = undefined;
   imagePreviewUrl.value = '';
+  volume.value = null;
   aiTaskId.value = '';
   aiStatus.value = '';
   aiMessages.value = [];
@@ -486,6 +701,12 @@ function select(row: MedicalOrder) {
   confirmedAt.value = '';
   published.value = false;
   mainTab.value = 'work';
+}
+
+async function call(row: MedicalOrder) {
+  await callMedicalOrder(row.id);
+  ElMessage.success('已叫号');
+  await loadOrders();
 }
 
 async function start(row: MedicalOrder) {
@@ -499,23 +720,107 @@ async function miss(row: MedicalOrder) {
   await loadOrders();
 }
 
+const VOLUME_EXTS = ['.nii', '.nii.gz', '.nrrd', '.nhdr', '.mha'];
+
+function isVolumeFile(f: File): boolean {
+  const name = f.name.toLowerCase();
+  return VOLUME_EXTS.some(ext => name.endsWith(ext));
+}
+
+async function loadFile(f: File) {
+  file.value = f;
+  imagePreviewUrl.value = '';
+  volume.value = null;
+  if (isVolumeFile(f)) {
+    volLoading.value = true;
+    try {
+      volume.value = await readVolume(f);
+      const vol = volume.value;
+      winC.value = Math.round(vol.wc);
+      winW.value = Math.round(vol.ww);
+      ElMessage.success(`影像加载成功：${vol.nx}×${vol.ny}×${vol.nz} 体素`);
+    } catch (e: unknown) {
+      ElMessage.error(String((e as Error).message ?? e));
+      file.value = undefined;
+    } finally {
+      volLoading.value = false;
+    }
+  } else if (f.type.startsWith('image/')) {
+    imagePreviewUrl.value = URL.createObjectURL(f);
+  }
+}
+
 function chooseFile(event: Event) {
   const f = (event.target as HTMLInputElement).files?.[0];
-  if (!f) return;
-  file.value = f;
-  imagePreviewUrl.value = f.type.startsWith('image/') ? URL.createObjectURL(f) : '';
+  if (f) loadFile(f);
+  (event.target as HTMLInputElement).value = '';
+}
+
+/** Python 微服务地址（dicom-service/app.py） */
+const DICOM_SERVICE = 'http://localhost:8765';
+
+async function loadDicomFolder(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const fileList = input.files;
+  if (!fileList || fileList.length === 0) return;
+  const files = Array.from(fileList);   // snapshot before clearing
+  input.value = '';
+  file.value = files[0];
+  imagePreviewUrl.value = '';
+  volume.value = null;
+  volLoading.value = true;
+
+  try {
+    // ── 优先尝试 Python 微服务（处理所有压缩格式）────────────────
+    let vol: import('../../utils/volumeReader').VolumeData | null = null;
+    let serviceOk = false;
+    try {
+      const hc = await fetch(`${DICOM_SERVICE}/health`, { signal: AbortSignal.timeout(1500) });
+      serviceOk = hc.ok;
+    } catch { /* 服务未启动 */ }
+
+    if (serviceOk) {
+      ElMessage.info(`正在通过 Python 服务解析 ${files.length} 个 DICOM 文件…`);
+      const form = new FormData();
+      for (const f of files) form.append('files', f, f.name);
+      const resp = await fetch(`${DICOM_SERVICE}/dicom2nii`, { method: 'POST', body: form });
+      if (!resp.ok) {
+        const msg = await resp.text();
+        throw new Error(`Python 服务返回错误: ${msg}`);
+      }
+      const niftiBytes = await resp.arrayBuffer();
+      const { readVolume } = await import('../../utils/volumeReader');
+      // 将字节包装成 File 对象让 readVolume 识别 .nii.gz
+      const niftiFile = new File([niftiBytes], 'volume.nii.gz', { type: 'application/gzip' });
+      vol = await readVolume(niftiFile);
+    } else {
+      // ── 回退：JS 原生解析器（仅支持未压缩 Explicit VR LE）──────
+      ElMessage.info(`Python 服务未启动，尝试浏览器内解析…`);
+      vol = await readDicomSeries(files);
+    }
+
+    volume.value = vol;
+    winC.value = Math.round(vol.wc);
+    winW.value = Math.round(vol.ww);
+    ElMessage.success(`影像加载成功：${vol.nx}×${vol.ny}×${vol.nz} 体素`);
+  } catch (e: unknown) {
+    const msg = String((e as Error).message ?? e);
+    ElMessage.error(msg);
+    file.value = undefined;
+  } finally {
+    volLoading.value = false;
+  }
 }
 
 function handleDrop(event: DragEvent) {
   const f = event.dataTransfer?.files?.[0];
-  if (!f) return;
-  file.value = f;
-  imagePreviewUrl.value = f.type.startsWith('image/') ? URL.createObjectURL(f) : '';
+  if (f) loadFile(f);
 }
 
 function clearFile() {
   file.value = undefined;
   imagePreviewUrl.value = '';
+  volume.value = null;
 }
 
 async function uploadCt() {
@@ -700,7 +1005,7 @@ onMounted(loadOrders);
 
 /* ── Main content ── */
 .wks-main {
-  flex: 1; min-width: 0; overflow-y: auto;
+  flex: 1; min-width: 0; overflow: hidden;
   padding: 14px 16px;
   display: flex; flex-direction: column;
 }
@@ -746,66 +1051,261 @@ onMounted(loadOrders);
   flex: 1;
 }
 
-/* ── Imaging section (CHECK_DOCTOR) ── */
-.imaging-section { display: flex; gap: 20px; height: 100%; }
+/* ── main-content viewer override ── */
+.main-content--viewer {
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
 
-.imaging-upload-area {
-  flex: 1; min-height: 320px;
-  border: 2px dashed #d1d5db;
-  border-radius: 10px;
+/* ── CT Viewer (CHECK_DOCTOR) ── */
+.ct-viewer {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: #0d1117;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* Toolbar */
+.ct-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 38px;
+  padding: 0 10px;
+  background: #111827;
+  border-bottom: 1px solid #1f2937;
+  flex-shrink: 0;
+}
+.ct-tool {
   display: flex; align-items: center; justify-content: center;
-  background: #f9fafb;
+  width: 30px; height: 28px;
+  border: none; background: transparent;
+  color: #9ca3af; font-size: 14px;
+  border-radius: 4px; cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.ct-tool:hover { background: #1f2937; color: #e5e7eb; }
+.ct-tool--active { background: #1e3a5f; color: #38bdf8; }
+.ct-sep { width: 1px; height: 20px; background: #1f2937; margin: 0 4px; flex-shrink: 0; }
+.ct-sep--flex { flex: 1; width: auto; background: transparent; }
+.ct-ai-badge {
+  font-size: 11px; padding: 3px 8px;
+  border-radius: 20px; white-space: nowrap;
+}
+.ct-ai-badge--running { background: #1e3a20; color: #4ade80; }
+.ct-ai-badge--done { background: #1c3557; color: #38bdf8; }
+
+/* 2×2 panels grid */
+.ct-panels {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 2px;
+  background: #020617;
+  min-height: 0;
+}
+
+.ct-panel {
   position: relative;
-  transition: border-color 0.2s;
+  background: #000;
+  overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+  cursor: crosshair;
 }
-.imaging-upload-area:hover { border-color: #0cbdcc; }
-.imaging-upload-area.has-preview { border-style: solid; border-color: #a8e8ec; background: #000; }
+.ct-panel + .ct-panel { border-left: 1px solid #0a1628; }
+.ct-panel:nth-child(3),
+.ct-panel:nth-child(4) { border-top: 1px solid #0a1628; }
 
-.imaging-placeholder { text-align: center; }
-.imaging-placeholder__icon { font-size: 48px; color: #d1d5db; margin-bottom: 12px; }
-.imaging-placeholder__text { font-size: 15px; color: #6b7280; margin-bottom: 4px; }
-.imaging-placeholder__sub { font-size: 12px; color: #9ca3af; margin-bottom: 16px; }
-.imaging-upload-btn {
-  display: inline-block;
-  padding: 8px 20px;
-  background: #0cbdcc; color: #fff;
-  border-radius: 6px; font-size: 13px; cursor: pointer;
-  transition: background 0.15s;
+/* Panel overlays */
+.ct-panel__lbl {
+  position: absolute; top: 8px; left: 10px;
+  font-size: 11px; color: #fff;
+  background: rgba(0,0,0,0.55);
+  padding: 2px 7px; border-radius: 3px;
+  font-weight: 500; pointer-events: none; z-index: 5;
 }
-.imaging-upload-btn:hover { background: #0899a5; }
+.ct-panel__slice {
+  position: absolute; top: 8px; right: 10px;
+  font-size: 11px; color: #fff;
+  background: #1d4ed8;
+  padding: 2px 8px; border-radius: 12px;
+  pointer-events: none; z-index: 5;
+}
+.ct-panel__img {
+  width: 100%; height: 100%;
+  object-fit: contain;
+}
 
-.imaging-preview-img {
-  max-width: 100%; max-height: 100%;
-  object-fit: contain; border-radius: 8px;
+/* Crosshair lines */
+.ct-line {
+  position: absolute; background: rgba(0, 188, 212, 0.5);
+  pointer-events: none; z-index: 4;
 }
-.imaging-dicom-box {
-  text-align: center; color: #9ca3af;
-}
-.imaging-dicom-icon { font-size: 48px; margin-bottom: 10px; }
-.imaging-dicom-name { font-size: 14px; color: #374151; word-break: break-all; }
-.imaging-dicom-hint { font-size: 12px; margin-top: 6px; }
+.ct-line--h { left: 0; right: 0; top: 50%; height: 1px; }
+.ct-line--v { top: 0; bottom: 0; left: 50%; width: 1px; }
 
-.imaging-clear-btn {
-  position: absolute; top: 10px; right: 10px;
-  background: rgb(0 0 0 / 45%); color: #fff;
-  border: none; border-radius: 4px; padding: 4px 8px;
-  cursor: pointer; font-size: 12px;
+/* Orientation labels */
+.ct-orient {
+  position: absolute; font-size: 12px; font-weight: 700;
+  color: rgba(255,255,255,0.7); pointer-events: none; z-index: 5;
 }
-.imaging-clear-btn:hover { background: rgb(0 0 0 / 70%); }
+.ct-orient--ml { left: 10px; top: 50%; transform: translateY(-50%); }
+.ct-orient--mr { right: 10px; top: 50%; transform: translateY(-50%); }
+.ct-orient--tl { top: 30px; left: 10px; }
+.ct-orient--bl { bottom: 30px; left: 10px; }
 
-.imaging-meta {
-  width: 200px; flex-shrink: 0;
-  display: flex; flex-direction: column; gap: 10px;
+/* Scale bar */
+.ct-scale {
+  position: absolute; bottom: 10px; right: 10px;
+  font-size: 10px; color: rgba(255,255,255,0.65);
+  display: flex; align-items: center; gap: 4px; pointer-events: none; z-index: 5;
 }
-.meta-row { display: flex; flex-direction: column; gap: 3px; }
-.meta-label { font-size: 11px; color: #9ca3af; }
-.meta-val { font-size: 13px; color: #374151; word-break: break-all; }
-.meta-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
-.ai-done-hint {
-  font-size: 12px; color: #059669;
-  background: #d1fae5; border-radius: 6px;
-  padding: 8px 10px;
+.ct-scale::before {
+  content: '';
+  display: inline-block; width: 36px; height: 2px;
+  background: rgba(255,255,255,0.5);
 }
+
+/* Upload drop zone */
+.ct-drop {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 8px; cursor: pointer;
+  width: 100%; height: 100%;
+  text-align: center; padding: 20px;
+  box-sizing: border-box;
+}
+.ct-drop:hover { background: rgba(255,255,255,0.02); }
+.ct-drop__icon { font-size: 36px; color: #374151; margin-bottom: 4px; }
+.ct-drop__text { font-size: 13px; color: #6b7280; }
+.ct-drop__sub { font-size: 11px; color: #374151; }
+
+/* DICOM hint (file selected, no preview) */
+.ct-dicom-hint { text-align: center; color: #6b7280; padding: 20px; }
+.ct-dicom-hint__icon { font-size: 40px; margin-bottom: 8px; }
+.ct-dicom-hint__name { font-size: 13px; color: #9ca3af; word-break: break-all; }
+.ct-dicom-hint__sub { font-size: 11px; margin-top: 4px; }
+
+/* Placeholder for non-axial panels */
+.ct-placeholder { text-align: center; pointer-events: none; }
+.ct-placeholder__icon { font-size: 32px; color: #1f2937; margin-bottom: 8px; }
+.ct-placeholder__text { font-size: 13px; color: #374151; }
+.ct-placeholder__sub { font-size: 11px; color: #1f2937; margin-top: 4px; }
+
+/* Canvas — use smooth (bilinear) interpolation for medical CT display */
+.ct-panel__canvas {
+  max-width: 100%;
+  max-height: calc(100% - 22px);
+  image-rendering: auto;    /* bilinear when scaled, avoids blocky pixel look */
+  display: block;
+}
+/* WebGL 3D canvas fills panel completely */
+.ct-panel--3d { cursor: grab; }
+.ct-panel--3d:active { cursor: grabbing; }
+.ct-panel__canvas--3d {
+  width: 100% !important;
+  height: 100% !important;
+  max-height: 100%;
+  image-rendering: auto;
+}
+.ct-3d-hint {
+  position: absolute; bottom: 8px; left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px; color: rgba(255,255,255,0.35);
+  pointer-events: none; z-index: 5; white-space: nowrap;
+}
+
+/* Slice slider (at panel bottom) */
+.ct-slider {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  width: 100%;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+  appearance: none;
+  background: rgba(0, 0, 0, 0.55);
+  cursor: pointer;
+  z-index: 8;
+}
+.ct-slider::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: #38bdf8;
+  cursor: pointer;
+}
+.ct-slider::-webkit-slider-runnable-track {
+  height: 3px;
+  background: rgba(56, 189, 248, 0.35);
+}
+
+/* Loading spinner */
+.ct-loading {
+  color: #9ca3af; font-size: 13px; animation: pulse 1.4s ease-in-out infinite;
+}
+@keyframes pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+
+/* W/L inline inputs */
+.ct-wl-lbl { font-size: 11px; color: #6b7280; white-space: nowrap; }
+.ct-wl-inp {
+  width: 64px; height: 28px;
+  background: #1f2937; color: #e5e7eb;
+  border: 1px solid #374151; border-radius: 4px;
+  padding: 0 6px; font-size: 12px;
+  text-align: center;
+}
+.ct-wl-inp:focus { outline: none; border-color: #38bdf8; }
+.ct-sep--sm { width: 1px; height: 20px; background: #1f2937; margin: 0 4px; }
+
+/* Clear button */
+.ct-clear {
+  position: absolute; top: 8px; right: 50px;
+  background: rgba(0,0,0,0.6); color: #9ca3af;
+  border: 1px solid #374151; border-radius: 4px;
+  padding: 2px 7px; font-size: 11px; cursor: pointer; z-index: 10;
+}
+.ct-clear:hover { color: #fff; background: rgba(0,0,0,0.85); }
+
+/* Bottom action toolbar */
+.ct-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 46px;
+  padding: 0 12px;
+  background: #111827;
+  border-top: 1px solid #1f2937;
+  flex-shrink: 0;
+}
+.ct-act {
+  display: flex; align-items: center; gap: 6px;
+  padding: 7px 14px;
+  border: none; background: #1f2937;
+  color: #9ca3af; font-size: 12px;
+  border-radius: 5px; cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+  white-space: nowrap;
+}
+.ct-act:hover:not(:disabled):not(.ct-act--disabled) { background: #273549; color: #e5e7eb; }
+.ct-act:disabled,
+.ct-act--disabled { opacity: 0.4; cursor: not-allowed; }
+.ct-act-gap { flex: 1; }
+.ct-act--primary {
+  background: #0899a5; color: #fff;
+}
+.ct-act--primary:hover:not(:disabled) { background: #0cbdcc; }
+.ct-act--report {
+  background: #1e3a5f; color: #93c5fd;
+}
+.ct-act--report:hover { background: #1d4ed8; color: #fff; }
 
 /* ── Lab section (LAB_DOCTOR) ── */
 .lab-section { display: flex; flex-direction: column; gap: 10px; }

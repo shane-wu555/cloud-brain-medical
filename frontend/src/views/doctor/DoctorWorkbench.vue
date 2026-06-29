@@ -23,7 +23,7 @@
           <el-button :loading="refreshing" size="small" text @click="refreshQueue" style="font-size:16px">↺</el-button>
         </div>
         <div class="sidebar-search-wrap">
-          <el-input v-model="queueKeyword" clearable size="small" placeholder="搜索姓名/就诊号/手机号" />
+          <el-input v-model="queueKeyword" clearable size="small" placeholder="搜索姓名/就诊号" />
         </div>
 
         <div class="sidebar-tabs">
@@ -980,7 +980,7 @@ watch(mainTab, (tab) => {
 .sidebar-hdr {
   display: flex; align-items: center; justify-content: space-between;
   padding: 14px 16px 8px;
-  font-size: 15px; font-weight: 700;
+  font-size: 18px; font-weight: 700;
 }
 .sidebar-search-wrap { padding: 0 12px 8px; }
 .sidebar-tabs {

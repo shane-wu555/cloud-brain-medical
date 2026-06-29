@@ -47,6 +47,7 @@ export async function getMedicalItems() { return (await http.get<MedicalItem[]>(
 export async function getMedicalOrders(params: Record<string, string | undefined> = {}) { return (await http.get<MedicalOrder[]>('/medical-orders', { params })).data }
 export async function createMedicalOrder(payload: Record<string, unknown>) { return (await http.post<MedicalOrder>('/medical-orders', payload)).data }
 export async function payMedicalOrder(id: string) { return (await http.post<MedicalOrder>(`/medical-orders/${id}/pay`)).data }
+export async function callMedicalOrder(id: string) { return (await http.post<MedicalOrder>(`/medical-orders/${id}/call`)).data }
 export async function startMedicalOrder(id: string) { return (await http.post<MedicalOrder>(`/medical-orders/${id}/start`)).data }
 export async function missMedicalOrder(id: string) { return (await http.post<MedicalOrder>(`/medical-orders/${id}/miss`)).data }
 export async function completeMedicalOrder(id: string, payload: { summary?: string; createdByType?: string; aiRecordId?: string }) { return (await http.post<MedicalOrder>(`/medical-orders/${id}/complete`, payload)).data }
