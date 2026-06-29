@@ -36,18 +36,15 @@ on conflict (username) do update
         employee_no        = excluded.employee_no;
 
 insert into patient.patient_profile (
-    id, user_id, account_id, phone, name, id_type, id_number, id_card,
+    id, phone, name, id_type, id_number,
     gender, birth_date, real_name_verified, verified_at, created_at, updated_at
 )
 values
     (
         'patient-profile-test-self-001',
-        'patient-profile-test-self-001',
-        'patient-test-verified-001',
         '13800000011',
         '测试患者本人',
         'ID_CARD',
-        '110101199003074512',
         '110101199003074512',
         'MALE',
         date '1990-03-07',
@@ -58,12 +55,9 @@ values
     ),
     (
         'patient-profile-test-family-001',
-        'patient-profile-test-family-001',
-        'patient-test-verified-001',
         '13800000011',
         '测试患者家属',
         'ID_CARD',
-        '110101201505014526',
         '110101201505014526',
         'FEMALE',
         date '2015-05-01',
@@ -73,12 +67,10 @@ values
         now()
     )
 on conflict (id) do update
-set account_id = excluded.account_id,
-    phone = excluded.phone,
+set phone = excluded.phone,
     name = excluded.name,
     id_type = excluded.id_type,
     id_number = excluded.id_number,
-    id_card = excluded.id_card,
     gender = excluded.gender,
     birth_date = excluded.birth_date,
     real_name_verified = excluded.real_name_verified,
@@ -86,10 +78,11 @@ set account_id = excluded.account_id,
     updated_at = now();
 
 insert into patient.account_patient_binding (account_id, patient_id, bound_at)
-values ('patient-test-verified-001', 'patient-profile-test-self-001', now())
-on conflict (account_id) do update
-set patient_id = excluded.patient_id,
-    bound_at = excluded.bound_at;
+values
+    ('patient-test-verified-001', 'patient-profile-test-family-001', now() - interval '1 minute'),
+    ('patient-test-verified-001', 'patient-profile-test-self-001', now())
+on conflict (account_id, patient_id) do update
+set bound_at = excluded.bound_at;
 
 insert into doctor.department (id, name, description, active)
 values

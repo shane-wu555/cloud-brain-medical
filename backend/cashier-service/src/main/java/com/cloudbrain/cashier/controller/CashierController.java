@@ -12,6 +12,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -72,6 +73,7 @@ public class CashierController {
 
     @PostMapping("/payments/test-callback")
     @PreAuthorize("hasAnyRole('PATIENT','CASHIER','ADMIN')")
+    @Transactional
     public CashierRepository.Payment testCallback(@RequestBody TestPaymentRequest request, JwtAuthenticationToken auth) {
         if (!testModeEnabled) throw new IllegalStateException("测试支付未启用");
         String patientId = restrict(request.patientId(), auth);

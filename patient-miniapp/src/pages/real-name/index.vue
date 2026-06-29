@@ -64,7 +64,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import { onLoad, onShow } from '@dcloudio/uni-app';
 import { useAuthStore } from '../../stores/auth';
 
@@ -97,6 +97,13 @@ const form = reactive({
 const selectedIdTypeIndex = computed(() => optionIndex(idTypeOptions, form.idType));
 const selectedGenderIndex = computed(() => optionIndex(genderOptions, form.gender));
 
+watch(
+  () => [form.idType, form.idNumber] as const,
+  () => {
+    fillBirthDateFromIdCard();
+  }
+);
+
 onLoad((options) => {
   if (options?.prompt === 'needPatient') {
     setTimeout(() => {
@@ -124,6 +131,7 @@ function optionIndex(options: Array<{ value: string }>, value: string) {
 
 function onIdTypeChange(event: { detail: { value: string } }) {
   form.idType = idTypeOptions[Number(event.detail.value)]?.value || 'ID_CARD';
+  fillBirthDateFromIdCard();
 }
 
 function onGenderChange(event: { detail: { value: string } }) {
@@ -140,6 +148,7 @@ async function bind(patientId: string) {
 }
 
 async function submit() {
+  fillBirthDateFromIdCard();
   const birthDate = buildBirthDate();
   if (!form.name.trim() || !form.idNumber.trim() || !birthDate) {
     uni.showToast({ title: '请完整填写就诊人信息', icon: 'none' });
@@ -188,6 +197,23 @@ function buildBirthDate() {
     return '';
   }
   return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+function fillBirthDateFromIdCard() {
+  const idNumber = form.idNumber.trim().toUpperCase();
+  if (form.idType !== 'ID_CARD' || !/^\d{17}[\dX]$/.test(idNumber)) {
+    return;
+  }
+  const year = Number(idNumber.slice(6, 10));
+  const month = Number(idNumber.slice(10, 12));
+  const day = Number(idNumber.slice(12, 14));
+  const date = new Date(year, month - 1, day);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
+    return;
+  }
+  form.birthYear = String(year);
+  form.birthMonth = String(month).padStart(2, '0');
+  form.birthDay = String(day).padStart(2, '0');
 }
 </script>
 

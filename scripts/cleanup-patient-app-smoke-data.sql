@@ -218,12 +218,6 @@ where id in (
     'patient-profile-test-family-001',
     'patient-test-verified-001',
     'patient-test-unverified-001'
-)
-or user_id in (
-    'patient-profile-test-self-001',
-    'patient-profile-test-family-001',
-    'patient-test-verified-001',
-    'patient-test-unverified-001'
 );
 
 delete from auth.user_account
