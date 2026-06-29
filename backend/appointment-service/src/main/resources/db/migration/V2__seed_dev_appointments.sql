@@ -1,0 +1,75 @@
+-- ══════════════════════════════════════════════════════════════════
+-- 开发测试队列：张医生（00010001）神经内科 今日上午
+-- 15 名患者，队列号 100-114
+-- DevQueueSeeder 每日启动时将 visit_date 刷新为 current_date
+-- ══════════════════════════════════════════════════════════════════
+
+-- 号源库存（对应 doctor.schedule_slot）
+insert into slot_inventory (slot_id, locked, booked) values
+  ('slot-am-0800',1,1),('slot-am-0815',1,1),('slot-am-0830',1,1),
+  ('slot-am-0845',1,1),('slot-am-0900',1,1),('slot-am-0915',1,1),
+  ('slot-am-0930',1,0),('slot-am-0945',1,0),('slot-am-1000',1,0),
+  ('slot-am-1015',1,0),('slot-am-1030',1,0),('slot-am-1045',1,0),
+  ('slot-am-1100',1,0),('slot-am-1115',1,0),('slot-am-1130',1,0)
+on conflict (slot_id) do nothing;
+
+-- CT验证队列号源
+insert into slot_inventory (slot_id, locked, booked) values
+  ('slot-ct-1300',2,0),('slot-ct-1310',2,0),('slot-ct-1320',2,0),
+  ('slot-ct-1330',2,0),('slot-ct-1340',2,0),('slot-ct-1400',2,0),
+  ('slot-ct-1410',2,0),('slot-ct-1420',2,0),('slot-ct-1430',2,0),
+  ('slot-ct-1440',2,0),('slot-ct-1500',2,0),('slot-ct-1510',2,0),
+  ('slot-ct-1520',1,0),('slot-ct-1530',1,0),('slot-ct-1540',1,0)
+on conflict (slot_id) do nothing;
+
+-- 挂号记录（患者 UUID 与 patient-service V2 一致）
+insert into appointment (
+  id, slot_id, patient_id, patient_name,
+  doctor_id, doctor_name, department_id, department_name,
+  visit_date, period, start_time,
+  source, status, payment_status, payment_method,
+  queue_number, business_no,
+  triage_summary, risk_level, missed_count, paid_at
+) values
+  ('c0000001-0000-4000-8000-000000000001','slot-am-0800','a0000000-0000-4000-8000-000000000001','刘建国','00010001','张医生','dept-neuro','神经内科',current_date,'上午','08:00','OFFLINE','WAITING','PAID','OFFLINE_WINDOW',100,'REG'||to_char(current_date,'YYYYMMDD')||'100001','反复头晕3天，血压偏高（150/95mmHg），既往高血压病史5年','MEDIUM',0,now()),
+  ('c0000001-0000-4000-8000-000000000002','slot-am-0815','a0000000-0000-4000-8000-000000000002','张秀英','00010001','张医生','dept-neuro','神经内科',current_date,'上午','08:15','OFFLINE','WAITING','PAID','OFFLINE_WINDOW',101,'REG'||to_char(current_date,'YYYYMMDD')||'100002','失眠2周，入睡困难，伴焦虑情绪','LOW',0,now()),
+  ('c0000001-0000-4000-8000-000000000003','slot-am-0830','a0000000-0000-4000-8000-000000000003','王大力','00010001','张医生','dept-neuro','神经内科',current_date,'上午','08:30','ONLINE','WAITING','PAID','WECHAT',102,'REG'||to_char(current_date,'YYYYMMDD')||'100003','持续头痛3天，颈部酸痛，伴恶心，无发热','MEDIUM',0,now()),
+  ('c0000001-0000-4000-8000-000000000004','slot-am-0845','a0000000-0000-4000-8000-000000000004','陈小梅','00010001','张医生','dept-neuro','神经内科',current_date,'上午','08:45','ONLINE','WAITING','PAID','ALIPAY',103,'REG'||to_char(current_date,'YYYYMMDD')||'100004','脑梗死后随访，左侧肢体活动较前好转，服用阿司匹林','HIGH',0,now()),
+  ('c0000001-0000-4000-8000-000000000005','slot-am-0900','a0000000-0000-4000-8000-000000000005','李明远','00010001','张医生','dept-neuro','神经内科',current_date,'上午','09:00','OFFLINE','CALLED','PAID','OFFLINE_WINDOW',104,'REG'||to_char(current_date,'YYYYMMDD')||'100005','发作性眩晕2天，视物模糊，站立不稳','HIGH',0,now()),
+  ('c0000001-0000-4000-8000-000000000006','slot-am-0915','a0000000-0000-4000-8000-000000000006','赵晓燕','00010001','张医生','dept-neuro','神经内科',current_date,'上午','09:15','ONLINE','WAITING','PAID','WECHAT',105,'REG'||to_char(current_date,'YYYYMMDD')||'100006','偏头痛急性发作，视觉先兆（闪光暗点），持续约2小时','MEDIUM',0,now()),
+  ('c0000001-0000-4000-8000-000000000007','slot-am-0930','a0000000-0000-4000-8000-000000000007','孙志强','00010001','张医生','dept-neuro','神经内科',current_date,'上午','09:30','OFFLINE','WAITING','PAID','OFFLINE_WINDOW',106,'REG'||to_char(current_date,'YYYYMMDD')||'100007','帕金森病随访，服用左旋多巴，近期出现轻微幻觉','HIGH',0,now()),
+  ('c0000001-0000-4000-8000-000000000008','slot-am-0945','a0000000-0000-4000-8000-000000000008','周芳芳','00010001','张医生','dept-neuro','神经内科',current_date,'上午','09:45','ONLINE','REVISIT_WAITING','PAID','ALIPAY',107,'REG'||to_char(current_date,'YYYYMMDD')||'100008','已完成头颅MRI，携带报告复诊，初诊考虑后循环缺血','HIGH',0,now()),
+  ('c0000001-0000-4000-8000-000000000009','slot-am-1000','a0000000-0000-4000-8000-000000000009','吴德强','00010001','张医生','dept-neuro','神经内科',current_date,'上午','10:00','OFFLINE','FINISHED','PAID','OFFLINE_WINDOW',108,'REG'||to_char(current_date,'YYYYMMDD')||'100009','三叉神经痛复诊，卡马西平加量后疼痛明显减轻','LOW',0,now()),
+  ('c0000001-0000-4000-8000-000000000010','slot-am-1015','a0000000-0000-4000-8000-000000000010','郑玉兰','00010001','张医生','dept-neuro','神经内科',current_date,'上午','10:15','ONLINE','FINISHED','PAID','WECHAT',109,'REG'||to_char(current_date,'YYYYMMDD')||'100010','癫痫随访，末次发作6个月前，丙戊酸钠血药浓度达标','MEDIUM',0,now()),
+  ('c0000001-0000-4000-8000-000000000011','slot-am-1030','a0000000-0000-4000-8000-000000000011','林小华','00010001','张医生','dept-neuro','神经内科',current_date,'上午','10:30','OFFLINE','WAITING','PAID','OFFLINE_WINDOW',110,'REG'||to_char(current_date,'YYYYMMDD')||'100011','突发剧烈头痛，呕吐1次，无发热，需排除蛛网膜下腔出血','HIGH',0,now()),
+  ('c0000001-0000-4000-8000-000000000012','slot-am-1045','a0000000-0000-4000-8000-000000000012','黄建平','00010001','张医生','dept-neuro','神经内科',current_date,'上午','10:45','ONLINE','WAITING','PAID','ALIPAY',111,'REG'||to_char(current_date,'YYYYMMDD')||'100012','双下肢无力2周，行走不稳，排除脊髓病变','HIGH',0,now()),
+  ('c0000001-0000-4000-8000-000000000013','slot-am-1100','a0000000-0000-4000-8000-000000000013','陈晓丽','00010001','张医生','dept-neuro','神经内科',current_date,'上午','11:00','OFFLINE','WAITING','PAID','OFFLINE_WINDOW',112,'REG'||to_char(current_date,'YYYYMMDD')||'100013','面部麻木伴口角歪斜3小时，急诊，初诊怀疑TIA','HIGH',0,now()),
+  ('c0000001-0000-4000-8000-000000000014','slot-am-1115','a0000000-0000-4000-8000-000000000014','周明辉','00010001','张医生','dept-neuro','神经内科',current_date,'上午','11:15','ONLINE','WAITING','PAID','WECHAT',113,'REG'||to_char(current_date,'YYYYMMDD')||'100014','记忆力下降6个月，认知功能减退，家属陪同就诊','MEDIUM',0,now()),
+  ('c0000001-0000-4000-8000-000000000015','slot-am-1130','a0000000-0000-4000-8000-000000000015','吴晓红','00010001','张医生','dept-neuro','神经内科',current_date,'上午','11:30','OFFLINE','WAITING','PAID','OFFLINE_WINDOW',114,'REG'||to_char(current_date,'YYYYMMDD')||'100015','紧张型头痛，长期颈肩酸痛，情绪焦虑','LOW',0,now())
+on conflict (id) do nothing;
+
+-- CT 验证患者挂号（下午，张医生神经内科 CT 检查队列）
+insert into appointment (
+  id, slot_id, patient_id, patient_name,
+  doctor_id, doctor_name, department_id, department_name,
+  visit_date, period, start_time,
+  source, status, payment_status, payment_method,
+  queue_number, business_no,
+  triage_summary, risk_level, missed_count, paid_at
+) values
+  ('d0000001-0000-4000-8000-000000000001','slot-ct-1300','b0000000-0000-4000-8000-000000000001','李建军','00010001','张医生','dept-neuro','神经内科',current_date,'下午','13:00','OFFLINE','WAITING','PAID','OFFLINE_WINDOW',200,'REG'||to_char(current_date,'YYYYMMDD')||'200001','头部外伤后头痛2小时，右额颞部压痛明显，需排除颅内出血','HIGH',0,now()),
+  ('d0000001-0000-4000-8000-000000000002','slot-ct-1310','b0000000-0000-4000-8000-000000000002','周红英','00010001','张医生','dept-neuro','神经内科',current_date,'下午','13:10','OFFLINE','WAITING','PAID','OFFLINE_WINDOW',201,'REG'||to_char(current_date,'YYYYMMDD')||'200002','车祸后意识短暂丧失约5分钟，醒后头痛恶心，疑闭合性颅脑损伤','HIGH',0,now()),
+  ('d0000001-0000-4000-8000-000000000003','slot-ct-1320','b0000000-0000-4000-8000-000000000003','张永军','00010001','张医生','dept-neuro','神经内科',current_date,'下午','13:20','ONLINE','WAITING','PAID','WECHAT',202,'REG'||to_char(current_date,'YYYYMMDD')||'200003','突发霹雳样头痛，疼痛评分9/10，颈项强直，疑蛛网膜下腔出血','HIGH',0,now()),
+  ('d0000001-0000-4000-8000-000000000004','slot-ct-1330','b0000000-0000-4000-8000-000000000004','朱晓燕','00010001','张医生','dept-neuro','神经内科',current_date,'下午','13:30','ONLINE','WAITING','PAID','ALIPAY',203,'REG'||to_char(current_date,'YYYYMMDD')||'200004','持续头痛伴喷射性呕吐，颅内高压，需CT评估占位','HIGH',0,now()),
+  ('d0000001-0000-4000-8000-000000000005','slot-ct-1340','b0000000-0000-4000-8000-000000000005','陈志强','00010001','张医生','dept-neuro','神经内科',current_date,'下午','13:40','OFFLINE','WAITING','PAID','OFFLINE_WINDOW',204,'REG'||to_char(current_date,'YYYYMMDD')||'200005','首次癫痫发作，强直阵挛约2分钟，CT排除继发性原因','HIGH',0,now()),
+  ('d0000001-0000-4000-8000-000000000006','slot-ct-1400','b0000000-0000-4000-8000-000000000006','王丽华','00010001','张医生','dept-neuro','神经内科',current_date,'下午','14:00','ONLINE','WAITING','PAID','WECHAT',205,'REG'||to_char(current_date,'YYYYMMDD')||'200006','慢性头痛半年，近期加重，偶发恶心，需影像学排查','MEDIUM',0,now()),
+  ('d0000001-0000-4000-8000-000000000007','slot-ct-1410','b0000000-0000-4000-8000-000000000007','孙建国','00010001','张医生','dept-neuro','神经内科',current_date,'下午','14:10','OFFLINE','WAITING','PAID','OFFLINE_WINDOW',206,'REG'||to_char(current_date,'YYYYMMDD')||'200007','高血压病史15年，突发头痛加重，血压180/110，需CT排除出血','HIGH',0,now()),
+  ('d0000001-0000-4000-8000-000000000008','slot-ct-1420','b0000000-0000-4000-8000-000000000008','刘芳', '00010001','张医生','dept-neuro','神经内科',current_date,'下午','14:20','ONLINE','WAITING','PAID','ALIPAY',207,'REG'||to_char(current_date,'YYYYMMDD')||'200008','头晕伴肢体麻木1天，言语欠清晰，疑急性脑梗','HIGH',0,now()),
+  ('d0000001-0000-4000-8000-000000000009','slot-ct-1430','b0000000-0000-4000-8000-000000000009','钱大明','00010001','张医生','dept-neuro','神经内科',current_date,'下午','14:30','OFFLINE','WAITING','PAID','OFFLINE_WINDOW',208,'REG'||to_char(current_date,'YYYYMMDD')||'200009','帕金森病随访，脑萎缩复查MRI','MEDIUM',0,now()),
+  ('d0000001-0000-4000-8000-000000000010','slot-ct-1440','b0000000-0000-4000-8000-000000000010','赵小燕','00010001','张医生','dept-neuro','神经内科',current_date,'下午','14:40','ONLINE','WAITING','PAID','WECHAT',209,'REG'||to_char(current_date,'YYYYMMDD')||'200010','头部肿物触诊发现，需CT明确性质','MEDIUM',0,now()),
+  ('d0000001-0000-4000-8000-000000000011','slot-ct-1500','b0000000-0000-4000-8000-000000000011','吴小红','00010001','张医生','dept-neuro','神经内科',current_date,'下午','15:00','OFFLINE','WAITING','PAID','OFFLINE_WINDOW',210,'REG'||to_char(current_date,'YYYYMMDD')||'200011','健康体检发现颅内异常，CT随访评估','LOW',0,now()),
+  ('d0000001-0000-4000-8000-000000000012','slot-ct-1510','b0000000-0000-4000-8000-000000000012','林美华','00010001','张医生','dept-neuro','神经内科',current_date,'下午','15:10','ONLINE','WAITING','PAID','ALIPAY',211,'REG'||to_char(current_date,'YYYYMMDD')||'200012','脑膜瘤术后复查CT','LOW',0,now()),
+  ('d0000001-0000-4000-8000-000000000013','slot-ct-1520','b0000000-0000-4000-8000-000000000013','徐志明','00010001','张医生','dept-neuro','神经内科',current_date,'下午','15:20','OFFLINE','WAITING','PAID','OFFLINE_WINDOW',212,'REG'||to_char(current_date,'YYYYMMDD')||'200013','脑萎缩评估，认知下降随访CT','LOW',0,now()),
+  ('d0000001-0000-4000-8000-000000000014','slot-ct-1530','b0000000-0000-4000-8000-000000000014','黄建国','00010001','张医生','dept-neuro','神经内科',current_date,'下午','15:30','ONLINE','WAITING','PAID','WECHAT',213,'REG'||to_char(current_date,'YYYYMMDD')||'200014','头晕，外院CT疑脑梗，来院复核','MEDIUM',0,now()),
+  ('d0000001-0000-4000-8000-000000000015','slot-ct-1540','b0000000-0000-4000-8000-000000000015','郑建华','00010001','张医生','dept-neuro','神经内科',current_date,'下午','15:40','OFFLINE','WAITING','PAID','OFFLINE_WINDOW',214,'REG'||to_char(current_date,'YYYYMMDD')||'200015','脑供血不足随访，颅多普勒评估血流','LOW',0,now())
+on conflict (id) do nothing;
