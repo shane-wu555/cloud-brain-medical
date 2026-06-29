@@ -23,32 +23,32 @@ values
    'medical-order:read,medical-order:execute',
    true, '00030001', now()),
 
-  ('doctor-006', '00070001', '$2a$10$7NukEsugMLsxrPkaBLnhuOHHhSQg2RjHt4RiGYxJNx7pq9cyG6bL.',
+  ('doctor-006', '99990006', '$2a$10$7NukEsugMLsxrPkaBLnhuOHHhSQg2RjHt4RiGYxJNx7pq9cyG6bL.',
    '13700000601', '吴医生', 'CHECK_DOCTOR',
    'medical-order:read,medical-order:execute',
-   true, '00070001', now()),
+   true, '99990006', now()),
 
   -- ── 检验科（LAB_DOCTOR）──────────────────────────────────────────
-  ('doctor-004', '00050001', '$2a$10$7NukEsugMLsxrPkaBLnhuOHHhSQg2RjHt4RiGYxJNx7pq9cyG6bL.',
+  ('doctor-004', '99990004', '$2a$10$7NukEsugMLsxrPkaBLnhuOHHhSQg2RjHt4RiGYxJNx7pq9cyG6bL.',
    '13700000401', '王医生', 'LAB_DOCTOR',
    'medical-order:read,medical-order:execute',
-   true, '00050001', now()),
+   true, '99990004', now()),
 
-  ('doctor-007', '00080001', '$2a$10$7NukEsugMLsxrPkaBLnhuOHHhSQg2RjHt4RiGYxJNx7pq9cyG6bL.',
+  ('doctor-007', '99990007', '$2a$10$7NukEsugMLsxrPkaBLnhuOHHhSQg2RjHt4RiGYxJNx7pq9cyG6bL.',
    '13700000701', '钱医生', 'LAB_DOCTOR',
    'medical-order:read,medical-order:execute',
-   true, '00080001', now()),
+   true, '99990007', now()),
 
   -- ── 处置科（DISPOSAL_DOCTOR）─────────────────────────────────────
-  ('doctor-005', '00060001', '$2a$10$7NukEsugMLsxrPkaBLnhuOHHhSQg2RjHt4RiGYxJNx7pq9cyG6bL.',
+  ('doctor-005', '99990005', '$2a$10$7NukEsugMLsxrPkaBLnhuOHHhSQg2RjHt4RiGYxJNx7pq9cyG6bL.',
    '13700000501', '赵医生', 'DISPOSAL_DOCTOR',
    'medical-order:read,medical-order:execute',
-   true, '00060001', now()),
+   true, '99990005', now()),
 
-  ('doctor-008', '00090001', '$2a$10$7NukEsugMLsxrPkaBLnhuOHHhSQg2RjHt4RiGYxJNx7pq9cyG6bL.',
+  ('doctor-008', '99990008', '$2a$10$7NukEsugMLsxrPkaBLnhuOHHhSQg2RjHt4RiGYxJNx7pq9cyG6bL.',
    '13700000801', '周医生', 'DISPOSAL_DOCTOR',
    'medical-order:read,medical-order:execute',
-   true, '00090001', now()),
+   true, '99990008', now()),
 
   -- ── CASHIER 收费员 ────────────────────────────────────────────────
   ('cashier-001', 'cashier01', '$2a$10$7NukEsugMLsxrPkaBLnhuOHHhSQg2RjHt4RiGYxJNx7pq9cyG6bL.',
