@@ -36,8 +36,8 @@ public class MockAiConsultationController {
         String departmentId = neurological ? "dept-neuro" : "dept-general";
         String departmentName = neurological ? "神经内科" : "全科医学科";
         List<DoctorRecommendation> doctors = neurological
-                ? List.of(new DoctorRecommendation("doctor-001", "张医生", "擅长头痛、眩晕、脑血管相关症状的门诊评估"))
-                : List.of(new DoctorRecommendation("doctor-003", "陈医生", "适合常见不适和慢病初诊咨询"));
+                ? List.of(new DoctorRecommendation("00010001", "张医生", "擅长头痛、眩晕、脑血管相关症状的门诊评估"))
+                : List.of(new DoctorRecommendation("00020001", "陈医生", "适合常见不适和慢病初诊咨询"));
         List<String> followUpQuestions = urgent ? List.of() : followUpQuestions(description);
         String cleanDescription = normalize(description);
 

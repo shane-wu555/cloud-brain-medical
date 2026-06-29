@@ -3,7 +3,7 @@
   <view class="page">
     <view v-for="item in visibleDisposals" :key="item.id" class="card disposal-card">
       <view class="row-between">
-        <view class="title-sm">{{ item.projectName }}</view>
+        <view class="title-sm">{{ item.itemName }}</view>
         <view :class="['status-tag', statusClass(item.status, item.paymentStatus)]">
           {{ statusLabel(item.status, item.paymentStatus) }}
         </view>
@@ -11,9 +11,9 @@
 
       <view class="muted">项目费用：¥{{ amountText(item.amount) }}</view>
       <view v-if="item.visitText" class="muted">计划就诊：{{ item.visitText }}</view>
-      <view class="muted">执行科室：{{ item.executorName || '处置科' }}</view>
-      <view v-if="item.executorName" class="muted">执行人员：{{ item.executorName }}</view>
-      <view v-if="item.executionLocation" class="muted">执行地点：{{ item.executionLocation }}</view>
+      <view class="muted">执行科室：{{ item.roomName || '处置科' }}</view>
+      <view v-if="item.roomName" class="muted">执行人员：{{ item.roomName }}</view>
+      <view v-if="item.roomLocation" class="muted">执行地点：{{ item.roomLocation }}</view>
       <view v-if="item.purpose" class="section">
         <view class="label">处置目的</view>
         <view>{{ item.purpose }}</view>
@@ -56,13 +56,13 @@ interface Appointment {
 interface MedicalOrder {
   id: string;
   appointmentId: string;
-  projectName: string;
+  itemName: string;
   purpose: string;
   amount: number;
   paymentStatus: 'UNPAID' | 'PAID' | 'FAILED';
   status: 'PENDING_PAYMENT' | 'WAITING_TRIAGE' | 'WAITING' | 'IN_PROGRESS' | 'COMPLETED' | 'MISSED';
-  executorName: string;
-  executionLocation: string;
+  roomName: string;
+  roomLocation: string;
   queueNumber: number | null;
   resultSummary: string;
   createdAt: string;
