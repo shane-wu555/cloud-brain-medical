@@ -67,7 +67,8 @@ public class MedicalRecordService {
         if("AI".equals(source)&&(request.diagnosisAiRecordId()==null||request.diagnosisAiRecordId().isBlank()))throw new IllegalArgumentException("AI 生成诊断必须关联 diagnosisAiRecordId");
         long expected=record.getVersion();
         record.writeDoctorNote(request.chiefComplaint(),request.presentIllness(),request.pastHistory(),request.allergyHistory(),
-                request.physicalExamination(),request.preliminaryDiagnosis(),request.treatmentPlan(),request.doctorRevisionNote(),source,request.diagnosisAiRecordId());
+                request.physicalExamination(),request.preliminaryDiagnosis(),request.treatmentPlan(),
+                request.doctorRevisionNote(),source,request.diagnosisAiRecordId());
         return repository.save(record,expected);
     }
 

@@ -39,7 +39,7 @@ public class SlotInventoryRepository {
                     locked   = excluded.locked,
                     booked   = excluded.booked
                 """,
-                inventory.getScheduleId(),
+                inventory.getSlotId(),
                 inventory.getCapacity(),
                 inventory.getLocked(),
                 inventory.getBooked());

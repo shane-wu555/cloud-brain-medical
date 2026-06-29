@@ -105,7 +105,7 @@ public class AppointmentService {
         if (appointment.getStatus() != AppointmentStatus.PENDING_PAYMENT) {
             throw new IllegalStateException("只有待缴费挂号可以支付");
         }
-        if (!slotInventoryRepository.confirmLocked(appointment.getScheduleId())) {
+        if (!slotInventoryRepository.confirmLocked(appointment.getSlotId())) {
             throw new IllegalStateException("锁定号源已失效，请重新挂号");
         }
         appointment.markPaid(Optional.ofNullable(paymentMethod).orElse("WECHAT"));
@@ -130,10 +130,10 @@ public class AppointmentService {
         }
         boolean paid = appointment.getPaymentStatus() == PaymentStatus.PAID;
         if (paid) {
-            slotInventoryRepository.releaseBooked(appointment.getScheduleId());
+            slotInventoryRepository.releaseBooked(appointment.getSlotId());
             integrationEventRepository.enqueueRefund(appointment, BigDecimal.ZERO, appointment.getPatientId());
         } else {
-            slotInventoryRepository.releaseLocked(appointment.getScheduleId());
+            slotInventoryRepository.releaseLocked(appointment.getSlotId());
         }
         appointment.markCancelled(paid);
         return appointmentRepository.save(appointment);
@@ -200,7 +200,7 @@ public class AppointmentService {
     public void expireOne(String id) {
         Appointment appointment=appointmentRepository.findByIdForUpdate(id).orElse(null);
         if(appointment==null || appointment.getStatus()!=AppointmentStatus.PENDING_PAYMENT) return;
-        slotInventoryRepository.releaseLocked(appointment.getScheduleId());
+        slotInventoryRepository.releaseLocked(appointment.getSlotId());
         appointment.markPaymentExpired();
         appointmentRepository.save(appointment);
     }
@@ -212,7 +212,7 @@ public class AppointmentService {
         if(!appointment.getPatientId().equals(patientId)) throw new org.springframework.security.access.AccessDeniedException("支付患者不匹配");
         if(appointment.getPaymentStatus()==PaymentStatus.FAILED) return appointment;
         if(appointment.getStatus()!=AppointmentStatus.PENDING_PAYMENT) throw new IllegalStateException("当前挂号状态不能标记支付失败");
-        slotInventoryRepository.releaseLocked(appointment.getScheduleId()); appointment.markPaymentExpired();
+        slotInventoryRepository.releaseLocked(appointment.getSlotId()); appointment.markPaymentExpired();
         return appointmentRepository.save(appointment);
     }
     @Transactional

@@ -51,7 +51,8 @@ public class MedicalRecordController {
     public record CreateInitialRecordRequest(String appointmentId,String patientId,String patientName,String doctorId,String doctorName,
             String departmentName,String visitDate,String period,String triageSummary,String riskLevel){}
     public record WriteDoctorNoteRequest(String appointmentId,long version,String chiefComplaint,String presentIllness,String pastHistory,
-            String allergyHistory,String physicalExamination,String preliminaryDiagnosis,String treatmentPlan,String doctorRevisionNote,
+            String allergyHistory,String physicalExamination,String preliminaryDiagnosis,String treatmentPlan,
+            String doctorRevisionNote,
             String diagnosisCreatedByType,String diagnosisAiRecordId){}
     public record ReportLink(String medicalOrderId,String reportId,String reportType,String conclusion,String confirmedBy,java.time.LocalDateTime confirmedAt){}
 }

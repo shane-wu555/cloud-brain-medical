@@ -75,7 +75,7 @@ public class AppointmentRepository {
                     cancelled_at = excluded.cancelled_at
                 """,
                 appointment.getId(),
-                appointment.getScheduleId(),
+                appointment.getSlotId(),
                 appointment.getPatientId(),
                 appointment.getPatientName(),
                 appointment.getDoctorId(),

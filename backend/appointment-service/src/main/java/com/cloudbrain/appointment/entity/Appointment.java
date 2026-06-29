@@ -7,7 +7,7 @@ import java.time.LocalTime;
 public class Appointment {
     private final String id;
     private String businessNo;
-    private final String scheduleId;
+    private final String slotId;
     private final String patientId;
     private final String patientName;
     private final String doctorId;
@@ -32,7 +32,7 @@ public class Appointment {
 
     public Appointment(
             String id,
-            String scheduleId,
+            String slotId,
             String patientId,
             String patientName,
             String doctorId,
@@ -50,7 +50,7 @@ public class Appointment {
             String recommendedDepartmentId,
             int queueNumber) {
         this.id = id;
-        this.scheduleId = scheduleId;
+        this.slotId = slotId;
         this.patientId = patientId;
         this.patientName = patientName;
         this.doctorId = doctorId;
@@ -77,8 +77,8 @@ public class Appointment {
     public String getBusinessNo() { return businessNo; }
     public void restoreBusinessNo(String businessNo) { this.businessNo=businessNo; }
 
-    public String getScheduleId() {
-        return scheduleId;
+    public String getSlotId() {
+        return slotId;
     }
 
     public String getPatientId() {
