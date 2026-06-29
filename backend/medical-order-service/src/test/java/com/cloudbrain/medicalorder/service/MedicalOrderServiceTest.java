@@ -16,11 +16,16 @@ class MedicalOrderServiceTest {
     void rejectsDoctorRoleThatDoesNotMatchOrderType() {
         MedicalOrderRepository repository = Mockito.mock(MedicalOrderRepository.class);
         MedicalOrder order = new MedicalOrder(
-                "order", "appointment", "patient", "患者", "doctor", "LAB", "lab", "血常规",
-                null, null, BigDecimal.ZERO, "PAID", "WAITING", null,null,null,null,1,"ROUTINE",null,null,0,
-                null, null, LocalDateTime.now(), null, null);
+                "order", "appointment", "patient", "患者", "doctor",
+                "LAB", "CBC", "血常规", null, null,
+                BigDecimal.ZERO, "PAID", "WAITING",
+                "rm-lab-01", null, null,
+                null, 1, "ROUTINE",
+                null, null, 0,
+                null, null, null, null, null,
+                LocalDateTime.now(), null, null);
         when(repository.findById("order")).thenReturn(Optional.of(order));
-        MedicalOrderService service = new MedicalOrderService(repository,Mockito.mock(AiTriageClient.class));
+        MedicalOrderService service = new MedicalOrderService(repository, Mockito.mock(AiTriageClient.class));
         assertThrows(IllegalStateException.class, () -> service.start("order", "check-doctor", "CHECK_DOCTOR"));
     }
 }
