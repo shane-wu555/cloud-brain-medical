@@ -34,7 +34,7 @@ public class MedicalOrderController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('PATIENT','OUTPATIENT_DOCTOR','CHECK_DOCTOR','LAB_DOCTOR','DISPOSAL_DOCTOR','ADMIN')")
+    @PreAuthorize("hasAnyRole('PATIENT','OUTPATIENT_DOCTOR','CHECK_DOCTOR','LAB_DOCTOR','DISPOSAL_DOCTOR','CASHIER','ADMIN')")
     public List<MedicalOrder> list(
             @RequestParam(name = "type", required = false) String type,
             @RequestParam(name = "status", required = false) String status,

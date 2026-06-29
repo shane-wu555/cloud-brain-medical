@@ -3,8 +3,9 @@ package com.cloudbrain.patient.controller;
 import com.cloudbrain.patient.repository.PatientRepository;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Pattern;
 import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Set;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -35,11 +36,13 @@ public class PatientController {
     }
 
     @PostMapping("/me/profiles")
-    public PatientRepository.PatientProfile addProfile(@Valid @RequestBody AddPatientRequest request,
+    public PatientRepository.PatientProfile addProfile(
+            @Valid @RequestBody AddPatientRequest request,
             JwtAuthenticationToken authentication) {
         Jwt jwt = authentication.getToken();
         String idType = normalizeIdType(request.idType());
         String idNumber = normalizeIdNumber(idType, request.idNumber());
+        LocalDate birthDate = request.birthDate() != null ? request.birthDate() : inferBirthDate(idType, idNumber);
         return repository.createForAccount(
                 jwt.getSubject(),
                 jwt.getClaimAsString("phone"),
@@ -47,11 +50,12 @@ public class PatientController {
                 idType,
                 idNumber,
                 normalizeGender(request.gender()),
-                request.birthDate());
+                birthDate);
     }
 
     @PutMapping("/me/bound-patient")
-    public PatientRepository.PatientProfile bind(@Valid @RequestBody BindPatientRequest request,
+    public PatientRepository.PatientProfile bind(
+            @Valid @RequestBody BindPatientRequest request,
             JwtAuthenticationToken authentication) {
         return repository.bind(authentication.getToken().getSubject(), request.patientId());
     }
@@ -62,12 +66,12 @@ public class PatientController {
             @RequestParam(name = "phone", required = false) String phone,
             @RequestParam(name = "idNumber", required = false) String idNumber) {
         if (idNumber != null && !idNumber.isBlank()) {
-            return repository.findByIdNumber("ID_CARD", idNumber).map(List::of).orElse(List.of());
+            return repository.findByIdNumber("ID_CARD", idNumber);
         }
         if (phone != null && !phone.isBlank()) {
             return repository.findByPhone(phone);
         }
-        throw new IllegalArgumentException("请提供 idNumber 或 phone 查询条件");
+        throw new IllegalArgumentException("Provide idNumber or phone to search patients");
     }
 
     @PostMapping("/offline")
@@ -75,13 +79,16 @@ public class PatientController {
     public PatientRepository.PatientProfile createOffline(@Valid @RequestBody OfflinePatientRequest request) {
         String idType = normalizeIdType(request.idType());
         String idNumber = normalizeIdNumber(idType, request.idNumber());
-        // 按身份证查找，存在则直接返回，否则建档
-        return repository.findByIdNumber(idType, idNumber)
-                .orElseGet(() -> repository.createOffline(idType, idNumber, request.name(), request.phone()));
+        String gender = request.gender() == null || request.gender().isBlank()
+                ? inferGender(idType, idNumber)
+                : normalizeGender(request.gender());
+        LocalDate birthDate = request.birthDate() != null ? request.birthDate() : inferBirthDate(idType, idNumber);
+        return repository.createOffline(idType, idNumber, request.name().trim(), request.phone(), gender, birthDate);
     }
 
     @PutMapping("/me/real-name")
-    public PatientRepository.PatientProfile legacyVerify(@Valid @RequestBody LegacyRealNameRequest request,
+    public PatientRepository.PatientProfile legacyVerify(
+            @Valid @RequestBody LegacyRealNameRequest request,
             JwtAuthenticationToken authentication) {
         Jwt jwt = authentication.getToken();
         String idType = request.idCard() == null || request.idCard().isBlank() ? "OTHER" : "ID_CARD";
@@ -94,32 +101,57 @@ public class PatientController {
                 request.name().trim(),
                 idType,
                 idNumber,
-                "UNKNOWN",
-                null);
+                inferGender(idType, idNumber),
+                inferBirthDate(idType, idNumber));
     }
 
     private String normalizeIdType(String idType) {
         String value = idType == null ? "" : idType.trim().toUpperCase();
-        if (!ID_TYPES.contains(value)) throw new IllegalArgumentException("不支持的证件类型");
+        if (!ID_TYPES.contains(value)) throw new IllegalArgumentException("Unsupported certificate type");
         return value;
     }
 
     private String normalizeIdNumber(String idType, String idNumber) {
         String value = idNumber == null ? "" : idNumber.trim().toUpperCase();
-        if (value.isBlank()) throw new IllegalArgumentException("证件号码不能为空");
+        if (value.isBlank()) throw new IllegalArgumentException("Certificate number is required");
         if ("ID_CARD".equals(idType) && !value.matches("^\\d{17}[0-9X]$")) {
-            throw new IllegalArgumentException("身份证号格式不正确");
+            throw new IllegalArgumentException("Invalid ID card number");
+        }
+        if ("ID_CARD".equals(idType)) {
+            parseIdCardBirthDate(value);
         }
         if (!"ID_CARD".equals(idType) && value.length() > 64) {
-            throw new IllegalArgumentException("证件号码最多 64 位");
+            throw new IllegalArgumentException("Certificate number must be at most 64 characters");
         }
         return value;
     }
 
     private String normalizeGender(String gender) {
         String value = gender == null ? "" : gender.trim().toUpperCase();
-        if (!GENDERS.contains(value)) throw new IllegalArgumentException("不支持的性别");
+        if (!GENDERS.contains(value)) throw new IllegalArgumentException("Unsupported gender");
         return value;
+    }
+
+    private LocalDate inferBirthDate(String idType, String idNumber) {
+        if (!"ID_CARD".equals(idType) || idNumber.length() < 14) {
+            return null;
+        }
+        return parseIdCardBirthDate(idNumber);
+    }
+
+    private String inferGender(String idType, String idNumber) {
+        if (!"ID_CARD".equals(idType) || idNumber.length() < 17) {
+            return "UNKNOWN";
+        }
+        return Character.digit(idNumber.charAt(16), 10) % 2 == 0 ? "FEMALE" : "MALE";
+    }
+
+    private LocalDate parseIdCardBirthDate(String idNumber) {
+        try {
+            return LocalDate.parse(idNumber.substring(6, 14), DateTimeFormatter.BASIC_ISO_DATE);
+        } catch (DateTimeParseException ex) {
+            throw new IllegalArgumentException("Invalid ID card birth date");
+        }
     }
 
     public record AddPatientRequest(
@@ -140,6 +172,8 @@ public class PatientController {
             @NotBlank String idType,
             @NotBlank String idNumber,
             @NotBlank String name,
-            String phone) {      // 手机号可选，收银台若有则录入
+            String phone,
+            String gender,
+            LocalDate birthDate) {
     }
 }

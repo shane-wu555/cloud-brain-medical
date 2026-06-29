@@ -1,7 +1,42 @@
 import { http } from './http';
-export interface PatientProfile{userId:string;phone:string;name:string;realNameVerified:boolean;idNumber?:string}
-export async function searchPatientByIdNumber(idNumber:string){return(await http.get<PatientProfile[]>('/patients',{params:{idNumber}})).data;}
-export async function searchPatientByPhone(phone:string){return(await http.get<PatientProfile[]>('/patients',{params:{phone}})).data;}
-export async function createOfflinePatient(idType:string,idNumber:string,name:string,phone?:string){
-  return(await http.post<PatientProfile>('/patients/offline',{idType,idNumber,name,phone})).data;
+
+export type IdType = 'ID_CARD' | 'PASSPORT' | 'HK_MACAO_TAIWAN' | 'OTHER';
+export type Gender = 'MALE' | 'FEMALE' | 'UNKNOWN';
+
+export interface PatientProfile {
+  id?: string;
+  userId?: string;
+  accountId?: string | null;
+  phone?: string;
+  name: string;
+  realNameVerified: boolean;
+  idType?: IdType;
+  idNumber?: string;
+  gender?: Gender;
+  birthDate?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface OfflinePatientPayload {
+  idType: IdType;
+  idNumber: string;
+  name: string;
+  phone?: string;
+  gender: Gender;
+  birthDate: string;
+}
+
+export function patientProfileId(patient: PatientProfile) {
+  return patient.userId ?? patient.id ?? '';
+}
+
+export async function searchPatientByIdNumber(idNumber: string) {
+  return (await http.get<PatientProfile[]>('/patients', { params: { idNumber } })).data;
+}
+export async function searchPatientByPhone(phone: string) {
+  return (await http.get<PatientProfile[]>('/patients', { params: { phone } })).data;
+}
+export async function createOfflinePatient(payload: OfflinePatientPayload) {
+  return (await http.post<PatientProfile>('/patients/offline', payload)).data;
 }

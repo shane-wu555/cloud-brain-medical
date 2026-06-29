@@ -18,7 +18,6 @@ export interface PatientProfile {
   name: string;
   idType: string;
   idNumber: string;
-  idCard?: string;
   gender: string;
   birthDate?: string;
 }
