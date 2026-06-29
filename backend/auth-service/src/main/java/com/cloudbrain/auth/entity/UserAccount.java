@@ -13,6 +13,7 @@ public class UserAccount {
     private final List<String> permissions;
     private boolean realNameVerified;
     private final String employeeNo;
+    private final boolean active;
     private final LocalDateTime createdAt;
 
     public UserAccount(
@@ -25,6 +26,22 @@ public class UserAccount {
             List<String> permissions,
             boolean realNameVerified,
             String employeeNo) {
+        this(id, username, password, phone, name, role, permissions, realNameVerified, employeeNo, true,
+                LocalDateTime.now());
+    }
+
+    public UserAccount(
+            String id,
+            String username,
+            String password,
+            String phone,
+            String name,
+            String role,
+            List<String> permissions,
+            boolean realNameVerified,
+            String employeeNo,
+            boolean active,
+            LocalDateTime createdAt) {
         this.id = id;
         this.username = username;
         this.password = password;
@@ -34,7 +51,8 @@ public class UserAccount {
         this.permissions = permissions;
         this.realNameVerified = realNameVerified;
         this.employeeNo = employeeNo;
-        this.createdAt = LocalDateTime.now();
+        this.active = active;
+        this.createdAt = createdAt == null ? LocalDateTime.now() : createdAt;
     }
 
     public String getId() {
@@ -71,6 +89,10 @@ public class UserAccount {
 
     public String getEmployeeNo() {
         return employeeNo;
+    }
+
+    public boolean isActive() {
+        return active;
     }
 
     public LocalDateTime getCreatedAt() {

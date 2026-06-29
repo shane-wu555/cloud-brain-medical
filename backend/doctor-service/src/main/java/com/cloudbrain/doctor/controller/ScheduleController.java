@@ -1,6 +1,7 @@
 package com.cloudbrain.doctor.controller;
 
 import com.cloudbrain.doctor.repository.DoctorCatalogRepository;
+import com.fasterxml.jackson.annotation.JsonAlias;
 import java.time.LocalDate;
 import java.util.*;
 import java.util.function.Function;
@@ -26,7 +27,7 @@ public class ScheduleController {
     }
     @GetMapping public List<ScheduleDto> list(@RequestParam(name="doctorId", required=false) String doctorId,
             @RequestParam(name="departmentId", required=false) String departmentId) {
-        Map<String,SlotDto> slots=slots().stream().collect(Collectors.toMap(SlotDto::scheduleId,Function.identity()));
+        Map<String,SlotDto> slots=slotsById();
         List<DoctorCatalogRepository.Schedule> schedules = repository.schedules(doctorId,departmentId).stream()
                 .filter(s -> !"SUSPENDED".equals(s.status()))
                 .toList();
@@ -62,7 +63,7 @@ public class ScheduleController {
     }
     @PutMapping("/{id}/suspend") @PreAuthorize("hasRole('ADMIN')")
     public ScheduleDto suspend(@PathVariable("id") String id,@RequestBody SuspendRequest request) {
-        Map<String,SlotDto> slots=slots().stream().collect(Collectors.toMap(SlotDto::scheduleId,Function.identity()));
+        Map<String,SlotDto> slots=slotsById();
         List<DoctorCatalogRepository.ScheduleTimeSlot> timeSlots=repository.timeSlots(id);
         var s=repository.suspendSchedule(id,request.reason());
         syncSlots(timeSlots,timeSlots.stream().collect(Collectors.toMap(DoctorCatalogRepository.ScheduleTimeSlot::id,
@@ -76,7 +77,7 @@ public class ScheduleController {
     @PutMapping("/{id}/reschedule") @PreAuthorize("hasRole('ADMIN')")
     public ScheduleDto reschedule(@PathVariable("id") String id,@RequestBody RescheduleRequest request) {
         var s=repository.reschedule(id,LocalDate.parse(request.workDate()),request.period());
-        Map<String,SlotDto> slots=slots().stream().collect(Collectors.toMap(SlotDto::scheduleId,Function.identity()));
+        Map<String,SlotDto> slots=slotsById();
         return dto(s,repository.timeSlots(id),slots);
     }
     private void syncSlot(String id,int capacity) { appointmentClient.post().uri("/api/internal/appointment-slots")
@@ -89,6 +90,11 @@ public class ScheduleController {
     }
     private List<SlotDto> slots() { var result=appointmentClient.get().uri("/api/internal/appointment-slots")
             .header("X-Internal-Api-Key",internalApiKey).retrieve().body(new ParameterizedTypeReference<List<SlotDto>>(){}); return result==null?List.of():result; }
+    private Map<String,SlotDto> slotsById() {
+        return slots().stream()
+                .filter(slot -> slot.scheduleId() != null && !slot.scheduleId().isBlank())
+                .collect(Collectors.toMap(SlotDto::scheduleId,Function.identity(),(first, ignored) -> first));
+    }
     private ScheduleDto dto(DoctorCatalogRepository.Schedule s,List<DoctorCatalogRepository.ScheduleTimeSlot> timeSlots,Map<String,SlotDto> slots) {
         List<TimeSlotDto> items=timeSlots.stream().map(slot -> {
             SlotDto inventory=slots.get(slot.id());
@@ -114,9 +120,9 @@ public class ScheduleController {
     public record RescheduleRequest(String workDate,String period) {}
     public record ScheduleDto(String id,String doctorId,String doctorName,String departmentId,String workDate,String period,int capacity,int booked,int locked,int available,String status,List<TimeSlotDto> timeSlots) {}
     public record TimeSlotDto(String id,String startTime,int capacity,int booked,int locked,int available) {}
-    public record SlotDto(String scheduleId,int capacity,int locked,int booked,int available) {}
+    public record SlotDto(@JsonAlias("slotId") String scheduleId,int capacity,int locked,int booked,int available) {}
     public record AiScheduleRequest(List<AiDoctorCandidate> candidates,List<AiScheduleDemand> demands) {}
-    public record AiDoctorCandidate(String doctorId,String doctorName,String departmentId,String specialty,int weeklyCapacity,List<String> leaveDates) {}
+    public record AiDoctorCandidate(String doctorId,String doctorName,String departmentId,String specialty,int weeklyCapacity,List<String> leaveDates,List<String> surgeryDates) {}
     public record AiScheduleDemand(String departmentId,String workDate,String period,int expectedVisits,String riskLevel) {}
     public record AiScheduleResponse(String aiRecordId,List<AiScheduleSuggestion> suggestions) {}
     public record AiScheduleSuggestion(String suggestionId,String doctorId,String doctorName,String departmentId,String workDate,String period,int capacity,String reason,boolean requiresAdminConfirmation) {}

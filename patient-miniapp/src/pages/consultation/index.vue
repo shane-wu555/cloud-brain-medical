@@ -56,9 +56,10 @@ async function consult() {
     return;
   }
   loading.value = true;
+  let patient;
   try {
     await auth.loadProfile();
-    auth.requireBoundPatient();
+    patient = auth.requireBoundPatient();
   } catch (error) {
     uni.showToast({ title: (error as Error).message, icon: 'none' });
     uni.navigateTo({ url: '/pages/real-name/index' });
@@ -69,7 +70,7 @@ async function consult() {
     result.value = await request<ConsultationResponse>({
       url: '/ai/consultations',
       method: 'POST',
-      data: { description: description.value.trim(), symptomTags: [] }
+      data: { patientId: patient.id, description: description.value.trim(), symptomTags: [] }
     });
     uni.setStorageSync('last_ai_consultation', result.value);
     uni.showToast({ title: '问诊完成', icon: 'success' });

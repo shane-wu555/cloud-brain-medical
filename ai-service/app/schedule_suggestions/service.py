@@ -30,8 +30,8 @@ def _suggest_with_llm(request: ScheduleSuggestionRequest, config) -> ScheduleSug
 你是医院 AI 排班建议模块。只能生成待管理员确认的排班建议，不能发布排班。
 请严格输出 JSON 对象，字段为 suggestions。
 suggestions 每项包含 suggestionId、doctorId、doctorName、departmentId、workDate、period、capacity、reason、requiresAdminConfirmation。
-必须参考医生可用性、请假日期、科室需求、历史挂号量和 providedKnowledgeSources。
-不得安排 leaveDates 包含 workDate 的医生。
+必须参考医生可用性、请假日期、手术安排、科室需求、历史挂号量和 providedKnowledgeSources。
+不得安排 leaveDates 或 surgeryDates 包含 workDate 的医生。
 capacity 必须在 1 到 100 之间。
 """,
         user_payload={
@@ -74,7 +74,11 @@ def _mock_suggest(request: ScheduleSuggestionRequest, fallback_used: bool = Fals
         available = [
             candidate
             for candidate in request.candidates
-            if candidate.department_id == demand.department_id and demand.work_date not in candidate.leave_dates
+            if (
+                candidate.department_id == demand.department_id
+                and demand.work_date not in candidate.leave_dates
+                and demand.work_date not in candidate.surgery_dates
+            )
         ]
         if not available:
             continue

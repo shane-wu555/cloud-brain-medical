@@ -81,7 +81,7 @@ const departmentResults = ref<Department[]>([]);
 const doctorResults = ref<Doctor[]>([]);
 const loading = ref(false);
 const searched = ref(false);
-const EXCLUDED_PATIENT_DEPARTMENT_NAMES = ['检查科', '检验科', '处置室', '药房'];
+const EXCLUDED_PATIENT_DEPARTMENT_NAMES = ['检查科', '检验科', '处置科', '药房', '系统管理', '收费处'];
 
 function normalizeText(value: unknown) {
   if (typeof value === 'string') {

@@ -23,8 +23,10 @@ export interface PatientProfile {
 }
 
 interface PatientAccountState {
-  patients: PatientProfile[];
+  patients?: PatientProfile[];
+  profiles?: PatientProfile[];
   boundPatient?: PatientProfile | null;
+  bound?: PatientProfile | null;
   hasBoundPatient?: boolean;
 }
 
@@ -120,8 +122,8 @@ export const useAuthStore = defineStore('auth', {
     },
     async loadProfile() {
       const state = await request<PatientAccountState>({ url: '/patients/me', method: 'GET' });
-      this.patients = state.patients || [];
-      this.boundPatient = state.boundPatient || null;
+      this.patients = state.patients || state.profiles || [];
+      this.boundPatient = state.boundPatient || state.bound || null;
       uni.setStorageSync('patient_profiles', this.patients);
       uni.setStorageSync('bound_patient', this.boundPatient);
       return state;

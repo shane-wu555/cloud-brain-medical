@@ -12,6 +12,7 @@ class DoctorCandidate(BaseModel):
     specialty: str = ""
     weekly_capacity: int = Field(default=40, alias="weeklyCapacity")
     leave_dates: list[str] = Field(default_factory=list, alias="leaveDates")
+    surgery_dates: list[str] = Field(default_factory=list, alias="surgeryDates")
 
     model_config = {"populate_by_name": True}
 
