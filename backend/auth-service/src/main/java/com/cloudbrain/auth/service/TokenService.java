@@ -28,17 +28,19 @@ public class TokenService {
 
     public String issue(UserAccount account) {
         Instant now = Instant.now();
-        JwtClaimsSet claims = JwtClaimsSet.builder()
+        JwtClaimsSet.Builder claimsBuilder = JwtClaimsSet.builder()
                 .issuer(issuer)
                 .issuedAt(now)
                 .expiresAt(now.plus(ttlSeconds, ChronoUnit.SECONDS))
                 .subject(account.getId())
                 .claim("name", account.getName())
-                .claim("phone", account.getPhone())
                 .claim("role", account.getRole())
                 .claim("permissions", account.getPermissions())
-                .claim("realNameVerified", account.isRealNameVerified())
-                .build();
+                .claim("realNameVerified", account.isRealNameVerified());
+        if (account.getPhone() != null && !account.getPhone().isBlank()) {
+            claimsBuilder.claim("phone", account.getPhone());
+        }
+        JwtClaimsSet claims = claimsBuilder.build();
         JwsHeader header = JwsHeader.with(MacAlgorithm.HS256).build();
         return encoder.encode(JwtEncoderParameters.from(header, claims)).getTokenValue();
     }

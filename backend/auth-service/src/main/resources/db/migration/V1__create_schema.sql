@@ -7,33 +7,42 @@ create table if not exists user_account (
     id         varchar(64)  primary key,
     username   varchar(64)  not null unique,
     password   varchar(128) not null,
+    phone      varchar(16),
     name       varchar(64)  not null,
     role       varchar(32)  not null check (role in (
                    'ADMIN','OUTPATIENT_DOCTOR','CHECK_DOCTOR','LAB_DOCTOR',
                    'DISPOSAL_DOCTOR','PHARMACY_STAFF','CASHIER','PATIENT')),
+    permissions text not null default '',
+    real_name_verified boolean not null default false,
+    employee_no varchar(64),
     active     boolean      not null default true,
     created_at timestamptz  not null default now()
 );
+create index if not exists idx_user_phone on user_account(phone) where phone is not null;
+create index if not exists idx_user_employee_no on user_account(employee_no) where employee_no is not null;
 
 -- 认证审计
-create table if not exists auth_audit (
-    id         bigserial   primary key,
-    user_id    varchar(64),
-    username   varchar(64),
-    event_type varchar(32) not null,
-    ip         varchar(48),
-    occurred_at timestamptz not null default now()
+create table if not exists auth_audit_log (
+    id             uuid        primary key,
+    event_type     varchar(32) not null,
+    username       varchar(64),
+    user_id        varchar(64),
+    success        boolean     not null default true,
+    failure_reason varchar(128),
+    client_ip      varchar(64),
+    user_agent     varchar(512),
+    occurred_at    timestamptz not null default now()
 );
-create index if not exists idx_auth_audit_user on auth_audit(user_id, occurred_at desc);
+create index if not exists idx_auth_audit_user on auth_audit_log(user_id, occurred_at desc);
 
 -- 短信验证码
 create table if not exists verification_code (
-    id         bigserial   primary key,
+    id         uuid        primary key,
     phone      varchar(16) not null,
-    code       varchar(8)  not null,
+    code_hash  varchar(128) not null,
     purpose    varchar(32) not null check (purpose in ('REGISTER','LOGIN','RESET_PASSWORD')),
     expires_at timestamptz not null,
-    used_at    timestamptz,
+    consumed_at timestamptz,
     created_at timestamptz not null default now()
 );
 create index if not exists idx_vcode_phone on verification_code(phone, purpose, created_at desc);

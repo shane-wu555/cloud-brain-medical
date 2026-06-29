@@ -8,6 +8,7 @@ import com.cloudbrain.auth.repository.VerificationCodeRepository;
 import com.cloudbrain.auth.sms.SmsSender;
 import java.security.SecureRandom;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -160,16 +161,21 @@ public class AuthService {
     }
 
     private Map<String, Object> issueLogin(UserAccount account) {
-        return Map.of(
-                "token", tokenService.issue(account),
-                "user", Map.of(
-                        "id", account.getId(),
-                        "username", account.getUsername(),
-                        "name", account.getName(),
-                        "phone", account.getPhone(),
-                        "role", account.getRole(),
-                        "realNameVerified", account.isRealNameVerified(),
-                        "permissions", account.getPermissions()));
+        Map<String, Object> user = new HashMap<>();
+        user.put("id", account.getId());
+        user.put("username", account.getUsername());
+        user.put("name", account.getName());
+        user.put("role", account.getRole());
+        user.put("realNameVerified", account.isRealNameVerified());
+        user.put("permissions", account.getPermissions());
+        if (account.getPhone() != null && !account.getPhone().isBlank()) {
+            user.put("phone", account.getPhone());
+        }
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("token", tokenService.issue(account));
+        result.put("user", user);
+        return result;
     }
 
     public record ClientInfo(String ip, String userAgent) {

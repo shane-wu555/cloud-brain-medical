@@ -29,8 +29,9 @@ public class UserAccountRepository {
 
     public Optional<UserAccount> findByEmployeeNo(String employeeNo) {
         List<UserAccount> result = jdbcTemplate.query(
-                "select * from user_account where employee_no = ?",
+                "select * from user_account where employee_no = ? or username = ?",
                 rowMapper,
+                employeeNo,
                 employeeNo);
         return result.stream().findFirst();
     }
@@ -97,9 +98,10 @@ public class UserAccountRepository {
                     rs.getString("phone"),
                     rs.getString("name"),
                     rs.getString("role"),
-                    Arrays.stream(rs.getString("permissions").split(",")).filter(item -> !item.isBlank()).toList(),
+                    Arrays.stream(Optional.ofNullable(rs.getString("permissions")).orElse("").split(","))
+                            .filter(item -> !item.isBlank()).toList(),
                     rs.getBoolean("real_name_verified"),
-                    rs.getString("employee_no"));
+                    Optional.ofNullable(rs.getString("employee_no")).orElse(rs.getString("username")));
         }
     }
 }
