@@ -29,7 +29,7 @@ public class BaseCatalogController {
     }
     @GetMapping("/medical-items") public List<MedicalItem> medicalItems(@RequestParam(name="category", required=false) String category) {
         StringBuilder sql = new StringBuilder("""
-                select code,name,category,price from medical_item_catalog
+                select code,name,category,price from medical_item
                 where active
                 """);
         List<Object> args = new ArrayList<>();

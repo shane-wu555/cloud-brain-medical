@@ -152,7 +152,7 @@
                   <div v-for="o in currentOrders" :key="o.id" class="med-doc__check-item"
                        :class="o.status === 'COMPLETED' ? 'med-doc__check-item--done' : 'med-doc__check-item--pending'">
                     <span class="check-tag">{{ { CHECK:'检查', LAB:'检验', DISPOSAL:'处置' }[o.orderType] ?? o.orderType }}</span>
-                    <span>{{ o.projectName }}</span>
+                    <span>{{ o.itemName }}</span>
                     <span v-if="o.status === 'COMPLETED'" class="check-done-mark">✓</span>
                   </div>
                   <div v-if="!formalReports.length && !currentOrders.length" class="med-doc__check-placeholder">暂无检查/检验记录，可在「医嘱开立」页开单</div>
@@ -712,7 +712,7 @@ async function loadHistory() {
 
 async function submitOrders() {
   if (!current.value) return;
-  const existingCodes = new Set(currentOrders.value.map(o => o.projectCode));
+  const existingCodes = new Set(currentOrders.value.map(o => o.itemCode));
   const duplicates = selectedItems.value.filter(i => existingCodes.has(i.code));
   if (duplicates.length) {
     ElMessage.warning(`以下项目本次已开单，请勿重复：${duplicates.map(d => d.name).join('、')}`);
@@ -723,8 +723,8 @@ async function submitOrders() {
     patientId: current.value!.patientId,
     patientName: current.value!.patientName,
     orderType: item.category,
-    projectCode: item.code,
-    projectName: item.name,
+    itemCode: item.code,
+    itemName: item.name,
     purpose: recordForm.diagnosis || recordForm.chiefComplaint,
     bodyPart: item.category === 'CHECK' ? '头部' : '',
     amount: item.price,

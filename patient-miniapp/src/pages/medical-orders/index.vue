@@ -3,14 +3,14 @@
   <view class="page">
     <view v-for="order in visibleOrders" :key="order.id" class="card row">
       <view class="row-between">
-        <view class="title-sm">{{ orderTypeLabel(order.orderType) }}申请：{{ order.projectName }}</view>
+        <view class="title-sm">{{ orderTypeLabel(order.orderType) }}申请：{{ order.itemName }}</view>
         <view :class="['status-tag', statusClass(order.status, order.paymentStatus)]">
           {{ statusLabel(order.status, order.paymentStatus) }}
         </view>
       </view>
-      <view><text class="label">项目：</text>{{ order.projectName }}</view>
+      <view><text class="label">项目：</text>{{ order.itemName }}</view>
       <view><text class="label">执行科室：</text>{{ executionDepartment(order) }}</view>
-      <view v-if="order.executionLocation"><text class="label">执行地点：</text>{{ order.executionLocation }}</view>
+      <view v-if="order.roomLocation"><text class="label">执行地点：</text>{{ order.roomLocation }}</view>
       <view v-if="order.queueNumber != null && ['WAITING','IN_PROGRESS'].includes(order.status)">
         <text class="label">排队号：</text><text class="queue-num">第 {{ order.queueNumber }} 号</text>
       </view>
@@ -59,13 +59,13 @@ interface Report {
 interface MedicalOrder {
   id: string;
   orderType: 'CHECK' | 'LAB' | 'DISPOSAL';
-  projectName: string;
+  itemName: string;
   purpose: string;
   bodyPart: string;
   paymentStatus: 'UNPAID' | 'PAID' | 'FAILED';
   status: 'PENDING_PAYMENT' | 'WAITING_TRIAGE' | 'WAITING' | 'IN_PROGRESS' | 'COMPLETED' | 'MISSED';
-  executorName: string;
-  executionLocation: string;
+  roomName: string;
+  roomLocation: string;
   queueNumber?: number;
   createdAt: string;
 }
@@ -108,7 +108,7 @@ function orderTypeLabel(type: MedicalOrder['orderType']) {
 }
 
 function reportProjectName(report: Report) {
-  return orderById.value.get(report.medicalOrderId)?.projectName || `${orderTypeLabel(report.reportType)}项目`;
+  return orderById.value.get(report.medicalOrderId)?.itemName || `${orderTypeLabel(report.reportType)}项目`;
 }
 
 function reportProjectTitle(report: Report) {
@@ -124,7 +124,7 @@ function reportSortTime(report: Report) {
 }
 
 function executionDepartment(order: MedicalOrder) {
-  return order.executorName || fallbackDepartment(order.orderType);
+  return order.roomName || fallbackDepartment(order.orderType);
 }
 
 function statusLabel(status: MedicalOrder['status'], paymentStatus: MedicalOrder['paymentStatus']) {

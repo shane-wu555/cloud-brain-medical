@@ -180,14 +180,14 @@ interface PaymentOrder {
 interface MedicalOrder {
   id: string;
   orderType: 'CHECK' | 'LAB' | 'DISPOSAL';
-  projectName: string;
+  itemName: string;
   amount: number;
   paymentStatus: string;
   status: string;
   urgency: string;
   purpose?: string;
   bodyPart?: string;
-  executionLocation?: string;
+  roomLocation?: string;
   createdAt?: string;
 }
 
@@ -290,7 +290,7 @@ function paymentRecordTitle(item: PaymentOrder) {
   }
   if (item.businessType === 'MEDICAL_ORDER') {
     const order = recordMedicalOrderMap.value.get(item.businessId);
-    return order?.projectName || businessTypeLabel(item.businessType);
+    return order?.itemName || businessTypeLabel(item.businessType);
   }
   if (item.businessType === 'PRESCRIPTION') {
     const prescription = recordPrescriptionMap.value.get(item.businessId);
@@ -309,7 +309,7 @@ function paymentRecordDescription(item: PaymentOrder) {
   if (item.businessType === 'MEDICAL_ORDER') {
     const order = recordMedicalOrderMap.value.get(item.businessId);
     if (order) {
-      const details = [order.bodyPart, order.purpose, order.executionLocation].filter(Boolean).join(' · ');
+      const details = [order.bodyPart, order.purpose, order.roomLocation].filter(Boolean).join(' · ');
       return `${orderTypeLabel(order.orderType)}${details ? ` · ${details}` : ''}`;
     }
   }
@@ -522,7 +522,7 @@ async function load() {
       businessType: 'MEDICAL_ORDER' as const,
       businessId: item.id,
       feeType: item.orderType,
-      title: item.projectName,
+      title: item.itemName,
       description: `${orderTypeLabel(item.orderType)} · ${urgencyLabel(item.urgency)}`,
       note: `当前状态：${medicalOrderStatusLabel(item.status, item.paymentStatus)}`,
       amount: item.amount,

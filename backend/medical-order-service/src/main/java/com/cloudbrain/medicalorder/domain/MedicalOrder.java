@@ -4,9 +4,14 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 public record MedicalOrder(
-        String id, String appointmentId, String patientId, String patientName, String orderingDoctorId,
-        String orderType, String projectCode, String projectName, String purpose, String bodyPart,
-        BigDecimal amount, String paymentStatus, String status, String executorId,
-        String executorName,String executionLocation,String equipmentId,Integer queueNumber,String urgency,
-        String triageCreatedByType,String triageReasons,int missedCount,
-        String resultData, String resultSummary, LocalDateTime createdAt, LocalDateTime startedAt, LocalDateTime completedAt) {}
+        String id, String appointmentId, String patientId, String patientName,
+        String orderingDoctorId,
+        String orderType, String itemCode, String itemName, String purpose, String bodyPart,
+        BigDecimal amount, String paymentStatus, String status,
+        String roomId, String roomName, String roomLocation,
+        String executingStaffId,
+        Integer queueNumber, String urgency,
+        String triageSource, String triageReasons, int missedCount,
+        String resultSummary, String resultCreatedByType, String resultAiRecordId,
+        String resultConfirmedBy, LocalDateTime resultConfirmedAt,
+        LocalDateTime createdAt, LocalDateTime startedAt, LocalDateTime completedAt) {}

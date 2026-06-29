@@ -548,7 +548,7 @@ const pendingItems = computed<PendingFeeItem[]>(() => {
       patientId: item.patientId,
       patientName: item.patientName,
       feeType: item.orderType as FeeType,
-      title: item.projectName,
+      title: item.itemName,
       description: `${feeTypeLabel(item.orderType as FeeType)} · ${urgencyLabel(item.urgency)}${item.bodyPart ? ` · ${item.bodyPart}` : ''}`,
       amount: Number(item.amount ?? 0),
       sortTime: item.id
@@ -1069,8 +1069,8 @@ function prescriptionDescription(item: Prescription) {
 
 function medicalOrderExecutor(businessId: string) {
   const order = medicalOrderMap.value.get(businessId);
-  if (!order?.executorName) return '';
-  return order.executionLocation ? `${order.executorName} · ${order.executionLocation}` : order.executorName;
+  if (!order?.roomName) return '';
+  return order.roomLocation ? `${order.roomName} · ${order.roomLocation}` : order.roomName;
 }
 
 function paymentRecordTitle(item: PaymentOrder) {
@@ -1079,7 +1079,7 @@ function paymentRecordTitle(item: PaymentOrder) {
     return appointment ? `${appointment.departmentName} · ${appointment.doctorName}` : '挂号费';
   }
   if (item.businessType === 'MEDICAL_ORDER') {
-    return medicalOrderMap.value.get(item.businessId)?.projectName ?? '医技费用';
+    return medicalOrderMap.value.get(item.businessId)?.itemName ?? '医技费用';
   }
   return prescriptionMap.value.get(item.businessId)?.prescriptionNo ?? '处方药费';
 }

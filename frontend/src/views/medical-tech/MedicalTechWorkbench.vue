@@ -49,7 +49,7 @@
               <span class="qcard__name">{{ item.patientName }}</span>
               <el-tag v-if="item.urgency === 'EMERGENCY'" type="danger" size="small" effect="light">急诊</el-tag>
             </div>
-            <div class="qcard__proj">{{ item.projectName }}</div>
+            <div class="qcard__proj">{{ item.itemName }}</div>
             <div class="qcard__sub">
               <el-tag :type="statusTagType(item.status)" size="small" effect="plain">{{ statusLabel(item.status) }}</el-tag>
               <span class="qcard__type">{{ formatOrderType(item.orderType) }}</span>
@@ -82,7 +82,7 @@
                 <el-tag :type="statusTagType(current.status)" size="small" effect="plain">{{ statusLabel(current.status) }}</el-tag>
               </div>
               <div class="pat-row2">
-                <span><em>检查项目</em>{{ current.projectName }}</span>
+                <span><em>检查项目</em>{{ current.itemName }}</span>
                 <span><em>检查部位</em>{{ current.bodyPart || '—' }}</span>
                 <span><em>临床目的</em>{{ current.purpose || '—' }}</span>
               </div>
@@ -223,7 +223,7 @@
                   <em>登记号</em><span>{{ current.id.slice(0, 10).toUpperCase() }}</span>
                 </div>
                 <div class="rinfo-cell">
-                  <em>检查项目</em><span>{{ current.projectName }}</span>
+                  <em>检查项目</em><span>{{ current.itemName }}</span>
                 </div>
                 <div class="rinfo-cell">
                   <em>检查部位</em><span>{{ current.bodyPart || '—' }}</span>
@@ -336,7 +336,7 @@
 
           <div class="context-block">
             <strong>当前医嘱</strong>
-            <p>{{ current ? `${current.patientName} · ${current.projectName}` : '请先选择医嘱' }}</p>
+            <p>{{ current ? `${current.patientName} · ${current.itemName}` : '请先选择医嘱' }}</p>
             <p class="muted">{{ current?.purpose || '等待 AI 辅助分析' }}</p>
           </div>
 
@@ -437,7 +437,7 @@ const filteredOrders = computed(() => {
   if (queueTab.value === 'waiting') list = list.filter(o => o.status === 'WAITING');
   else if (queueTab.value === 'done') list = list.filter(o => o.status === 'COMPLETED');
   const kw = queueKeyword.value.trim().toLowerCase();
-  return kw ? list.filter(o => `${o.patientName}${o.projectName}`.toLowerCase().includes(kw)) : list;
+  return kw ? list.filter(o => `${o.patientName}${o.itemName}`.toLowerCase().includes(kw)) : list;
 });
 
 function statusLabel(s: string) {
@@ -555,7 +555,7 @@ async function generateAiDraft() {
   const draft = await createAiReportDraft({
     orderId: current.value.id,
     reportType: current.value.orderType,
-    projectName: current.value.projectName,
+    itemName: current.value.itemName,
     findings: report.findings,
     conclusion: report.conclusion,
     context: current.value.purpose || current.value.bodyPart || ''

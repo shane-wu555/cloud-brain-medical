@@ -72,7 +72,7 @@ public class MedicalOrderController {
     public MedicalOrder complete(@PathVariable("id") String id, @RequestBody CompleteRequest request,
             JwtAuthenticationToken authentication) {
         return service.complete(id, authentication.getToken().getSubject(), authentication.getToken().getClaimAsString("role"),
-                request.resultData(), request.summary(), request.createdByType(), request.aiRecordId());
+                request.summary(), request.createdByType(), request.aiRecordId());
     }
 
     @PostMapping("/{id}/miss")
@@ -83,9 +83,9 @@ public class MedicalOrderController {
 
     public record CreateRequest(
             String appointmentId, String patientId, String patientName, String orderType,
-            String projectCode, String projectName, String purpose, String bodyPart, BigDecimal amount, String urgency) {
+            String itemCode, String itemName, String purpose, String bodyPart, BigDecimal amount, String urgency) {
     }
 
-    public record CompleteRequest(String resultData, String summary, String createdByType, String aiRecordId) {
+    public record CompleteRequest(String summary, String createdByType, String aiRecordId) {
     }
 }

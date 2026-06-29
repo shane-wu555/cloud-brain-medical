@@ -31,42 +31,46 @@ public class MedicalOrderService {
         String type = requireType(request.orderType());
         require(request.appointmentId(), "appointmentId");
         require(request.patientId(), "patientId");
-        require(request.projectCode(), "projectCode");
-        require(request.projectName(), "projectName");
+        require(request.itemCode(), "itemCode");
+        require(request.itemName(), "itemName");
         String urgency = request.urgency() == null ? "ROUTINE" : request.urgency().toUpperCase();
         if (!Set.of("ROUTINE", "EMERGENCY").contains(urgency)) {
             throw new IllegalArgumentException("urgency 必须为 ROUTINE 或 EMERGENCY");
         }
-        if (repository.existsActiveOrder(request.appointmentId(), request.projectCode())) {
-            throw new IllegalStateException("该检查/检验项目已在本次就诊中开单，不可重复申请：" + request.projectName());
+        if (repository.existsActiveOrder(request.appointmentId(), request.itemCode())) {
+            throw new IllegalStateException("该检查/检验项目已在本次就诊中开单，不可重复申请：" + request.itemName());
         }
         return repository.create(new MedicalOrder(
-                "order-" + UUID.randomUUID(), request.appointmentId(), request.patientId(), request.patientName(), doctorId,
-                type, request.projectCode(), request.projectName(), request.purpose(), request.bodyPart(),
-                request.amount() == null ? BigDecimal.ZERO : request.amount(), "UNPAID", "PENDING_PAYMENT",
+                "order-" + UUID.randomUUID(),
+                request.appointmentId(), request.patientId(), request.patientName(), doctorId,
+                type, request.itemCode(), request.itemName(), request.purpose(), request.bodyPart(),
+                request.amount() == null ? BigDecimal.ZERO : request.amount(),
+                "UNPAID", "PENDING_PAYMENT",
                 null, null, null, null, null, urgency, null, null, 0,
-                null, null, java.time.LocalDateTime.now(), null, null));
+                null, null, null, null, null,
+                java.time.LocalDateTime.now(), null, null));
     }
 
     public List<MedicalOrder> list(String type, String status, String patientId, String appointmentId) {
         return repository.find(type == null ? null : requireType(type), status, patientId, appointmentId);
     }
 
-    public List<MedicalOrder> listAuthorized(String type, String status, String patientId, String appointmentId, String actorId, String role) {
+    public List<MedicalOrder> listAuthorized(String type, String status, String patientId,
+            String appointmentId, String actorId, String role) {
         String forcedType = switch (role) {
-            case "CHECK_DOCTOR" -> "CHECK";
-            case "LAB_DOCTOR" -> "LAB";
-            case "DISPOSAL_DOCTOR" -> "DISPOSAL";
+            case "CHECK_DOCTOR"    -> "CHECK";
+            case "LAB_DOCTOR"     -> "LAB";
+            case "DISPOSAL_DOCTOR"-> "DISPOSAL";
             default -> type;
         };
         List<MedicalOrder> orders = list(forcedType, status, patientId, appointmentId);
         if (TECH_ROLES.contains(role)) {
-            return repository.technician(actorId)
-                    .map(t -> orders.stream().filter(o -> t.workspaceId().equals(o.executorId())).toList())
+            return repository.staffRoom(actorId)
+                    .map(sr -> orders.stream().filter(o -> sr.roomId().equals(o.roomId())).toList())
                     .orElse(List.of());
         }
         if ("OUTPATIENT_DOCTOR".equals(role)) {
-            return orders.stream().filter(order -> actorId.equals(order.orderingDoctorId())).toList();
+            return orders.stream().filter(o -> actorId.equals(o.orderingDoctorId())).toList();
         }
         return orders;
     }
@@ -81,11 +85,10 @@ public class MedicalOrderService {
             throw new IllegalStateException("医技申请不存在或当前状态不可缴费");
         }
         MedicalOrder paid = get(id);
-        List<MedicalOrderRepository.ExecutorCandidate> candidates =
-                repository.executorCandidates(paid.orderType(), paid.projectCode());
+        List<MedicalOrderRepository.RoomCandidate> candidates =
+                repository.roomCandidates(paid.orderType(), paid.itemCode());
         AiTriageClient.TriageResult triage = triageClient.triage(paid, candidates);
-        if (!repository.assign(id, triage.executorId(), triage.executorName(), triage.location(),
-                triage.equipmentId(), triage.source(), triage.reasons())) {
+        if (!repository.assign(id, triage.roomId(), triage.source(), triage.reasons())) {
             throw new IllegalStateException("医技分诊状态已变化");
         }
         return get(id);
@@ -95,43 +98,43 @@ public class MedicalOrderService {
     public MedicalOrder miss(String id, String actorId, String role) {
         MedicalOrder order = get(id);
         validateExecutor(order.orderType(), role);
-        MedicalOrderRepository.MedicalTechnician technician = technician(actorId);
-        if (!technician.workspaceId().equals(order.executorId())) {
+        MedicalOrderRepository.StaffRoom staffRoom = staffRoom(actorId);
+        if (!staffRoom.roomId().equals(order.roomId())) {
             throw new AccessDeniedException("只能操作自己执行房间的队列");
         }
-        repository.moveToTail(id, technician.workspaceId());
+        repository.moveToTail(id, staffRoom.roomId());
         return get(id);
     }
 
     @Transactional
-    public MedicalOrder start(String id, String executorId, String role) {
+    public MedicalOrder start(String id, String actorId, String role) {
         MedicalOrder order = get(id);
         validateExecutor(order.orderType(), role);
-        MedicalOrderRepository.MedicalTechnician technician = technician(executorId);
-        if (!technician.workspaceId().equals(order.executorId())) {
+        MedicalOrderRepository.StaffRoom staffRoom = staffRoom(actorId);
+        if (!staffRoom.roomId().equals(order.roomId())) {
             throw new AccessDeniedException("医技单未分配给当前执行房间");
         }
-        if (!repository.start(id, technician.workspaceId(), technician.id(), technician.name())) {
-            throw new IllegalStateException("只有已缴费待执行医技单可以开始");
+        if (!repository.start(id, staffRoom.roomId(), staffRoom.staffId())) {
+            throw new IllegalStateException("只有已分诊待执行的医技单可以开始");
         }
         return get(id);
     }
 
     @Transactional
-    public MedicalOrder complete(String id, String executorId, String role, String resultData, String summary,
+    public MedicalOrder complete(String id, String actorId, String role, String summary,
             String createdByType, String aiRecordId) {
         MedicalOrder order = get(id);
         validateExecutor(order.orderType(), role);
-        String json = resultData == null || resultData.isBlank() ? "{}" : resultData;
-        String source = createdByType == null || createdByType.isBlank() ? "HUMAN" : createdByType.toUpperCase();
+        String source = createdByType == null || createdByType.isBlank() ? "HUMAN"
+                : createdByType.toUpperCase();
         if (!source.equals("HUMAN") && !source.equals("AI")) {
             throw new IllegalArgumentException("createdByType 必须为 HUMAN 或 AI");
         }
         if (source.equals("AI") && (aiRecordId == null || aiRecordId.isBlank())) {
             throw new IllegalArgumentException("AI 生成结果必须关联 aiRecordId");
         }
-        MedicalOrderRepository.MedicalTechnician technician = technician(executorId);
-        if (!repository.complete(id, technician.workspaceId(), technician.id(), json, summary, source, aiRecordId)) {
+        MedicalOrderRepository.StaffRoom staffRoom = staffRoom(actorId);
+        if (!repository.complete(id, staffRoom.roomId(), staffRoom.staffId(), summary, source, aiRecordId)) {
             throw new IllegalStateException("医技单未开始、已完成或执行房间不匹配");
         }
         return get(id);
@@ -141,8 +144,8 @@ public class MedicalOrderService {
         return repository.findById(id).orElseThrow(() -> new IllegalArgumentException("医技申请不存在"));
     }
 
-    private MedicalOrderRepository.MedicalTechnician technician(String actorId) {
-        return repository.technician(actorId).orElseThrow(() ->
+    private MedicalOrderRepository.StaffRoom staffRoom(String actorId) {
+        return repository.staffRoom(actorId).orElseThrow(() ->
                 new AccessDeniedException("当前医技人员未绑定执行房间"));
     }
 
