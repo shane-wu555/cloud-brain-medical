@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
@@ -8,7 +8,11 @@ class ClinicalAssistanceRequest(BaseModel):
     patient_id: str = Field(alias="patientId")
     chief_complaint: str = Field(default="", alias="chiefComplaint")
     present_illness: str = Field(default="", alias="presentIllness")
+    past_history: str = Field(default="", alias="pastHistory")
+    allergy_history: str = Field(default="", alias="allergyHistory")
     prompt: str = ""
+    available_exam_items: list[dict] = Field(default_factory=list, alias="availableExamItems")
+    available_drugs: list[dict] = Field(default_factory=list, alias="availableDrugs")
 
     model_config = {"populate_by_name": True}
 
@@ -18,6 +22,7 @@ class ClinicalSuggestion(BaseModel):
     label: str
     content: str
     source: str = "AI"
+    metadata: Optional[dict[str, Any]] = None
 
 
 class ClinicalKnowledgeSource(BaseModel):

@@ -5,6 +5,7 @@ export interface MedicalItem{code:string;name:string;category:'CHECK'|'LAB'|'DIS
 export async function getMedicalItems(){return(await http.get<MedicalItem[]>('/catalog/medical-items')).data}
 export async function getMedicalOrders(params:Record<string,string|undefined>={}){return(await http.get<MedicalOrder[]>('/medical-orders',{params})).data}
 export async function createMedicalOrder(payload:Record<string,unknown>){return(await http.post<MedicalOrder>('/medical-orders',payload)).data}
+export async function payMedicalOrder(id:string){return(await http.post<MedicalOrder>(`/medical-orders/${id}/pay`)).data}
 export async function startMedicalOrder(id:string){return(await http.post<MedicalOrder>(`/medical-orders/${id}/start`)).data}
 export async function missMedicalOrder(id:string){return(await http.post<MedicalOrder>(`/medical-orders/${id}/miss`)).data}
 export async function completeMedicalOrder(id:string,payload:Record<string,unknown>){return(await http.post<MedicalOrder>(`/medical-orders/${id}/complete`,payload)).data}

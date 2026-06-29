@@ -124,21 +124,21 @@
                 <span class="med-doc__staticval med-doc__staticval--flex">{{ current.businessNo }}</span>
               </div>
 
-              <div class="med-doc__row">
+              <div class="med-doc__row med-doc__row--top">
                 <span class="med-doc__lbl med-doc__lbl--w">主&emsp;诉</span>
-                <input class="med-doc__input" v-model="recordForm.chiefComplaint" />
+                <textarea class="med-doc__area" v-model="recordForm.chiefComplaint" rows="2" :readonly="isRecordLocked" />
               </div>
 
               <div class="med-doc__row">
                 <span class="med-doc__lbl med-doc__lbl--w">过去史</span>
-                <input class="med-doc__input" v-model="recordForm.pastHistory" style="flex:2" />
+                <input class="med-doc__input" v-model="recordForm.pastHistory" style="flex:2" :readonly="isRecordLocked" />
                 <span class="med-doc__lbl" style="margin-left:14px;white-space:nowrap">过敏史</span>
-                <input class="med-doc__input" v-model="recordForm.allergyHistory" style="flex:1" />
+                <input class="med-doc__input" v-model="recordForm.allergyHistory" style="flex:1" :readonly="isRecordLocked" />
               </div>
 
               <div class="med-doc__row med-doc__row--top">
                 <span class="med-doc__lbl med-doc__lbl--w">现病史</span>
-                <textarea class="med-doc__area" v-model="recordForm.presentIllness" rows="2" />
+                <textarea class="med-doc__area" v-model="recordForm.presentIllness" rows="2" :readonly="isRecordLocked" />
               </div>
 
               <!-- 辅助检查：已确认报告 + 已开医嘱，始终显示 -->
@@ -159,22 +159,22 @@
                 </div>
               </div>
 
-              <div class="med-doc__row">
+              <div class="med-doc__row med-doc__row--top">
                 <span class="med-doc__lbl med-doc__lbl--w">诊&emsp;断</span>
-                <input class="med-doc__input med-doc__input--bold" v-model="recordForm.diagnosis" />
+                <textarea class="med-doc__area med-doc__area--bold" v-model="recordForm.diagnosis" rows="2" :readonly="isRecordLocked" />
               </div>
 
               <div class="med-doc__row med-doc__row--top">
                 <span class="med-doc__lbl med-doc__lbl--w">建&emsp;议</span>
-                <textarea class="med-doc__area" v-model="recordForm.treatmentPlan" rows="2" />
+                <textarea class="med-doc__area" v-model="recordForm.treatmentPlan" rows="2" :readonly="isRecordLocked" />
               </div>
 
               <div class="med-doc__rule"></div>
               <div class="med-doc__footer">
                 <el-button size="small" @click="printRecord">病历打印</el-button>
                 <div style="display:flex;gap:8px">
-                  <el-button type="primary" size="small" @click="saveRecord">保存病历</el-button>
-                  <el-button type="success" size="small" @click="finishVisit">完成接诊</el-button>
+                  <el-button v-if="!isRecordLocked" type="primary" size="small" @click="saveRecord">保存病历</el-button>
+                  <el-button v-if="current.status !== 'FINISHED'" type="success" size="small" @click="finishVisit">完成接诊</el-button>
                 </div>
               </div>
             </div>
@@ -185,8 +185,8 @@
             <!-- AI 建议 -->
             <div v-if="rxSuggestions.length" class="rx-ai-hint">
               <div class="rx-ai-hint__hdr">
-                <span>AI 处方建议</span>
-                <el-button size="small" type="primary" @click="createRxFromSuggestion">采纳为处方</el-button>
+                <span>用药建议</span>
+                <el-button size="small" type="primary" @click="createRxFromSuggestion">采纳为待缴费处方</el-button>
               </div>
               <div v-for="s in rxSuggestions" :key="s.drugName" class="rx-ai-hint__item">
                 <strong>{{ s.drugName }}</strong>
@@ -261,10 +261,15 @@
                 批量开单 {{ selectedItems.length }}
               </el-button>
             </div>
-            <el-table :data="filteredItems" @selection-change="selectedItems = $event">
+            <el-table :data="filteredItems" @selection-change="selectedItems = $event" row-key="code">
               <el-table-column type="selection" width="50" />
-              <el-table-column prop="code" label="编码" width="130" />
-              <el-table-column prop="name" label="项目" />
+              <el-table-column label="" width="54">
+                <template #default="{ row }">
+                  <el-tag v-if="isAiRecommended(row)" size="small" type="success" effect="plain">推荐</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="code" label="编码" width="160" />
+              <el-table-column prop="name" label="项目" min-width="120" />
               <el-table-column label="分类" width="80">
                 <template #default="{ row }">{{ ({ CHECK:'检查', LAB:'检验', DISPOSAL:'处置' } as Record<string,string>)[row.category] ?? row.category }}</template>
               </el-table-column>
@@ -347,41 +352,25 @@
               </el-tag>
             </div>
           </template>
-          <div class="context-block">
-            <strong>当前上下文</strong>
-            <p>{{ current ? `${current.patientName} | ${current.departmentName}` : '请先选择患者' }}</p>
-            <p class="muted">{{ current?.triageSummary || '等待 AI 问诊摘要' }}</p>
-          </div>
-
-          <div class="ai-messages">
-            <div v-for="message in aiMessages" :key="message.id" class="ai-message">
-              <span>{{ message.label }}</span>
+          <div class="ai-messages" v-loading="aiLoading" element-loading-text="AI 分析中…">
+            <div v-for="message in aiMessages" :key="message.id" :class="['ai-message', `ai-message--${message.kind}`]">
+              <span class="ai-msg-label">{{ message.label }}</span>
               <p>{{ message.content }}</p>
-              <el-button v-if="message.kind === 'diagnosis'" size="small" @click="applyDiagnosis(message)">填入诊断</el-button>
+              <div class="ai-msg-actions">
+                <el-button v-if="message.kind === 'diagnosis'" size="small" type="primary" @click="applyDiagnosis(message)">填入诊断</el-button>
+                <el-button v-if="message.kind === 'medication'" size="small" type="success" @click="applyMedication(message)">采纳为处方</el-button>
+                <el-button v-if="message.kind === 'exam'" size="small" @click="applyExamItems(message)">推荐检查置顶</el-button>
+                <el-button v-if="message.kind === 'advice'" size="small" @click="applyAdvice(message)">填入建议</el-button>
+              </div>
             </div>
-            <el-empty v-if="!aiMessages.length" description="生成建议后在此显示" :image-size="60" />
+            <el-empty v-if="!aiLoading && !aiMessages.length" description="生成建议后在此显示" :image-size="60" />
           </div>
 
           <el-input v-model="aiPrompt" type="textarea" :rows="3" placeholder="结合本次病历给出鉴别诊断、检查建议和风险提醒" />
-          <el-button type="primary" class="full ai-action" :disabled="!current" @click="generateAssistance">生成辅助建议</el-button>
+          <el-button type="primary" class="full ai-action" :disabled="!current" :loading="aiLoading" @click="generateAssistance">
+            {{ aiLoading ? 'AI 分析中…' : '生成辅助建议' }}
+          </el-button>
 
-          <el-divider />
-
-          <div class="rx-panel">
-            <div class="ai-header">
-              <strong>处方建议</strong>
-              <el-button size="small" :disabled="!current || !recordForm.diagnosis" @click="generatePrescription">生成</el-button>
-            </div>
-            <el-alert v-if="rxWarnings.length" type="warning" :closable="false" :title="rxWarnings.join('；')" />
-            <div v-for="item in rxSuggestions" :key="item.drugName" class="rx-item">
-              <strong>{{ item.drugName }}</strong>
-              <p>{{ item.dosage }} / {{ item.usage }} / {{ item.frequency }} / {{ item.days }} 天</p>
-              <p class="muted">{{ item.note }}</p>
-            </div>
-            <el-button type="success" class="full ai-action" :disabled="!rxSuggestions.length" @click="createRxFromSuggestion">
-              采纳为待缴费处方
-            </el-button>
-          </div>
         </el-card>
       </aside>
     </div>
@@ -395,7 +384,7 @@ import { ElMessage } from 'element-plus';
 import { useAuthStore } from '../../store/auth';
 import { callAppointment, getTodayQueue, skipAppointment, startAppointment, updateAppointmentStatus, type Appointment } from '../../api/appointment';
 import { getMedicalRecords, getPatientHistory, initDoctorRecord, writeDoctorNote, type MedicalRecord } from '../../api/medical-record';
-import { getClinicalAssistance, getPrescriptionSuggestions, type ClinicalSuggestion } from '../../api/ai';
+import { getClinicalAssistance, type ClinicalSuggestion } from '../../api/ai';
 import { createMedicalOrder, getMedicalItems, getMedicalOrders, getReports, type MedicalItem, type MedicalOrder, type MedicalReport } from '../../api/medical-order';
 import { createPrescription, getDrugs, getPrescriptions, type Drug, type Prescription } from '../../api/pharmacy';
 
@@ -445,6 +434,7 @@ const manualRxItems = ref<Array<{ drugId: string; drugName: string; dosage: stri
 
 const aiPrompt = ref('结合当前病历给出鉴别诊断方向和进一步检查建议');
 const aiMessages = ref<Array<ClinicalSuggestion & { id: string }>>([]);
+const aiLoading = ref(false);
 const aiModel = ref('');
 const aiFallback = ref(false);
 const diagnosisSource = ref<'HUMAN' | 'AI'>('HUMAN');
@@ -452,6 +442,7 @@ const diagnosisAiRecordId = ref<string>();
 const rxAiRecordId = ref<string>();
 const rxSuggestions = ref<Array<{ drugName: string; dosage: string; usage: string; frequency: string; days: number; note: string }>>([]);
 const rxWarnings = ref<string[]>([]);
+const aiRecommendedNames = ref<string[]>([]);
 
 const recordForm = reactive({
   chiefComplaint: '',
@@ -463,6 +454,7 @@ const recordForm = reactive({
 });
 
 const doctorDept = computed(() => appointments.value[0]?.departmentName ?? '');
+const isRecordLocked = computed(() => current.value?.status === 'FINISHED');
 
 const ACTIVE_STATUSES = ['WAITING', 'CALLED', 'IN_VISIT', 'REVISIT_WAITING'];
 const waitingCount = computed(() => appointments.value.filter(a => ACTIVE_STATUSES.includes(a.status)).length);
@@ -479,10 +471,30 @@ const filteredQueue = computed(() => {
   return kw ? list.filter(a => (a.patientName + a.businessNo).toLowerCase().includes(kw)) : list;
 });
 
-const filteredItems = computed(() => medicalItems.value.filter(item =>
-  (!itemCategory.value || item.category === itemCategory.value) &&
-  (!itemKeyword.value || `${item.code}${item.name}`.toLowerCase().includes(itemKeyword.value.toLowerCase()))
-));
+function isAiRecommended(item: MedicalItem) {
+  return aiRecommendedNames.value.some(name => {
+    const a = item.name.trim();
+    const b = name.trim();
+    if (a === b) return true;
+    if (a.toLowerCase() === b.toLowerCase()) return true;
+    // 包含匹配兜底（应对 LLM 轻微改写）
+    return a.includes(b) || b.includes(a);
+  });
+}
+
+const filteredItems = computed(() => {
+  const list = medicalItems.value.filter(item =>
+    (!itemCategory.value || item.category === itemCategory.value) &&
+    (!itemKeyword.value || `${item.code}${item.name}`.toLowerCase().includes(itemKeyword.value.toLowerCase()))
+  );
+  if (!aiRecommendedNames.value.length) return list;
+  return [...list].sort((a, b) => {
+    const aRec = isAiRecommended(a);
+    const bRec = isAiRecommended(b);
+    if (aRec === bRec) return 0;
+    return aRec ? -1 : 1;
+  });
+});
 
 const filteredDrugs = computed(() => {
   const kw = drugKeyword.value.trim().toLowerCase();
@@ -576,6 +588,7 @@ async function selectAppointment(row?: Appointment) {
   aiMessages.value = [];
   rxSuggestions.value = [];
   rxWarnings.value = [];
+  aiRecommendedNames.value = [];
   diagnosisSource.value = 'HUMAN';
   diagnosisAiRecordId.value = undefined;
   rxAiRecordId.value = undefined;
@@ -678,11 +691,18 @@ async function saveRecord() {
 
 async function finishVisit() {
   if (!current.value) return;
-  if (dirty.value || recordVersion.value === undefined) { ElMessage.warning('请先保存当前病历'); return; }
-  await updateAppointmentStatus(current.value.id, 'FINISHED');
-  ElMessage.success('接诊已结束');
-  current.value = undefined;
-  await loadQueue();
+  if (dirty.value || recordVersion.value === undefined) {
+    ElMessage.warning({ message: '请先保存当前病历再完成接诊', duration: 4000 });
+    return;
+  }
+  try {
+    await updateAppointmentStatus(current.value.id, 'FINISHED');
+    ElMessage.success('接诊已结束');
+    current.value = undefined;
+    await loadQueue();
+  } catch (e: any) {
+    ElMessage.error({ message: `完成接诊失败：${e?.message ?? '请检查网络或服务状态'}`, duration: 5000 });
+  }
 }
 
 async function loadHistory() {
@@ -719,64 +739,136 @@ async function submitOrders() {
 
 async function generateAssistance() {
   if (!current.value) return;
-  const result = await getClinicalAssistance({
-    appointmentId: current.value.id,
-    patientId: current.value.patientId,
-    chiefComplaint: recordForm.chiefComplaint,
-    presentIllness: recordForm.presentIllness,
-    prompt: aiPrompt.value
-  });
-  aiModel.value = result.model;
-  aiFallback.value = result.fallbackUsed;
-  aiMessages.value = result.suggestions.map((suggestion, index) => ({
-    id: index === 0 ? result.aiRecordId : `${result.aiRecordId}-${index}`,
-    ...suggestion
-  }));
+  aiLoading.value = true;
+  try {
+    // 确保目录已加载
+    if (!medicalItems.value.length) {
+      medicalItems.value = (await getMedicalItems()).filter(i => i.category !== 'DRUG');
+    }
+    if (!drugs.value.length) {
+      drugs.value = await getDrugs();
+    }
+    const result = await getClinicalAssistance({
+      appointmentId: current.value.id,
+      patientId: current.value.patientId,
+      chiefComplaint: recordForm.chiefComplaint,
+      presentIllness: recordForm.presentIllness,
+      pastHistory: recordForm.pastHistory,
+      allergyHistory: recordForm.allergyHistory,
+      prompt: aiPrompt.value,
+      availableExamItems: medicalItems.value.map(i => ({ code: i.code, name: i.name, category: i.category })),
+      availableDrugs: drugs.value.map(d => ({ drugName: d.drugName, specification: d.specification })),
+    });
+    aiModel.value = result.model;
+    aiFallback.value = result.fallbackUsed;
+    aiMessages.value = result.suggestions.map((suggestion, index) => ({
+      id: index === 0 ? result.aiRecordId : `${result.aiRecordId}-${index}`,
+      ...suggestion
+    }));
+
+    const examMsg = result.suggestions.find(s => s.kind === 'exam');
+    if (examMsg?.metadata?.projectNames?.length) {
+      aiRecommendedNames.value = examMsg.metadata.projectNames as string[];
+    }
+
+    const medMsg = result.suggestions.find(s => s.kind === 'medication');
+    if (medMsg?.metadata?.drugs?.length) {
+      rxSuggestions.value = medMsg.metadata.drugs as typeof rxSuggestions.value;
+      rxAiRecordId.value = result.aiRecordId;
+    }
+    if (result.suggestions.length) {
+      ElMessage.success(`已生成 ${result.suggestions.length} 条临床建议`);
+    } else {
+      ElMessage.warning('AI 未返回建议内容，请稍后重试');
+    }
+  } catch (e: any) {
+    const msg = (e as any)?.response?.data?.detail ?? (e as any)?.message ?? '请检查 AI 服务是否启动，或网络超时';
+    ElMessage.error({ message: `AI 生成失败：${msg}`, duration: 6000 });
+    console.error('[AI] generateAssistance error:', e);
+  } finally {
+    aiLoading.value = false;
+  }
 }
 
-function applyDiagnosis(message: { id: string; content: string }) {
-  recordForm.diagnosis = message.content;
+function applyDiagnosis(message: ClinicalSuggestion & { id: string }) {
+  const primary = message.metadata?.primaryDiagnosis as string | undefined;
+  recordForm.diagnosis = primary || message.content;
   diagnosisSource.value = 'AI';
   diagnosisAiRecordId.value = message.id;
-  ElMessage.warning('已填入 AI 草稿，请复核后保存');
+  ElMessage.success('诊断已填入，请复核确认');
 }
 
-async function generatePrescription() {
-  if (!current.value) return;
-  const result = await getPrescriptionSuggestions({
-    appointmentId: current.value.id,
-    patientId: current.value.patientId,
-    diagnosis: recordForm.diagnosis,
-    chiefComplaint: recordForm.chiefComplaint,
-    allergyHistory: recordForm.allergyHistory,
-    prompt: '仅从本院药品目录中给出处方建议草稿'
-  });
-  aiModel.value = result.model;
-  aiFallback.value = result.fallbackUsed;
-  rxAiRecordId.value = result.aiRecordId;
-  rxSuggestions.value = result.suggestions;
-  rxWarnings.value = result.warnings;
+async function applyMedication(message: ClinicalSuggestion & { id: string }) {
+  const drugsData = message.metadata?.drugs as Array<{ drugName: string; dosage: string; usage: string; frequency: string; days: number }> | undefined;
+  if (!drugsData?.length) {
+    ElMessage.warning('未包含结构化用药数据，请在处方页手动开药');
+    return;
+  }
+  if (!drugs.value.length) drugs.value = await getDrugs();
+  rxSuggestions.value = drugsData.map(d => ({ ...d, note: '' }));
+  rxAiRecordId.value = message.id;
+  rxWarnings.value = [];
+  mainTab.value = 'rx';
+  ElMessage.success('用药建议已加入处方页，确认后点击"采纳为待缴费处方"');
+}
+
+function applyExamItems(message: ClinicalSuggestion & { id: string }) {
+  const projectNames = message.metadata?.projectNames as string[] | undefined;
+  if (projectNames?.length) aiRecommendedNames.value = projectNames;
+  mainTab.value = 'orders';
+  ElMessage.success('AI 推荐检查已置顶，可直接勾选批量开单');
+}
+
+function applyAdvice(message: ClinicalSuggestion & { id: string }) {
+  recordForm.treatmentPlan = recordForm.treatmentPlan
+    ? `${recordForm.treatmentPlan}\n${message.content}`
+    : message.content;
+  mainTab.value = 'record';
+  ElMessage.success('临床建议已填入');
 }
 
 async function createRxFromSuggestion() {
   if (!current.value || !rxSuggestions.value.length) return;
-  const items = rxSuggestions.value.map(suggestion => {
-    const drug = drugs.value.find(item => item.drugName === suggestion.drugName) ?? drugs.value[0];
-    if (!drug) throw new Error('药品目录为空，无法生成处方');
-    return { drugId: drug.id, quantity: 1, dosage: suggestion.dosage, usage: suggestion.usage, frequency: suggestion.frequency, days: suggestion.days, note: suggestion.note };
-  });
-  await createPrescription({
-    appointmentId: current.value.id,
-    medicalRecordId: currentRecordId.value,
-    patientId: current.value.patientId,
-    patientName: current.value.patientName,
-    diagnosis: recordForm.diagnosis,
-    aiAssistanceId: rxAiRecordId.value,
-    aiAdoptionStatus: 'AI_ACCEPTED',
-    aiRevisionNote: '医生采纳 AI 处方建议后生成，仍需缴费与药房审核',
-    items
-  });
-  ElMessage.success('处方已生成，待患者缴费');
+  if (!drugs.value.length) drugs.value = await getDrugs();
+  if (!recordForm.diagnosis) {
+    ElMessage.warning({ message: '请先填写诊断再生成处方', duration: 4000 });
+    return;
+  }
+  try {
+    const unmatched: string[] = [];
+    const items = rxSuggestions.value.map(suggestion => {
+      const name = suggestion.drugName ?? '';
+      const drug = drugs.value.find(d => d.drugName === name)
+        ?? drugs.value.find(d => d.drugName.includes(name) || name.includes(d.drugName));
+      if (!drug) { unmatched.push(name); return null; }
+      return { drugId: drug.id, quantity: 1, dosage: suggestion.dosage, usage: suggestion.usage, frequency: suggestion.frequency, days: suggestion.days };
+    }).filter((i): i is NonNullable<typeof i> => i !== null);
+
+    if (unmatched.length) {
+      ElMessage.warning({ message: `以下药品在药库中未找到，已跳过：${unmatched.join('、')}`, duration: 5000 });
+    }
+    if (!items.length) {
+      ElMessage.error('没有可匹配的药品，请手动开处方');
+      return;
+    }
+    await createPrescription({
+      appointmentId: current.value.id,
+      medicalRecordId: currentRecordId.value,
+      patientId: current.value.patientId,
+      patientName: current.value.patientName,
+      diagnosis: recordForm.diagnosis,
+      aiAssistanceId: rxAiRecordId.value,
+      aiAdoptionStatus: 'AI_ACCEPTED',
+      aiRevisionNote: '医生采纳 AI 处方建议后生成，仍需缴费与药房审核',
+      items
+    });
+    rxSuggestions.value = [];
+    rxWarnings.value = [];
+    ElMessage.success('处方已生成，待患者缴费');
+    await loadPrescriptions();
+  } catch (e: any) {
+    ElMessage.error({ message: `处方生成失败：${e?.response?.data?.message ?? e?.message ?? '请检查服务状态'}`, duration: 5000 });
+  }
 }
 
 function viewReport(report: MedicalReport) {
@@ -830,7 +922,8 @@ watch(mainTab, (tab) => {
 <style scoped>
 /* ── Root ── */
 .wks {
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   background: #f0f2f5;
@@ -979,21 +1072,39 @@ watch(mainTab, (tab) => {
 /* ── AI panel ── */
 .wks-ai {
   width: 360px; flex-shrink: 0;
-  overflow-y: auto; padding: 12px;
+  display: flex; flex-direction: column;
+  overflow: hidden; padding: 12px;
   border-left: 1px solid #e5e7eb; background: #f8fafc;
 }
-.ai-card { border-color: #a8e8ec; }
+.ai-card {
+  border-color: #a8e8ec;
+  flex: 1; display: flex; flex-direction: column; overflow: hidden;
+}
+.ai-card :deep(.el-card__body) {
+  flex: 1; display: flex; flex-direction: column; overflow: hidden; padding: 14px;
+}
 .ai-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.context-block { margin: 12px 0; padding: 10px 12px; border-radius: 8px; background: #f8fafc; }
-.context-block p, .ai-message p, .rx-item p { margin: 4px 0 0; font-size: 13px; }
-.ai-messages { min-height: 140px; max-height: 260px; overflow: auto; margin-bottom: 10px; }
-.ai-message, .rx-item { margin-bottom: 10px; padding: 10px; border-left: 3px solid #6366f1; background: #eef2ff; border-radius: 0 4px 4px 0; }
-.rx-item { border-left-color: #16a34a; background: #f0fdf4; }
-.ai-message span { font-weight: 700; font-size: 12px; }
+.ai-message p, .rx-item p { margin: 4px 0 0; font-size: 13px; }
+/* 消息区占满剩余空间并滚动；textarea 和按钮 flex-shrink:0 钉在底部 */
+.ai-messages { flex: 1; overflow-y: auto; margin-bottom: 10px; min-height: 80px; }
+.ai-card :deep(.el-textarea) { flex-shrink: 0; }
+.ai-action { margin-top: 8px; flex-shrink: 0; }
+.ai-message { margin-bottom: 10px; padding: 10px; border-left: 3px solid #6366f1; background: #eef2ff; border-radius: 0 4px 4px 0; }
+.ai-message--diagnosis { border-left-color: #6366f1; background: #eef2ff; }
+.ai-message--exam     { border-left-color: #0899a5; background: #e6f9fa; }
+.ai-message--medication { border-left-color: #16a34a; background: #f0fdf4; }
+.ai-message--risk     { border-left-color: #dc2626; background: #fef2f2; }
+.ai-message--advice   { border-left-color: #d97706; background: #fffbeb; }
+.ai-msg-label { font-weight: 700; font-size: 12px; }
+.ai-msg-actions { margin-top: 6px; }
+.rx-item { margin-bottom: 10px; padding: 10px; border-left: 3px solid #16a34a; background: #f0fdf4; border-radius: 0 4px 4px 0; }
 .ai-action { margin-top: 8px; }
-.rx-panel { display: grid; gap: 8px; }
 .muted { color: #64748b; }
 .full { width: 100%; }
+.ai-exam-banner {
+  background: #e6f9fa; border: 1px solid #a8e8ec; border-radius: 6px;
+  padding: 7px 14px; margin-bottom: 10px; font-size: 13px; color: #0899a5; font-weight: 500;
+}
 
 /* ── Document-style medical record ── */
 .med-doc {
@@ -1023,6 +1134,13 @@ watch(mainTab, (tab) => {
 }
 .med-doc__input--bold { font-weight: 600; }
 .med-doc__input:focus { border-bottom-color: #0899a5; }
+.med-doc__input[readonly],
+.med-doc__area[readonly] { color: #6b7280; cursor: default; }
+.med-doc__locked-banner {
+  display: flex; align-items: center; gap: 6px;
+  background: #fef9ec; border: 1px solid #fcd34d; border-radius: 6px;
+  padding: 7px 14px; margin-bottom: 12px; font-size: 13px; color: #92400e;
+}
 .med-doc__area {
   flex: 1; min-width: 0; width: 0;
   border: none; border-bottom: 1px solid #666;
@@ -1031,6 +1149,7 @@ watch(mainTab, (tab) => {
   resize: vertical; padding: 2px 4px; line-height: 1.8; min-height: 80px;
 }
 .med-doc__area:focus { border-bottom-color: #0899a5; }
+.med-doc__area--bold { font-weight: 600; }
 .med-doc__area--grow { resize: vertical; }
 .med-doc__check-placeholder { font-size: 12px; color: #9ca3af; font-style: italic; padding: 2px 0; }
 .check-done-mark { color: #0899a5; font-size: 12px; margin-left: 4px; }
@@ -1086,7 +1205,7 @@ watch(mainTab, (tab) => {
   .main-tabs,
   .med-doc__footer { display: none !important; }
 
-  .wks { background: #fff; }
+  .wks { height: auto !important; overflow: visible !important; background: #fff; }
   .wks-body { height: auto; overflow: visible; display: block; }
   .wks-main { padding: 0; overflow: visible; }
   .main-content { box-shadow: none; border-radius: 0; padding: 0; }

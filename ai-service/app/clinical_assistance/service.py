@@ -28,37 +28,61 @@ def assist(request: ClinicalAssistanceRequest) -> ClinicalAssistanceResponse:
 
 def _assist_with_llm(request: ClinicalAssistanceRequest, config) -> ClinicalAssistanceResponse:
     knowledge_sources = _knowledge_sources(request)
-    system_prompt = """
-你是医院 HIS 系统中的医生辅助模块，只能生成辅助建议，不能给出最终诊断或生效处方。
-请严格输出 JSON 对象，字段为 suggestions。
-suggestions 是数组，每项包含 kind、label、content、source。
-kind 只能使用 diagnosis、exam、medication、risk、advice。
-必须优先参考 providedKnowledgeSources，并提醒医生结合查体、正式报告和临床判断人工确认。
-若出现意识障碍、突发剧烈头痛、抽搐、偏瘫等危险信号，必须输出 risk 建议并提示急诊优先。
-不要编造患者未提供的信息，不要声称已确诊。
-"""
+
+    # 构建可用项目清单文本
+    exam_catalog = "\n".join(
+        f'  - name="{i.get("name", "")}" code="{i.get("code", "")}" category="{i.get("category", "")}"'
+        for i in request.available_exam_items
+    ) or "  （未提供目录）"
+
+    drug_catalog = "\n".join(
+        f'  - drugName="{i.get("drugName", "")}" spec="{i.get("specification", "")}"'
+        for i in request.available_drugs
+    ) or "  （未提供目录）"
+
+    system_prompt = f"""你是医院 HIS 系统的医生辅助模块。严格返回 JSON，字段为 suggestions 数组。
+
+【必须输出的4种类型，每种恰好1条】
+1. kind="diagnosis" label="鉴别诊断"
+   content: 编号列出鉴别诊断，每病名+简短鉴别要点，≤30字/条
+   metadata: {{"primaryDiagnosis": "最可能的简短诊断名称"}}
+   ★ 默认只列2种；仅在症状高度不典型、多病共存或鉴别困难时才增加，最多不超过4种
+   ★ 第1条必须是最可能的诊断，按可能性由高到低排列
+
+2. kind="exam" label="检查建议"
+   content: 编号列出检查项目名称+适应证
+   metadata: {{"projectNames": [...]}}
+   ★ projectNames 必须从下方【本院检查目录】中选择，使用 name 字段的精确值
+   ★ 默认只推荐1项最必要的检查；仅在临床上确有必要同时完成多项时才增加，最多不超过2项
+
+3. kind="medication" label="用药建议"
+   content: 编号列出 药名+剂量+用法+疗程
+   metadata: {{"drugs": [{{"drugName":"...","dosage":"...","usage":"口服","frequency":"...","days":整数}}]}}
+   ★ drugName 必须从下方【本院药品目录】中选择，使用 drugName 字段的精确值
+
+4. kind="advice" label="临床建议"
+   content: 编号列出临床指导，每条≤20字
+   metadata: null
+
+【本院检查目录】（只能从此列表选）：
+{exam_catalog}
+
+【本院药品目录】（只能从此列表选）：
+{drug_catalog}
+
+【规则】不编造目录外的项目和药品；label不含"AI""草稿"；只输出JSON。"""
+
     result = chat_json(
         config,
         system_prompt=system_prompt,
         user_payload={
-            "appointmentId": request.appointment_id,
-            "patientId": request.patient_id,
-            "chiefComplaint": request.chief_complaint,
-            "presentIllness": request.present_illness,
-            "doctorPrompt": request.prompt,
-            "providedKnowledgeSources": [
-                source.model_dump(by_alias=True) for source in knowledge_sources
-            ],
-            "outputContract": {
-                "suggestions": [
-                    {
-                        "kind": "diagnosis",
-                        "label": "AI 鉴别诊断草稿",
-                        "content": "建议内容，必须说明需医生确认",
-                        "source": "LLM",
-                    }
-                ]
+            "patientContext": {
+                "chiefComplaint": request.chief_complaint,
+                "presentIllness": request.present_illness,
+                "pastHistory": request.past_history,
+                "allergyHistory": request.allergy_history,
             },
+            "doctorPrompt": request.prompt,
         },
     )
     payload = extract_json_object(result.content)
@@ -68,6 +92,7 @@ kind 只能使用 diagnosis、exam、medication、risk、advice。
             label=item["label"],
             content=item["content"],
             source=item.get("source", "LLM"),
+            metadata=item.get("metadata"),
         )
         for item in payload.get("suggestions", [])
         if isinstance(item, dict)
@@ -114,7 +139,13 @@ def _mock_assist(request: ClinicalAssistanceRequest, fallback_used: bool = False
 def _knowledge_sources(request: ClinicalAssistanceRequest) -> list[ClinicalKnowledgeSource]:
     query = " ".join(
         value
-        for value in [request.chief_complaint, request.present_illness, request.prompt]
+        for value in [
+            request.chief_complaint,
+            request.present_illness,
+            request.past_history,
+            request.allergy_history,
+            request.prompt,
+        ]
         if value
     )
     return [

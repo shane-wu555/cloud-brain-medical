@@ -286,6 +286,14 @@
                 <el-tag :type="paymentTagType(row.status)" effect="plain" size="small">{{ paymentOrderStatusLabel(row.status) }}</el-tag>
               </template>
             </el-table-column>
+            <el-table-column label="分配诊室" min-width="160">
+              <template #default="{ row }">
+                <template v-if="row.businessType === 'MEDICAL_ORDER'">
+                  <span v-if="medicalOrderExecutor(row.businessId)">{{ medicalOrderExecutor(row.businessId) }}</span>
+                  <span v-else class="muted-cell">—</span>
+                </template>
+              </template>
+            </el-table-column>
             <el-table-column label="时间" min-width="170">
               <template #default="{ row }">{{ formatDateTime(row.paidAt || row.createdAt) }}</template>
             </el-table-column>
@@ -747,10 +755,16 @@ async function simulateQrScan() {
   if (!qrDialog.item) return;
   qrDialog.paying = true;
   try {
-    await confirmPayment(qrDialog.item, defaultQrChannel());
+    const paidItem = qrDialog.item;
+    await confirmPayment(paidItem, defaultQrChannel());
     qrDialog.status = 'PAID';
-    ElMessage.success('扫码支付成功');
     await loadAllData();
+    if (paidItem.businessType === 'MEDICAL_ORDER') {
+      const executor = medicalOrderExecutor(paidItem.businessId);
+      ElMessage.success(executor ? `缴费成功，分配至：${executor}` : '缴费成功');
+    } else {
+      ElMessage.success('扫码支付成功');
+    }
   } catch (error) {
     ElMessage.error(errorMessage(error, '扫码支付失败'));
   } finally {
@@ -1051,6 +1065,12 @@ function urgencyLabel(value: string) {
 function prescriptionDescription(item: Prescription) {
   const drugs = (item.items ?? []).slice(0, 3).map(drug => `${drug.drugName}×${drug.quantity}`).join('、');
   return drugs || item.diagnosis || '处方药费';
+}
+
+function medicalOrderExecutor(businessId: string) {
+  const order = medicalOrderMap.value.get(businessId);
+  if (!order?.executorName) return '';
+  return order.executionLocation ? `${order.executorName} · ${order.executionLocation}` : order.executorName;
 }
 
 function paymentRecordTitle(item: PaymentOrder) {
@@ -1387,6 +1407,10 @@ onMounted(async () => {
 
 .amount {
   color: #b45309;
+}
+
+.muted-cell {
+  color: #94a3b8;
 }
 
 .qr-dialog {

@@ -5,6 +5,7 @@ export interface ClinicalSuggestion {
   label: string;
   content: string;
   source?: string;
+  metadata?: Record<string, any>;
 }
 
 export interface ClinicalAssistanceResponse {
@@ -22,7 +23,11 @@ export async function getClinicalAssistance(payload: {
   patientId: string;
   chiefComplaint: string;
   presentIllness: string;
+  pastHistory?: string;
+  allergyHistory?: string;
   prompt: string;
+  availableExamItems?: Array<{ code: string; name: string; category: string }>;
+  availableDrugs?: Array<{ drugName: string; specification?: string }>;
 }) {
   return (await http.post<ClinicalAssistanceResponse>('/ai/clinical-assistance', payload)).data;
 }

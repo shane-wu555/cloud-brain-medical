@@ -2,7 +2,7 @@ import axios from 'axios';
 
 export const http = axios.create({
   baseURL: '/api',
-  timeout: 15000
+  timeout: 60000
 });
 
 const AUTH_FREE_PATHS = new Set([

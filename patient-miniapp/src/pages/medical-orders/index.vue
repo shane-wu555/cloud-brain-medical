@@ -11,6 +11,9 @@
       <view><text class="label">项目：</text>{{ order.projectName }}</view>
       <view><text class="label">执行科室：</text>{{ executionDepartment(order) }}</view>
       <view v-if="order.executionLocation"><text class="label">执行地点：</text>{{ order.executionLocation }}</view>
+      <view v-if="order.queueNumber != null && ['WAITING','IN_PROGRESS'].includes(order.status)">
+        <text class="label">排队号：</text><text class="queue-num">第 {{ order.queueNumber }} 号</text>
+      </view>
       <view v-if="order.bodyPart"><text class="label">检查部位：</text>{{ order.bodyPart }}</view>
       <view v-if="order.purpose"><text class="label">目的要求：</text>{{ order.purpose }}</view>
       <view class="muted">开立时间：{{ formatDateTime(order.createdAt) }}</view>
@@ -63,6 +66,7 @@ interface MedicalOrder {
   status: 'PENDING_PAYMENT' | 'WAITING_TRIAGE' | 'WAITING' | 'IN_PROGRESS' | 'COMPLETED' | 'MISSED';
   executorName: string;
   executionLocation: string;
+  queueNumber?: number;
   createdAt: string;
 }
 
@@ -195,6 +199,12 @@ onShow(async () => {
 .label {
   color: #0f766e;
   font-weight: 600;
+}
+
+.queue-num {
+  color: #1d4ed8;
+  font-weight: 700;
+  font-size: 34rpx;
 }
 
 .status-tag {
