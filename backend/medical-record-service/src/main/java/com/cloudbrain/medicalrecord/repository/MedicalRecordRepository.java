@@ -42,7 +42,7 @@ public class MedicalRecordRepository {
 
     public Optional<MedicalRecord> findByAppointmentId(String appointmentId) {
         List<MedicalRecord> result = jdbcTemplate.query(
-                "select * from medical_record where appointment_id = ?",
+                "select * from medical_record where appointment_id = ?::uuid",
                 rowMapper,
                 appointmentId);
         return result.stream().findFirst();
@@ -75,13 +75,13 @@ public class MedicalRecordRepository {
     }
 
     public List<MedicalRecord> findByPatientId(String patientId) {
-        return jdbcTemplate.query("select * from medical_record where patient_id=? order by visit_date desc,created_at desc",rowMapper,patientId);
+        return jdbcTemplate.query("select * from medical_record where patient_id=?::uuid order by visit_date desc,created_at desc",rowMapper,patientId);
     }
 
     public List<MedicalRecord> findByPatientIdExcludingCancelledAppointments(String patientId) {
         return jdbcTemplate.query("""
                 select mr.* from medical_record mr
-                where mr.patient_id = ?
+                where mr.patient_id = ?::uuid
                   and not exists (
                       select 1 from appointment.appointment a
                       where a.id = mr.appointment_id and a.status = 'CANCELLED'
@@ -123,7 +123,7 @@ public class MedicalRecordRepository {
                 insert into medical_record (
                     id,appointment_id,patient_id,patient_name,doctor_id,doctor_name,department_name,
                     visit_date,period,ai_triage_summary,ai_risk_level,status,updated_at)
-                values (?,?,?,?,?,?,?,?,?,?,?,'DRAFT',now())
+                values (?,?::uuid,?::uuid,?,?,?,?,?,?,?,?,'DRAFT',now())
                 on conflict (appointment_id) do nothing
                 """,record.getId(),record.getAppointmentId(),record.getPatientId(),record.getPatientName(),
                 record.getDoctorId(),record.getDoctorName(),record.getDepartmentName(),record.getVisitDate(),
