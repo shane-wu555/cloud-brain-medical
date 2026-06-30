@@ -128,12 +128,16 @@
                   <button class="ct-tool" title="标注">✏</button>
                   <button class="ct-tool" title="更多">···</button>
                   <div class="ct-sep ct-sep--flex"></div>
+                  <div class="ct-view-tabs" v-if="volume">
+                    <button :class="['ct-view-tab', ctViewerMode === 'mpr' && 'ct-view-tab--active']" @click="setCtViewerMode('mpr')">MPR/3D</button>
+                    <button :class="['ct-view-tab', ctViewerMode === 'film' && 'ct-view-tab--active']" @click="setCtViewerMode('film')">多切片胶片</button>
+                  </div>
                   <span v-if="aiStatus === 'PROCESSING'" class="ct-ai-badge ct-ai-badge--running">AI 分析中…</span>
                   <span v-else-if="aiStatus === 'COMPLETED'" class="ct-ai-badge ct-ai-badge--done">✓ AI 已完成</span>
                 </div>
 
                 <!-- 2×2 panels -->
-                <div class="ct-panels">
+                <div v-show="ctViewerMode === 'mpr'" class="ct-panels">
 
                   <!-- Axial -->
                   <div class="ct-panel" @dragover.prevent @drop.prevent="handleDrop" @wheel.prevent="onWheelPanel('axial', $event)">
@@ -152,7 +156,7 @@
                       <span class="ct-orient ct-orient--bl">I</span>
                       <div class="ct-scale">{{ volume.dx.toFixed(2) }}mm/px</div>
                       <button class="ct-clear" @click="clearFile">✕</button>
-                      <input class="ct-slider" type="range" :min="0" :max="volume.nz - 1" v-model.number="sliceZ" />
+                      <input class="ct-slider" type="range" :min="0" :max="volume.nz - 1" :value="sliceZ" @input="onSliceSlider('axial', $event)" />
                     </template>
 
                     <template v-else-if="imagePreviewUrl">
@@ -188,6 +192,15 @@
                        @mouseup="on3DUp"
                        @mouseleave="on3DUp">
                     <span class="ct-panel__lbl">【3D 重建】</span>
+                    <div v-if="volume" class="ct-3d-controls" @mousedown.stop @click.stop>
+                      <button :class="['ct-3d-preset', render3DMode === 'brain' && 'ct-3d-preset--active']" @click="set3DMode('brain')">脑实质</button>
+                      <button :class="['ct-3d-preset', render3DMode === 'composite' && 'ct-3d-preset--active']" @click="set3DMode('composite')">综合</button>
+                      <button :class="['ct-3d-preset', render3DMode === 'skull' && 'ct-3d-preset--active']" @click="set3DMode('skull')">颅骨参考</button>
+                      <label class="ct-3d-roi">
+                        ROI
+                        <input type="range" min="62" max="100" :value="Math.round(render3DRoi * 100)" @input="set3DRoi" />
+                      </label>
+                    </div>
                     <span v-if="volume" class="ct-3d-hint">拖拽旋转</span>
                     <template v-if="volume">
                       <canvas ref="canvas3D" class="ct-panel__canvas ct-panel__canvas--3d"></canvas>
@@ -214,7 +227,7 @@
                       <span class="ct-orient ct-orient--tl">S</span>
                       <span class="ct-orient ct-orient--bl">I</span>
                       <div class="ct-scale">{{ volume.dy.toFixed(2) }}mm/px</div>
-                      <input class="ct-slider" type="range" :min="0" :max="volume.ny - 1" v-model.number="sliceY" />
+                      <input class="ct-slider" type="range" :min="0" :max="volume.ny - 1" :value="sliceY" @input="onSliceSlider('coronal', $event)" />
                     </template>
                     <template v-else>
                       <div class="ct-placeholder">
@@ -240,7 +253,7 @@
                       <span class="ct-orient ct-orient--tl">S</span>
                       <span class="ct-orient ct-orient--bl">I</span>
                       <div class="ct-scale">{{ volume.dz.toFixed(2) }}mm/px</div>
-                      <input class="ct-slider" type="range" :min="0" :max="volume.nx - 1" v-model.number="sliceX" />
+                      <input class="ct-slider" type="range" :min="0" :max="volume.nx - 1" :value="sliceX" @input="onSliceSlider('sagittal', $event)" />
                     </template>
                     <template v-else>
                       <div class="ct-placeholder">
@@ -255,6 +268,27 @@
 
                 </div><!-- /ct-panels -->
 
+                <div v-show="ctViewerMode === 'film'" class="ct-film">
+                  <div v-if="!volume" class="ct-placeholder">
+                    <div class="ct-placeholder__icon">⬡</div>
+                    <div class="ct-placeholder__text">上传体积影像后显示多切片胶片</div>
+                  </div>
+                  <template v-else>
+                    <button
+                      v-for="item in filmThumbs"
+                      :key="item.z"
+                      :class="['ct-film__cell', isFilmSliceSelected(item.z) && 'ct-film__cell--selected']"
+                      @click="toggleFilmSlice(item.z)"
+                      @dblclick="jumpToSlice(item.z)"
+                    >
+                      <img :src="item.url" :alt="`轴位切片 ${item.z + 1}`" />
+                      <span class="ct-film__tag">R</span>
+                      <span class="ct-film__tag ct-film__tag--posterior">P</span>
+                      <span class="ct-film__idx">{{ item.z + 1 }}</span>
+                    </button>
+                  </template>
+                </div>
+
                 <!-- Bottom action toolbar -->
                 <div class="ct-actions">
                   <!-- W/L inline controls -->
@@ -264,9 +298,13 @@
                   <input class="ct-wl-inp" type="number" v-model.number="winW" @change="rerenderMpr" />
                   <div class="ct-sep ct-sep--sm"></div>
                   <button class="ct-act" @click="setWindow('brain')">脑窗</button>
+                  <button class="ct-act" @click="setWindow('standard')">标准</button>
+                  <button class="ct-act" @click="setWindow('subdural')">硬膜下</button>
                   <button class="ct-act" @click="setWindow('bone')">骨窗</button>
-                  <button class="ct-act" @click="setWindow('lung')">肺窗</button>
                   <button class="ct-act" @click="setWindow('soft')">软组织</button>
+                  <button class="ct-act" :disabled="!volume" @click="selectCurrentFilmSlice">选当前层</button>
+                  <button class="ct-act" :disabled="!volume" @click="selectRecommendedFilmSlices">智能选片</button>
+                  <button class="ct-act" :disabled="selectedFilmSlices.length === 0" @click="clearSelectedFilmSlices">清空选片</button>
                   <div class="ct-act-gap"></div>
                   <label class="ct-act" :class="{ 'ct-act--disabled': !current }">
                     ⬆ 单文件影像
@@ -278,6 +316,9 @@
                   </label>
                   <button class="ct-act ct-act--primary" :disabled="!file || !current" @click="uploadCt">
                     提交 AI 分析
+                  </button>
+                  <button class="ct-act ct-act--publish" :disabled="selectedFilmSlices.length === 0" @click="exportSelectedFilm">
+                    导出所选胶片 {{ selectedFilmSlices.length || '' }}
                   </button>
                   <button class="ct-act ct-act--report" @click="mainTab = 'report'">
                     📋 生成报告
@@ -511,7 +552,7 @@ import {
 } from '../../api/medical-order';
 import { createReportDraft as createAiReportDraft } from '../../api/ai';
 import { readVolume, readDicomSeries, renderAxial, renderCoronal, renderSagittal, type VolumeData } from '../../utils/volumeReader';
-import { VolumeRenderer3D } from '../../utils/volumeRenderer3D';
+import { VolumeRenderer3D, type VolumeRenderMode } from '../../utils/volumeRenderer3D';
 
 const auth = useAuthStore();
 const router = useRouter();
@@ -566,6 +607,9 @@ const sliceY = ref(0);
 const sliceX = ref(0);
 const winC = ref(40);
 const winW = ref(80);
+const ctViewerMode = ref<'mpr' | 'film'>('mpr');
+const selectedFilmSlices = ref<number[]>([]);
+const filmThumbs = ref<Array<{ z: number; url: string }>>([]);
 
 // Canvas refs
 const canvasAxial    = ref<HTMLCanvasElement>();
@@ -577,6 +621,9 @@ const canvas3D       = ref<HTMLCanvasElement>();
 const renderer3D = ref<VolumeRenderer3D | null>(null);
 const azim3D = ref(220);
 const elev3D = ref(18);
+const render3DMode = ref<VolumeRenderMode>('brain');
+const render3DRoi = ref(0.76);
+let syncingSlices = false;
 
 let drag3D = false, lastX3D = 0, lastY3D = 0;
 function on3DDown(e: MouseEvent)  { drag3D = true; lastX3D = e.clientX; lastY3D = e.clientY; }
@@ -589,12 +636,44 @@ function on3DMove(e: MouseEvent)  {
 function on3DUp()   { drag3D = false; }
 
 // MPR render helpers
+function clampIndex(value: number, max: number): number {
+  return Math.max(0, Math.min(max, Math.round(value)));
+}
+
+function setSynchronizedSlices(plane: 'axial' | 'coronal' | 'sagittal', value: number) {
+  const vol = volume.value;
+  if (!vol) return;
+  syncingSlices = true;
+  if (plane === 'axial') {
+    sliceZ.value = clampIndex(value, vol.nz - 1);
+    const ratio = vol.nz > 1 ? sliceZ.value / (vol.nz - 1) : 0;
+    sliceY.value = clampIndex(ratio * (vol.ny - 1), vol.ny - 1);
+    sliceX.value = clampIndex(ratio * (vol.nx - 1), vol.nx - 1);
+  } else if (plane === 'coronal') {
+    sliceY.value = clampIndex(value, vol.ny - 1);
+    const ratio = vol.ny > 1 ? sliceY.value / (vol.ny - 1) : 0;
+    sliceZ.value = clampIndex(ratio * (vol.nz - 1), vol.nz - 1);
+    sliceX.value = clampIndex(ratio * (vol.nx - 1), vol.nx - 1);
+  } else {
+    sliceX.value = clampIndex(value, vol.nx - 1);
+    const ratio = vol.nx > 1 ? sliceX.value / (vol.nx - 1) : 0;
+    sliceZ.value = clampIndex(ratio * (vol.nz - 1), vol.nz - 1);
+    sliceY.value = clampIndex(ratio * (vol.ny - 1), vol.ny - 1);
+  }
+  syncingSlices = false;
+  rerenderMpr();
+}
+
+function onSliceSlider(plane: 'axial' | 'coronal' | 'sagittal', event: Event) {
+  setSynchronizedSlices(plane, Number((event.target as HTMLInputElement).value));
+}
+
 function onWheelPanel(plane: 'axial' | 'coronal' | 'sagittal', e: WheelEvent) {
   if (!volume.value) return
   const delta = e.deltaY > 0 ? 1 : -1
-  if (plane === 'axial')    sliceZ.value = Math.max(0, Math.min(volume.value.nz - 1, sliceZ.value + delta))
-  else if (plane === 'coronal')  sliceY.value = Math.max(0, Math.min(volume.value.ny - 1, sliceY.value + delta))
-  else                           sliceX.value = Math.max(0, Math.min(volume.value.nx - 1, sliceX.value + delta))
+  if (plane === 'axial') setSynchronizedSlices('axial', sliceZ.value + delta)
+  else if (plane === 'coronal') setSynchronizedSlices('coronal', sliceY.value + delta)
+  else setSynchronizedSlices('sagittal', sliceX.value + delta)
 }
 
 function rerenderMpr() {
@@ -604,18 +683,179 @@ function rerenderMpr() {
   if (canvasCoronal.value)  renderCoronal(canvasCoronal.value,   vol, sliceY.value, winC.value, winW.value);
   if (canvasSagittal.value) renderSagittal(canvasSagittal.value, vol, sliceX.value, winC.value, winW.value);
 }
-function rerender3D() { renderer3D.value?.render(azim3D.value, elev3D.value, winC.value, winW.value); }
+function rerender3D() {
+  renderer3D.value?.render(azim3D.value, elev3D.value, winC.value, winW.value, render3DMode.value, render3DRoi.value);
+}
 
-watch(sliceZ, () => { const v = volume.value; if (v && canvasAxial.value)    renderAxial(canvasAxial.value,       v, sliceZ.value, winC.value, winW.value); });
-watch(sliceY, () => { const v = volume.value; if (v && canvasCoronal.value)  renderCoronal(canvasCoronal.value,   v, sliceY.value, winC.value, winW.value); });
-watch(sliceX, () => { const v = volume.value; if (v && canvasSagittal.value) renderSagittal(canvasSagittal.value, v, sliceX.value, winC.value, winW.value); });
+function set3DMode(mode: VolumeRenderMode) {
+  render3DMode.value = mode;
+  if (mode === 'brain') render3DRoi.value = 0.76;
+  if (mode === 'composite') render3DRoi.value = 0.86;
+  if (mode === 'skull') render3DRoi.value = 0.84;
+  rerender3D();
+}
+
+function set3DRoi(event: Event) {
+  render3DRoi.value = Number((event.target as HTMLInputElement).value) / 100;
+  rerender3D();
+}
+
+function axialDataUrl(vol: VolumeData, z: number, scale = 0.62): string {
+  const raw = document.createElement('canvas');
+  renderAxial(raw, vol, z, winC.value, winW.value);
+  const w = Math.max(1, Math.round(raw.width * scale));
+  const h = Math.max(1, Math.round(raw.height * scale));
+  const out = document.createElement('canvas');
+  out.width = w;
+  out.height = h;
+  const ctx = out.getContext('2d')!;
+  ctx.imageSmoothingEnabled = true;
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, w, h);
+  ctx.drawImage(raw, 0, 0, w, h);
+  return out.toDataURL('image/png');
+}
+
+function recommendedAxialSlices(vol: VolumeData, count = 20): number[] {
+  if (vol.nz <= count) return Array.from({ length: vol.nz }, (_, z) => z);
+  const start = Math.max(0, Math.floor(vol.nz * 0.08));
+  const end = Math.min(vol.nz - 1, Math.ceil(vol.nz * 0.92));
+  const span = Math.max(1, end - start);
+  return Array.from({ length: count }, (_, i) => Math.round(start + (span * i) / (count - 1)));
+}
+
+function refreshFilmThumbs() {
+  const vol = volume.value;
+  if (!vol) {
+    filmThumbs.value = [];
+    return;
+  }
+  filmThumbs.value = recommendedAxialSlices(vol, 20).map(z => ({ z, url: axialDataUrl(vol, z) }));
+}
+
+async function setCtViewerMode(mode: 'mpr' | 'film') {
+  ctViewerMode.value = mode;
+  await nextTick();
+  if (mode === 'mpr') {
+    rerenderMpr();
+    rerender3D();
+  } else {
+    refreshFilmThumbs();
+  }
+}
+
+function isFilmSliceSelected(z: number): boolean {
+  return selectedFilmSlices.value.includes(z);
+}
+
+function toggleFilmSlice(z: number) {
+  selectedFilmSlices.value = isFilmSliceSelected(z)
+    ? selectedFilmSlices.value.filter(item => item !== z)
+    : [...selectedFilmSlices.value, z].sort((a, b) => a - b);
+}
+
+function jumpToSlice(z: number) {
+  sliceZ.value = z;
+  setCtViewerMode('mpr');
+}
+
+function selectCurrentFilmSlice() {
+  if (!volume.value) return;
+  if (!isFilmSliceSelected(sliceZ.value)) toggleFilmSlice(sliceZ.value);
+}
+
+function selectRecommendedFilmSlices() {
+  const vol = volume.value;
+  if (!vol) return;
+  selectedFilmSlices.value = recommendedAxialSlices(vol, Math.min(12, vol.nz));
+  refreshFilmThumbs();
+  ctViewerMode.value = 'film';
+}
+
+function clearSelectedFilmSlices() {
+  selectedFilmSlices.value = [];
+}
+
+function drawFilmCell(
+  ctx: CanvasRenderingContext2D,
+  vol: VolumeData,
+  z: number,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  selected: boolean
+) {
+  const raw = document.createElement('canvas');
+  renderAxial(raw, vol, z, winC.value, winW.value);
+  const margin = 18;
+  const imgW = w - margin * 2;
+  const imgH = h - margin * 2;
+  const scale = Math.min(imgW / raw.width, imgH / raw.height);
+  const dw = raw.width * scale;
+  const dh = raw.height * scale;
+  const dx = x + (w - dw) / 2;
+  const dy = y + (h - dh) / 2;
+
+  ctx.fillStyle = '#000';
+  ctx.fillRect(x, y, w, h);
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(raw, dx, dy, dw, dh);
+  ctx.strokeStyle = selected ? '#e11d48' : '#7a8400';
+  ctx.lineWidth = selected ? 3 : 1;
+  ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+  ctx.font = 'bold 15px Arial';
+  ctx.fillStyle = '#18c447';
+  ctx.fillText('R', x + 9, y + h / 2);
+  ctx.fillText('P', x + w / 2 - 5, y + h - 10);
+  ctx.font = '12px Arial';
+  ctx.fillStyle = 'rgba(255,255,255,0.8)';
+  ctx.fillText(String(z + 1), x + w - 34, y + 18);
+}
+
+function exportSelectedFilm() {
+  const vol = volume.value;
+  const slices = [...selectedFilmSlices.value].sort((a, b) => a - b);
+  if (!vol || slices.length === 0) return;
+
+  const cols = Math.min(5, slices.length);
+  const rows = Math.ceil(slices.length / cols);
+  const cellW = 260;
+  const cellH = 196;
+  const canvas = document.createElement('canvas');
+  canvas.width = cols * cellW;
+  canvas.height = rows * cellH;
+  const ctx = canvas.getContext('2d')!;
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  slices.forEach((z, idx) => {
+    drawFilmCell(ctx, vol, z, (idx % cols) * cellW, Math.floor(idx / cols) * cellH, cellW, cellH, true);
+  });
+
+  const a = document.createElement('a');
+  const patient = current.value?.patientName || 'patient';
+  a.href = canvas.toDataURL('image/png');
+  a.download = `${patient}-CT-selected-slices.png`;
+  a.click();
+  ElMessage.success('已导出所选切片胶片 PNG');
+}
+
+watch(sliceZ, () => { if (syncingSlices) return; const v = volume.value; if (v && canvasAxial.value)    renderAxial(canvasAxial.value,       v, sliceZ.value, winC.value, winW.value); });
+watch(sliceY, () => { if (syncingSlices) return; const v = volume.value; if (v && canvasCoronal.value)  renderCoronal(canvasCoronal.value,   v, sliceY.value, winC.value, winW.value); });
+watch(sliceX, () => { if (syncingSlices) return; const v = volume.value; if (v && canvasSagittal.value) renderSagittal(canvasSagittal.value, v, sliceX.value, winC.value, winW.value); });
 watch([azim3D, elev3D], rerender3D);
-watch([winC, winW], () => { rerenderMpr(); rerender3D(); });
+watch([render3DMode, render3DRoi], rerender3D);
+watch([winC, winW], () => { rerenderMpr(); rerender3D(); refreshFilmThumbs(); });
 
 watch(volume, async (vol) => {
   // destroy old renderer
   renderer3D.value?.destroy();
   renderer3D.value = null;
+  selectedFilmSlices.value = [];
+  filmThumbs.value = [];
+  ctViewerMode.value = 'mpr';
+  render3DMode.value = 'brain';
+  render3DRoi.value = 0.76;
   if (!vol) return;
   sliceZ.value = Math.floor(vol.nz / 2);
   sliceY.value = Math.floor(vol.ny / 2);
@@ -630,10 +870,17 @@ watch(volume, async (vol) => {
       rerender3D();
     } catch (e) { ElMessage.warning('WebGL2 不可用，3D 视图已跳过'); }
   }
+  refreshFilmThumbs();
 });
 
-function setWindow(preset: 'brain' | 'bone' | 'lung' | 'soft') {
-  const map = { brain: [40, 80], bone: [400, 1800], lung: [-600, 1500], soft: [60, 400] } as const;
+function setWindow(preset: 'brain' | 'standard' | 'subdural' | 'bone' | 'soft') {
+  const map = {
+    brain: [40, 80],
+    standard: [400, 1400],
+    subdural: [80, 200],
+    bone: [500, 2500],
+    soft: [60, 400],
+  } as const;
   [winC.value, winW.value] = map[preset];
 }
 
@@ -736,8 +983,7 @@ async function loadFile(f: File) {
     try {
       volume.value = await readVolume(f);
       const vol = volume.value;
-      winC.value = Math.round(vol.wc);
-      winW.value = Math.round(vol.ww);
+      setWindow('brain');
       ElMessage.success(`影像加载成功：${vol.nx}×${vol.ny}×${vol.nz} 体素`);
     } catch (e: unknown) {
       ElMessage.error(String((e as Error).message ?? e));
@@ -800,8 +1046,7 @@ async function loadDicomFolder(event: Event) {
     }
 
     volume.value = vol;
-    winC.value = Math.round(vol.wc);
-    winW.value = Math.round(vol.ww);
+    setWindow('brain');
     ElMessage.success(`影像加载成功：${vol.nx}×${vol.ny}×${vol.nz} 体素`);
   } catch (e: unknown) {
     const msg = String((e as Error).message ?? e);
@@ -1101,12 +1346,39 @@ onMounted(loadOrders);
 .ct-ai-badge--running { background: #1e3a20; color: #4ade80; }
 .ct-ai-badge--done { background: #1c3557; color: #38bdf8; }
 
+.ct-view-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  background: #020617;
+  border: 1px solid #1f2937;
+  border-radius: 5px;
+  margin-right: 8px;
+}
+.ct-view-tab {
+  height: 24px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: #9ca3af;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.ct-view-tab:hover { color: #e5e7eb; }
+.ct-view-tab--active {
+  background: #164e63;
+  color: #ecfeff;
+}
+
 /* 2×2 panels grid */
 .ct-panels {
   flex: 1;
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  grid-template-rows: 1fr 1fr;
+  grid-template-columns: minmax(360px, 1.18fr) minmax(320px, 1fr);
+  grid-template-rows: minmax(280px, 1.18fr) minmax(210px, 0.82fr);
   gap: 2px;
   background: #020617;
   min-height: 0;
@@ -1122,6 +1394,9 @@ onMounted(loadOrders);
 .ct-panel + .ct-panel { border-left: 1px solid #0a1628; }
 .ct-panel:nth-child(3),
 .ct-panel:nth-child(4) { border-top: 1px solid #0a1628; }
+.ct-panel:first-child .ct-panel__canvas {
+  max-height: calc(100% - 18px);
+}
 
 /* Panel overlays */
 .ct-panel__lbl {
@@ -1199,6 +1474,69 @@ onMounted(loadOrders);
 .ct-placeholder__text { font-size: 13px; color: #374151; }
 .ct-placeholder__sub { font-size: 11px; color: #1f2937; margin-top: 4px; }
 
+.ct-film {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(120px, 1fr));
+  grid-auto-rows: minmax(118px, 1fr);
+  gap: 2px;
+  overflow: auto;
+  padding: 2px;
+  background: #050505;
+}
+.ct-film__cell {
+  position: relative;
+  min-width: 0;
+  min-height: 118px;
+  border: 1px solid #6e7600;
+  background: #000;
+  padding: 0;
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+.ct-film__cell:hover {
+  border-color: #b9c400;
+  box-shadow: inset 0 0 0 1px rgba(185, 196, 0, 0.55);
+}
+.ct-film__cell--selected {
+  border-color: #ef4444;
+  box-shadow: inset 0 0 0 2px #ef4444;
+}
+.ct-film__cell img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  image-rendering: auto;
+}
+.ct-film__tag {
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #18c447;
+  font-size: 12px;
+  font-weight: 700;
+  text-shadow: 0 0 2px #000;
+  pointer-events: none;
+}
+.ct-film__tag--posterior {
+  left: 50%;
+  top: auto;
+  bottom: 5px;
+  transform: translateX(-50%);
+}
+.ct-film__idx {
+  position: absolute;
+  top: 5px;
+  right: 7px;
+  color: rgba(255,255,255,0.65);
+  font-size: 10px;
+  pointer-events: none;
+}
+
 /* Canvas — use smooth (bilinear) interpolation for medical CT display */
 .ct-panel__canvas {
   max-width: 100%;
@@ -1214,6 +1552,50 @@ onMounted(loadOrders);
   height: 100% !important;
   max-height: 100%;
   image-rendering: auto;
+}
+.ct-3d-controls {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid rgba(31, 41, 55, 0.9);
+  border-radius: 5px;
+  background: rgba(2, 6, 23, 0.78);
+  backdrop-filter: blur(4px);
+}
+.ct-3d-preset {
+  height: 24px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 3px;
+  background: #111827;
+  color: #8ea3b8;
+  font-size: 11px;
+  cursor: pointer;
+}
+.ct-3d-preset:hover { color: #e5e7eb; background: #1f2937; }
+.ct-3d-preset--active {
+  background: #0e7490;
+  color: #ecfeff;
+}
+.ct-3d-roi {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 4px;
+  color: #7dd3fc;
+  font-size: 10px;
+  white-space: nowrap;
+}
+.ct-3d-roi input {
+  width: 72px;
+  height: 16px;
+  margin: 0;
+  accent-color: #0e7490;
 }
 .ct-3d-hint {
   position: absolute; bottom: 8px; left: 50%;
@@ -1306,6 +1688,14 @@ onMounted(loadOrders);
   background: #1e3a5f; color: #93c5fd;
 }
 .ct-act--report:hover { background: #1d4ed8; color: #fff; }
+.ct-act--publish {
+  background: #334155;
+  color: #d9f99d;
+}
+.ct-act--publish:hover:not(:disabled) {
+  background: #4d7c0f;
+  color: #fff;
+}
 
 /* ── Lab section (LAB_DOCTOR) ── */
 .lab-section { display: flex; flex-direction: column; gap: 10px; }

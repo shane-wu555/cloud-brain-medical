@@ -8,6 +8,8 @@
 
 import type { VolumeData } from './volumeReader'
 
+export type VolumeRenderMode = 'brain' | 'composite' | 'skull'
+
 // ─── GLSL shaders ────────────────────────────────────────────────────────────
 
 const VS = `#version 300 es
@@ -28,6 +30,8 @@ uniform vec2  uRes;
 uniform float uAzim, uElev;
 uniform float uWL,   uWW;
 uniform float uVmin, uVmax;
+uniform int   uMode;
+uniform float uRoiScale;
 // Physical normalized dimensions: (nx*dx, ny*dy, nz*dz) / max(nx*dx, ny*dy, nz*dz)
 // This tells the shader the true shape of the volume (not necessarily a cube).
 uniform vec3  uPhysNorm;
@@ -38,6 +42,12 @@ out vec4 fragColor;
 mat3 rotY(float a) { float c=cos(a),s=sin(a); return mat3(c,0.,s,  0.,1.,0.,  -s,0.,c); }
 mat3 rotX(float a) { float c=cos(a),s=sin(a); return mat3(1.,0.,0.,  0.,c,-s,  0.,s,c); }
 
+float hash12(vec2 p) {
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
+}
+
 // p is in physical-normalized space [0, uPhysNorm]
 // Map to texture space [0,1]^3 before sampling
 float voxelHU(vec3 p) {
@@ -46,26 +56,53 @@ float voxelHU(vec3 p) {
   return texture(uVol, tc).r * (uVmax - uVmin) + uVmin;
 }
 
-// Transfer function using absolute HU values — matches CTAnnotationTool.py / CTBrain.py VTK params:
-//   air < -300        : transparent
-//   soft tissue 0-250 : near-invisible (avoids red-panel accumulation at box edges)
-//   bone > 300        : ivory-white, high opacity
+bool insideRoi(vec3 p) {
+  vec3 c = uPhysNorm * 0.5;
+  vec2 q = (p.xy - c.xy) / max(max(uPhysNorm.x, uPhysNorm.y) * 0.5 * uRoiScale, 0.001);
+  return dot(q, q) <= 1.0;
+}
+
+vec4 tfSkull(float hu) {
+  if (hu < 220.0) return vec4(0.0);
+  float f = smoothstep(220.0, 900.0, hu);
+  float alpha = mix(0.10, 0.82, f);
+  vec3 col = mix(vec3(0.72, 0.66, 0.56), vec3(1.0, 0.96, 0.88), f);
+  return vec4(col, alpha);
+}
+
+vec4 tfBrain(float hu) {
+  if (hu < -20.0 || hu > 140.0) return vec4(0.0);
+  float tissue = smoothstep(8.0, 55.0, hu) * (1.0 - smoothstep(92.0, 140.0, hu));
+  float dense = smoothstep(62.0, 130.0, hu);
+  float alpha = mix(0.035, 0.20, tissue) + dense * 0.10;
+  vec3 col = mix(vec3(0.58, 0.64, 0.64), vec3(0.86, 0.88, 0.84), tissue);
+  col = mix(col, vec3(1.0, 0.64, 0.54), dense * 0.65);
+  return vec4(col, alpha);
+}
+
+// Composite mode follows the VTK examples in CTBrain.py / CTAnnotationTool.py.
 vec4 tf(float hu) {
+  if (uMode == 0) return tfBrain(hu);
+  if (uMode == 2) return tfSkull(hu);
   if (hu < -300.0) return vec4(0.0);
-  float alpha; vec3 col;
-  if (hu >= 300.0) {
-    float f = smoothstep(300.0, 900.0, hu);
-    alpha = mix(0.60, 0.92, f);
-    col   = mix(vec3(0.80, 0.74, 0.66), vec3(1.0, 0.97, 0.92), f);
-  } else if (hu >= 0.0) {
-    float f = hu / 300.0;
-    alpha = f * 0.025;                         // ~2.5% max — barely visible
-    col   = mix(vec3(0.60, 0.30, 0.20), vec3(0.88, 0.58, 0.42), f);
+
+  float alpha = 0.0;
+  vec3 col = vec3(0.0);
+
+  if (hu < 100.0) {
+    float f = smoothstep(-300.0, 100.0, hu);
+    alpha = mix(0.0, 0.10, f);
+    col = mix(vec3(0.02, 0.02, 0.02), vec3(0.86, 0.86, 0.84), f);
+  } else if (hu < 400.0) {
+    float f = smoothstep(100.0, 400.0, hu);
+    alpha = mix(0.10, 0.30, f);
+    col = mix(vec3(1.00, 1.00, 1.00), vec3(1.00, 0.58, 0.50), f);
   } else {
-    float f = clamp((hu + 300.0) / 300.0, 0.0, 1.0);
-    alpha = f * 0.008;                         // -300~0 HU: near-transparent
-    col   = vec3(0.5, 0.5, 0.5);
+    float f = smoothstep(400.0, 1000.0, hu);
+    alpha = mix(0.30, 0.52, f);
+    col = mix(vec3(1.00, 0.58, 0.50), vec3(1.00, 0.97, 0.92), f);
   }
+
   return vec4(col, alpha);
 }
 
@@ -77,7 +114,7 @@ vec2 boxHit(vec3 ro, vec3 rd) {
   return vec2(max(max(tN.x, tN.y), tN.z), min(min(tF.x, tF.y), tF.z));
 }
 
-const int STEPS = 300;
+const int STEPS = 420;
 
 void main() {
   float asp = uRes.x / uRes.y;
@@ -109,8 +146,10 @@ void main() {
 
   vec4 acc = vec4(0.0);
 
+  float jitter = hash12(gl_FragCoord.xy);
   for (int i = 0; i < STEPS; i++) {
-    vec3  p  = ro + rd * (tStart + (float(i) + 0.5) * dt);
+    vec3  p  = ro + rd * (tStart + (float(i) + jitter) * dt);
+    if (!insideRoi(p)) continue;
     float hu = voxelHU(p);
     vec4  c  = tf(hu);
     if (c.a < 0.001) continue;
@@ -191,6 +230,34 @@ function downsampleVolume(vol: VolumeData, maxDim = 256): {
   return { data: out, nx: onx, ny: ony, nz: onz }
 }
 
+function smoothZFor3D(
+  data: Float32Array,
+  nx: number,
+  ny: number,
+  nz: number,
+  anisotropy: number
+): Float32Array {
+  if (nz < 3) return data
+  const passes = anisotropy > 1.25 ? 2 : 1
+  let src = data
+  for (let pass = 0; pass < passes; pass++) {
+    const out = new Float32Array(src.length)
+    const plane = nx * ny
+    out.set(src.subarray(0, plane), 0)
+    out.set(src.subarray((nz - 1) * plane), (nz - 1) * plane)
+    for (let z = 1; z < nz - 1; z++) {
+      const prev = (z - 1) * plane
+      const cur = z * plane
+      const next = (z + 1) * plane
+      for (let i = 0; i < plane; i++) {
+        out[cur + i] = src[prev + i] * 0.22 + src[cur + i] * 0.56 + src[next + i] * 0.22
+      }
+    }
+    src = out
+  }
+  return src
+}
+
 // ─── Public renderer class ────────────────────────────────────────────────────
 
 export class VolumeRenderer3D {
@@ -227,9 +294,11 @@ export class VolumeRenderer3D {
 
     // Upload 3D texture (R32F, normalized [0,1])
     const { data, nx, ny, nz } = downsampleVolume(vol, 256)
+    const anisotropy = vol.dz / Math.max(vol.dx, vol.dy, 0.001)
+    const renderData = smoothZFor3D(data, nx, ny, nz, anisotropy)
     const range = (vol.vmax - vol.vmin) || 1
-    const norm = new Float32Array(data.length)
-    for (let i = 0; i < data.length; i++) norm[i] = (data[i] - vol.vmin) / range
+    const norm = new Float32Array(renderData.length)
+    for (let i = 0; i < renderData.length; i++) norm[i] = (renderData[i] - vol.vmin) / range
 
     const tex = gl.createTexture()!
     gl.bindTexture(gl.TEXTURE_3D, tex)
@@ -242,7 +311,14 @@ export class VolumeRenderer3D {
     this.tex = tex
   }
 
-  render(azim: number, elev: number, wc: number, ww: number): void {
+  render(
+    azim: number,
+    elev: number,
+    wc: number,
+    ww: number,
+    mode: VolumeRenderMode = 'brain',
+    roiScale = 0.76
+  ): void {
     const { gl, prog, tex, vao } = this
     const w = gl.canvas.width, h = gl.canvas.height
     gl.viewport(0, 0, w, h)
@@ -263,6 +339,8 @@ export class VolumeRenderer3D {
     gl.uniform1f(u('uWW'),   ww)
     gl.uniform1f(u('uVmin'), this.vmin)
     gl.uniform1f(u('uVmax'), this.vmax)
+    gl.uniform1i(u('uMode'), mode === 'brain' ? 0 : mode === 'composite' ? 1 : 2)
+    gl.uniform1f(u('uRoiScale'), roiScale)
     gl.uniform3f(u('uPhysNorm'), ...this.physNorm)
 
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
