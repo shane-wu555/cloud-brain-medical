@@ -169,6 +169,20 @@
                 <textarea class="med-doc__area" v-model="recordForm.treatmentPlan" rows="2" :readonly="isRecordLocked" />
               </div>
 
+              <div class="med-doc__row med-doc__row--top">
+                <span class="med-doc__lbl med-doc__lbl--w">处&emsp;方</span>
+                <div class="med-doc__prescriptions">
+                  <div v-for="rx in prescriptions" :key="rx.id" class="med-doc__rx">
+                    <span class="med-doc__rx-no">{{ rx.prescriptionNo }}</span>
+                    <span class="med-doc__rx-status">{{ rxStatusLabel(rx.status) }}</span>
+                    <span v-for="item in rx.items" :key="item.id" class="med-doc__rx-item">
+                      {{ item.drugName }} {{ item.dosage }} {{ item.usage }} {{ item.frequency }} {{ item.days }}天 {{ item.quantity }}份
+                    </span>
+                  </div>
+                  <div v-if="!prescriptions.length" class="med-doc__rx-placeholder">暂无处方，可在「处方」页开立</div>
+                </div>
+              </div>
+
               <div class="med-doc__rule"></div>
               <div class="med-doc__footer">
                 <el-button size="small" @click="printRecord">病历打印</el-button>
@@ -190,7 +204,7 @@
               </div>
               <div v-for="s in rxSuggestions" :key="s.drugName" class="rx-ai-hint__item">
                 <strong>{{ s.drugName }}</strong>
-                <span class="muted">{{ s.dosage }} · {{ s.usage }} · {{ s.frequency }} · {{ s.days }}天</span>
+                <span class="muted">{{ s.specification ? `${s.specification} · ` : '' }}{{ s.dosage }} · {{ s.usage }} · {{ s.frequency }} · {{ s.days }}天{{ s.quantity ? ` · ${s.quantity}份` : '' }}</span>
                 <span v-if="rxWarnings.length" class="rx-warn">⚠ {{ rxWarnings.join('；') }}</span>
               </div>
             </div>
@@ -209,7 +223,7 @@
               </div>
               <div class="rx-card__body">
                 <div v-for="item in rx.items" :key="item.id" class="rx-card__item">
-                  {{ item.drugName }} · {{ item.dosage }} · {{ item.usage }} · {{ item.frequency }} · {{ item.days }}天
+                  {{ item.drugName }} · {{ item.dosage }} · {{ item.usage }} · {{ item.frequency }} · {{ item.days }}天 · {{ item.quantity }}份
                 </div>
               </div>
             </div>
@@ -238,6 +252,8 @@
                 <el-input v-model="item.frequency" placeholder="频次" size="small" style="width:80px" />
                 <el-input-number v-model="item.days" :min="1" :max="30" size="small" style="width:70px" controls-position="right" />
                 <span class="muted">天</span>
+                <el-input-number v-model="item.quantity" :min="1" :max="999" size="small" style="width:78px" controls-position="right" />
+                <span class="muted">份</span>
                 <el-button size="small" link type="danger" @click="manualRxItems.splice(idx,1)">✕</el-button>
               </div>
               <el-button type="primary" size="small" style="margin-top:10px" @click="submitManualRx">提交处方</el-button>
@@ -430,7 +446,30 @@ const prescriptions = ref<Prescription[]>([]);
 const reportDialogVisible = ref(false);
 const selectedReport = ref<MedicalReport>();
 const drugKeyword = ref('');
-const manualRxItems = ref<Array<{ drugId: string; drugName: string; dosage: string; usage: string; frequency: string; days: number }>>([]);
+type RxDraftItem = {
+  drugId: string;
+  drugName: string;
+  specification?: string;
+  quantity: number;
+  dosage: string;
+  usage: string;
+  frequency: string;
+  days: number;
+  note?: string;
+};
+
+type AiDrugSuggestion = {
+  drugName: string;
+  specification?: string;
+  dosage: string;
+  usage: string;
+  frequency: string;
+  days: number;
+  quantity?: number;
+  note?: string;
+};
+
+const manualRxItems = ref<RxDraftItem[]>([]);
 
 const aiPrompt = ref('结合当前病历给出鉴别诊断方向和进一步检查建议');
 const aiMessages = ref<Array<ClinicalSuggestion & { id: string }>>([]);
@@ -440,7 +479,7 @@ const aiFallback = ref(false);
 const diagnosisSource = ref<'HUMAN' | 'AI'>('HUMAN');
 const diagnosisAiRecordId = ref<string>();
 const rxAiRecordId = ref<string>();
-const rxSuggestions = ref<Array<{ drugName: string; dosage: string; usage: string; frequency: string; days: number; note: string }>>([]);
+const rxSuggestions = ref<AiDrugSuggestion[]>([]);
 const rxWarnings = ref<string[]>([]);
 const aiRecommendedNames = ref<string[]>([]);
 
@@ -501,6 +540,61 @@ const filteredDrugs = computed(() => {
   return kw ? drugs.value.filter(d => (d.drugName + d.specification).toLowerCase().includes(kw)) : drugs.value;
 });
 
+function parseDailyTimes(frequency?: string) {
+  const text = (frequency ?? '').toLowerCase();
+  if (!text) return 1;
+  if (/tid|3|三/.test(text)) return 3;
+  if (/bid|2|二|两/.test(text)) return 2;
+  if (/qid|4|四/.test(text)) return 4;
+  if (/隔日/.test(text)) return 0.5;
+  return 1;
+}
+
+function parseDoseUnits(dosage?: string) {
+  const matched = (dosage ?? '').match(/(\d+(?:\.\d+)?)\s*(片|粒|袋|支|瓶|丸|枚|贴)/);
+  return matched ? Number(matched[1]) : undefined;
+}
+
+function parsePackageUnits(specification?: string) {
+  const matched = (specification ?? '').match(/[x×*]\s*(\d+)\s*(片|粒|袋|支|瓶|丸|枚|贴)/i);
+  return matched ? Number(matched[1]) : undefined;
+}
+
+function estimateRxQuantity(drug: Drug, suggestion: Pick<AiDrugSuggestion, 'dosage' | 'frequency' | 'days'>) {
+  const days = Math.max(1, Number(suggestion.days) || 1);
+  const dailyTimes = parseDailyTimes(suggestion.frequency);
+  const doseUnits = parseDoseUnits(suggestion.dosage);
+  const packageUnits = parsePackageUnits(drug.specification);
+  if (doseUnits && packageUnits) {
+    return Math.max(1, Math.ceil((doseUnits * dailyTimes * days) / packageUnits));
+  }
+  if (/注射|针|输液/.test(drug.drugName) || /ml/i.test(drug.specification)) {
+    return Math.max(1, Math.ceil(dailyTimes * days));
+  }
+  return 1;
+}
+
+function normalizeAiRxSuggestion(suggestion: AiDrugSuggestion, drug: Drug): AiDrugSuggestion {
+  const quantity = suggestion.quantity && suggestion.quantity > 0
+    ? Math.ceil(suggestion.quantity)
+    : estimateRxQuantity(drug, suggestion);
+  return {
+    ...suggestion,
+    drugName: drug.drugName,
+    specification: drug.specification,
+    quantity,
+    note: suggestion.note ?? '',
+  };
+}
+
+function matchDrugForSuggestion(suggestion: Pick<AiDrugSuggestion, 'drugName' | 'specification'>) {
+  const name = suggestion.drugName ?? '';
+  const spec = suggestion.specification ?? '';
+  return drugs.value.find(d => d.drugName === name && (!spec || d.specification === spec))
+    ?? drugs.value.find(d => d.drugName === name)
+    ?? drugs.value.find(d => d.drugName.includes(name) || name.includes(d.drugName));
+}
+
 function rxStatusLabel(status: string) {
   const map: Record<string, string> = {
     PENDING_PAYMENT: '待缴费', PAID: '已缴费', WAITING_DISPENSE: '待取药', DISPENSED: '已取药', RETURNED: '已退药', CANCELLED: '已取消'
@@ -520,7 +614,16 @@ function addDrugToRx(drug: Drug) {
     ElMessage.warning('该药品已在处方中');
     return;
   }
-  manualRxItems.value.push({ drugId: drug.id, drugName: drug.drugName, dosage: '', usage: '口服', frequency: '每日三次', days: 7 });
+  manualRxItems.value.push({
+    drugId: drug.id,
+    drugName: drug.drugName,
+    specification: drug.specification,
+    quantity: 1,
+    dosage: '',
+    usage: '口服',
+    frequency: '每日三次',
+    days: 7,
+  });
 }
 
 async function loadPrescriptions() {
@@ -537,7 +640,7 @@ async function submitManualRx() {
   if (!current.value || !manualRxItems.value.length) return;
   if (!recordForm.diagnosis) { ElMessage.warning('请先填写诊断'); return; }
   const items = manualRxItems.value.map(i => ({
-    drugId: i.drugId, quantity: 1,
+    drugId: i.drugId, quantity: i.quantity,
     dosage: i.dosage, usage: i.usage, frequency: i.frequency, days: i.days
   }));
   await createPrescription({
@@ -552,6 +655,7 @@ async function submitManualRx() {
   manualRxItems.value = [];
   ElMessage.success('处方已开立，待患者缴费');
   await loadPrescriptions();
+  mainTab.value = 'record';
 }
 
 const aiModelLabel = computed(() => {
@@ -596,6 +700,7 @@ async function selectAppointment(row?: Appointment) {
   currentRecordId.value = undefined;
   historyRecords.value = [];
   currentOrders.value = [];
+  prescriptions.value = [];
   formalReports.value = [];
   if (row) {
     const currentRecords = await getMedicalRecords({ appointmentId: row.id });
@@ -610,10 +715,12 @@ async function selectAppointment(row?: Appointment) {
       recordVersion.value = currentRecord.version;
       currentRecordId.value = currentRecord.id;
     }
-    const [orders] = await Promise.all([
+    const [orders, rxList] = await Promise.all([
       getMedicalOrders({ appointmentId: row.id }),
+      getPrescriptions({ patientId: row.patientId }),
     ]);
     currentOrders.value = orders;
+    prescriptions.value = rxList;
     formalReports.value = await getReports();
   }
   mainTab.value = 'record';
@@ -773,7 +880,10 @@ async function generateAssistance() {
 
     const medMsg = result.suggestions.find(s => s.kind === 'medication');
     if (medMsg?.metadata?.drugs?.length) {
-      rxSuggestions.value = medMsg.metadata.drugs as typeof rxSuggestions.value;
+      rxSuggestions.value = (medMsg.metadata.drugs as AiDrugSuggestion[]).map(suggestion => {
+        const drug = matchDrugForSuggestion(suggestion);
+        return drug ? normalizeAiRxSuggestion(suggestion, drug) : { ...suggestion, note: suggestion.note ?? '' };
+      });
       rxAiRecordId.value = result.aiRecordId;
     }
     if (result.suggestions.length) {
@@ -799,13 +909,16 @@ function applyDiagnosis(message: ClinicalSuggestion & { id: string }) {
 }
 
 async function applyMedication(message: ClinicalSuggestion & { id: string }) {
-  const drugsData = message.metadata?.drugs as Array<{ drugName: string; dosage: string; usage: string; frequency: string; days: number }> | undefined;
+  const drugsData = message.metadata?.drugs as AiDrugSuggestion[] | undefined;
   if (!drugsData?.length) {
     ElMessage.warning('未包含结构化用药数据，请在处方页手动开药');
     return;
   }
   if (!drugs.value.length) drugs.value = await getDrugs();
-  rxSuggestions.value = drugsData.map(d => ({ ...d, note: '' }));
+  rxSuggestions.value = drugsData.map(suggestion => {
+    const drug = matchDrugForSuggestion(suggestion);
+    return drug ? normalizeAiRxSuggestion(suggestion, drug) : { ...suggestion, note: suggestion.note ?? '' };
+  });
   rxAiRecordId.value = message.id;
   rxWarnings.value = [];
   mainTab.value = 'rx';
@@ -838,10 +951,18 @@ async function createRxFromSuggestion() {
     const unmatched: string[] = [];
     const items = rxSuggestions.value.map(suggestion => {
       const name = suggestion.drugName ?? '';
-      const drug = drugs.value.find(d => d.drugName === name)
-        ?? drugs.value.find(d => d.drugName.includes(name) || name.includes(d.drugName));
+      const drug = matchDrugForSuggestion(suggestion);
       if (!drug) { unmatched.push(name); return null; }
-      return { drugId: drug.id, quantity: 1, dosage: suggestion.dosage, usage: suggestion.usage, frequency: suggestion.frequency, days: suggestion.days };
+      const normalized = normalizeAiRxSuggestion(suggestion, drug);
+      return {
+        drugId: drug.id,
+        quantity: normalized.quantity ?? 1,
+        dosage: normalized.dosage,
+        usage: normalized.usage,
+        frequency: normalized.frequency,
+        days: normalized.days,
+        note: normalized.note,
+      };
     }).filter((i): i is NonNullable<typeof i> => i !== null);
 
     if (unmatched.length) {
@@ -866,6 +987,7 @@ async function createRxFromSuggestion() {
     rxWarnings.value = [];
     ElMessage.success('处方已生成，待患者缴费');
     await loadPrescriptions();
+    mainTab.value = 'record';
   } catch (e: any) {
     ElMessage.error({ message: `处方生成失败：${e?.response?.data?.message ?? e?.message ?? '请检查服务状态'}`, duration: 5000 });
   }
@@ -914,6 +1036,9 @@ watch(mainTab, (tab) => {
   if (tab === 'record' && current.value) {
     getMedicalOrders({ appointmentId: current.value.id })
       .then(list => { currentOrders.value = list; })
+      .catch(() => {});
+    getPrescriptions({ patientId: current.value.patientId })
+      .then(list => { prescriptions.value = list; })
       .catch(() => {});
   }
 });
@@ -1146,11 +1271,36 @@ watch(mainTab, (tab) => {
   border: none; border-bottom: 1px solid #666;
   outline: none; background: transparent;
   font-family: inherit; font-size: inherit; color: inherit;
-  resize: vertical; padding: 2px 4px; line-height: 1.8; min-height: 80px;
+  resize: vertical; padding: 2px 4px; line-height: 1.8; min-height: 54px;
 }
 .med-doc__area:focus { border-bottom-color: #0899a5; }
 .med-doc__area--bold { font-weight: 600; }
 .med-doc__area--grow { resize: vertical; }
+.med-doc__prescriptions {
+  flex: 1;
+  min-width: 0;
+  border-bottom: 1px solid #666;
+  padding: 2px 4px 4px;
+  min-height: 34px;
+}
+.med-doc__rx {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
+  line-height: 1.8;
+}
+.med-doc__rx + .med-doc__rx { margin-top: 2px; }
+.med-doc__rx-no { color: #64748b; font-size: 12px; }
+.med-doc__rx-status {
+  color: #0899a5;
+  font-size: 12px;
+  border: 1px solid #a8e8ec;
+  border-radius: 3px;
+  padding: 0 4px;
+}
+.med-doc__rx-item { font-size: 13.5px; }
+.med-doc__rx-placeholder { color: #9ca3af; font-size: 12px; line-height: 1.8; }
 .med-doc__check-placeholder { font-size: 12px; color: #9ca3af; font-style: italic; padding: 2px 0; }
 .check-done-mark { color: #0899a5; font-size: 12px; margin-left: 4px; }
 .med-doc__checklist { flex: 1; display: flex; flex-direction: column; gap: 4px; }

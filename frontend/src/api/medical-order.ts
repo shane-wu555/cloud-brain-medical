@@ -42,6 +42,16 @@ export interface MedicalReport {
 }
 
 export interface MedicalItem { code: string; name: string; category: 'CHECK' | 'LAB' | 'DISPOSAL' | 'DRUG'; price: number }
+export interface LaboratoryResultItem {
+  id?: string;
+  itemCode: string;
+  itemName: string;
+  resultValue: string;
+  unit?: string;
+  referenceRange?: string;
+  abnormalFlag?: string;
+  createdByType?: string;
+}
 
 export async function getMedicalItems() { return (await http.get<MedicalItem[]>('/catalog/medical-items')).data }
 export async function getMedicalOrders(params: Record<string, string | undefined> = {}) { return (await http.get<MedicalOrder[]>('/medical-orders', { params })).data }
@@ -59,4 +69,5 @@ export async function submitCt(id: string, attachmentId: string) { return (await
 export async function refreshAiTask(taskId: string) { return (await http.get<{ externalTaskId: string; status: string }>(`/medical-orders/ai-tasks/${taskId}`)).data }
 export async function createSpecimen(orderId: string, specimenType: string, barcode: string) { return (await http.post<{ id: string; status: string }>(`/medical-orders/${orderId}/specimens`, { specimenType, barcode })).data }
 export async function transitionSpecimen(id: string, status: string, reason = '') { return (await http.post(`/medical-orders/specimens/${id}/status`, { status, reason })).data }
-export async function saveLabResults(orderId: string, specimenId: string, items: Array<Record<string, unknown>>) { return (await http.post(`/medical-orders/${orderId}/laboratory-results`, { specimenId, items })).data }
+export async function saveLabResults(orderId: string, specimenId: string, items: Array<Record<string, unknown>>) { return (await http.post<LaboratoryResultItem[]>(`/medical-orders/${orderId}/laboratory-results`, { specimenId, items })).data }
+export async function getLabResults(orderId: string) { return (await http.get<LaboratoryResultItem[]>(`/medical-orders/${orderId}/laboratory-results`)).data }

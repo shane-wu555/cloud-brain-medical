@@ -56,9 +56,10 @@ def _assist_with_llm(request: ClinicalAssistanceRequest, config) -> ClinicalAssi
    ★ 默认只推荐1项最必要的检查；仅在临床上确有必要同时完成多项时才增加，最多不超过2项
 
 3. kind="medication" label="用药建议"
-   content: 编号列出 药名+剂量+用法+疗程
-   metadata: {{"drugs": [{{"drugName":"...","dosage":"...","usage":"口服","frequency":"...","days":整数}}]}}
-   ★ drugName 必须从下方【本院药品目录】中选择，使用 drugName 字段的精确值
+   content: 编号列出 药名+本院规格+剂量+用法+疗程
+   metadata: {{"drugs": [{{"drugName":"...","specification":"...","dosage":"...","usage":"口服","frequency":"...","days":整数}}]}}
+   ★ drugName 和 specification 必须从下方【本院药品目录】中选择，使用精确值
+   ★ dosage 是单次用量，不等于药品规格；不得把目录外规格写入 specification
 
 4. kind="advice" label="临床建议"
    content: 编号列出临床指导，每条≤20字

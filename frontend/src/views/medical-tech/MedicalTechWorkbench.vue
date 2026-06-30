@@ -341,27 +341,37 @@
                     <label>条码号</label>
                     <el-input v-model="lab.barcode" size="small" />
                   </div>
+                  <div class="lab-qr-card">
+                    <img v-if="labQrUrl" :src="labQrUrl" alt="样本二维码" />
+                    <div v-else class="lab-qr-card__empty">QR</div>
+                    <span>{{ lab.barcode }}</span>
+                  </div>
                 </div>
                 <el-button type="primary" size="small" :disabled="!current" @click="prepareSpecimen">
                   登记并流转至分析
                 </el-button>
 
-                <div class="lab-block-title" style="margin-top:20px">检验指标录入</div>
-                <div class="lab-grid">
-                  <div class="lab-field">
-                    <label>指标名称</label>
-                    <el-input v-model="lab.itemName" size="small" placeholder="如 血红蛋白" />
-                  </div>
-                  <div class="lab-field">
-                    <label>结果值</label>
-                    <el-input v-model="lab.value" size="small" />
-                  </div>
-                  <div class="lab-field">
-                    <label>单位</label>
-                    <el-input v-model="lab.unit" size="small" placeholder="如 g/L" />
-                  </div>
+                <div class="lab-block-title" style="margin-top:20px">检验结果导入</div>
+                <div class="lab-import-bar">
+                  <label class="lab-import-btn">
+                    导入 Excel
+                    <input type="file" accept=".xlsx,.xls,.csv" @change="importLabExcel" />
+                  </label>
+                  <el-button size="small" :disabled="!specimenId || !labResultRows.length" @click="saveLab">保存导入结果</el-button>
+                  <span class="muted">支持列：指标名称、结果值、单位、参考范围、异常标志</span>
                 </div>
-                <el-button size="small" :disabled="!specimenId" @click="saveLab">保存检验指标</el-button>
+                <el-table v-if="labResultRows.length" :data="labResultRows" size="small" border :max-height="300">
+                  <el-table-column prop="itemName" label="指标名称" min-width="160" />
+                  <el-table-column prop="resultValue" label="结果值" width="120" />
+                  <el-table-column prop="unit" label="单位" width="100" />
+                  <el-table-column prop="referenceRange" label="参考范围" width="140" />
+                  <el-table-column prop="abnormalFlag" label="提示" width="90">
+                    <template #default="{ row }">
+                      <el-tag :type="labFlagType(row.abnormalFlag)" size="small" effect="plain">{{ labFlagLabel(row.abnormalFlag) }}</el-tag>
+                    </template>
+                  </el-table-column>
+                </el-table>
+                <div v-else class="lab-import-empty">尚未导入检验结果 Excel</div>
               </div>
             </template>
 
@@ -416,29 +426,57 @@
 
               <div class="med-report__rule"></div>
 
-              <!-- Findings -->
-              <div class="med-report__section">
-                <div class="med-report__section-lbl">检查所见 / 执行过程</div>
-                <textarea
-                  class="med-report__area"
-                  v-model="report.findings"
-                  placeholder="详细描述检查所见、执行过程…"
-                  rows="5"
-                />
-              </div>
+              <template v-if="role === 'LAB_DOCTOR'">
+                <table class="lab-report-table">
+                  <thead>
+                    <tr>
+                      <th>项目名称</th>
+                      <th>结果</th>
+                      <th>单位</th>
+                      <th>参考范围</th>
+                      <th>提示</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="row in labResultRows" :key="row.itemCode || row.itemName">
+                      <td>{{ row.itemName }}</td>
+                      <td class="lab-report-table__value">{{ row.resultValue }}</td>
+                      <td>{{ row.unit || '—' }}</td>
+                      <td>{{ row.referenceRange || '—' }}</td>
+                      <td>{{ labFlagLabel(row.abnormalFlag) }}</td>
+                    </tr>
+                    <tr v-if="!labResultRows.length">
+                      <td colspan="5" class="lab-report-table__empty">尚未导入检验结果</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </template>
 
-              <div class="med-report__rule"></div>
+              <template v-else>
+                <!-- Findings -->
+                <div class="med-report__section">
+                  <div class="med-report__section-lbl">检查所见 / 执行过程</div>
+                  <textarea
+                    class="med-report__area"
+                    v-model="report.findings"
+                    placeholder="详细描述检查所见、执行过程…"
+                    rows="5"
+                  />
+                </div>
 
-              <!-- Conclusion -->
-              <div class="med-report__section">
-                <div class="med-report__section-lbl med-report__section-lbl--emphasis">结　论 / 结　果</div>
-                <textarea
-                  class="med-report__area med-report__area--emphasis"
-                  v-model="report.conclusion"
-                  placeholder="填写检查结论或检验结果…"
-                  rows="4"
-                />
-              </div>
+                <div class="med-report__rule"></div>
+
+                <!-- Conclusion -->
+                <div class="med-report__section">
+                  <div class="med-report__section-lbl med-report__section-lbl--emphasis">结　论 / 结　果</div>
+                  <textarea
+                    class="med-report__area med-report__area--emphasis"
+                    v-model="report.conclusion"
+                    placeholder="填写检查结论或检验结果…"
+                    rows="4"
+                  />
+                </div>
+              </template>
 
               <!-- Advice -->
               <div class="med-report__section" style="margin-top:14px">
@@ -541,14 +579,16 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import { ElMessage } from 'element-plus';
+import QRCode from 'qrcode';
+import * as XLSX from 'xlsx';
 import { useRouter } from 'vue-router';
 import { useAuthStore } from '../../store/auth';
 import {
   callMedicalOrder, confirmReport, createReportDraft as saveReportDraft,
-  createSpecimen, getMedicalOrders, missMedicalOrder,
+  createSpecimen, getLabResults, getMedicalOrders, missMedicalOrder,
   refreshAiTask, saveLabResults, startMedicalOrder,
   submitCt, transitionSpecimen, uploadAttachment,
-  type MedicalOrder
+  type LaboratoryResultItem, type MedicalOrder
 } from '../../api/medical-order';
 import { createReportDraft as createAiReportDraft } from '../../api/ai';
 import { readVolume, readDicomSeries, renderAxial, renderCoronal, renderSagittal, type VolumeData } from '../../utils/volumeReader';
@@ -885,8 +925,64 @@ function setWindow(preset: 'brain' | 'standard' | 'subdural' | 'bone' | 'soft') 
 }
 
 // Lab state (LAB_DOCTOR)
-const lab = reactive({ specimenType: '全血', barcode: `LAB-${Date.now()}`, itemName: '血红蛋白', value: '135', unit: 'g/L' });
+type LabResultRow = Pick<LaboratoryResultItem, 'itemCode' | 'itemName' | 'resultValue' | 'unit' | 'referenceRange' | 'abnormalFlag'>;
+
+const lab = reactive({ specimenType: '全血', barcode: `LAB-${Date.now()}` });
 const specimenId = ref('');
+const labQrUrl = ref('');
+const labResultRows = ref<LabResultRow[]>([]);
+
+function makeLabBarcode(order?: MedicalOrder) {
+  const suffix = order?.id ? order.id.replace(/-/g, '').slice(0, 8).toUpperCase() : String(Date.now()).slice(-8);
+  return `LAB-${suffix}`;
+}
+
+async function refreshLabQr() {
+  labQrUrl.value = await QRCode.toDataURL(lab.barcode || 'LAB', {
+    errorCorrectionLevel: 'M',
+    margin: 1,
+    width: 132,
+  });
+}
+
+function labFlagLabel(flag?: string) {
+  const value = (flag ?? '').toUpperCase();
+  if (['HIGH', 'H', '↑', '偏高'].includes(value)) return '↑';
+  if (['LOW', 'L', '↓', '偏低'].includes(value)) return '↓';
+  if (['ABNORMAL', '异常'].includes(value)) return '异常';
+  return '正常';
+}
+
+function labFlagType(flag?: string): '' | 'success' | 'warning' | 'danger' | 'info' {
+  const value = (flag ?? '').toUpperCase();
+  if (!value || value === 'NORMAL' || value === '正常') return 'success';
+  if (['HIGH', 'H', 'LOW', 'L', '↑', '↓', '偏高', '偏低'].includes(value)) return 'warning';
+  return 'danger';
+}
+
+function valueOf(row: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = row[key];
+    if (value !== undefined && value !== null && String(value).trim() !== '') return String(value).trim();
+  }
+  return '';
+}
+
+function normalizeLabRow(row: Record<string, unknown>, index: number): LabResultRow | null {
+  const itemName = valueOf(row, ['指标名称', '项目名称', '检验项目', '项目', 'itemName', 'name']);
+  const resultValue = valueOf(row, ['结果值', '结果', '检测结果', 'resultValue', 'value']);
+  if (!itemName || !resultValue) return null;
+  const code = valueOf(row, ['指标编码', '项目编码', '编码', 'itemCode', 'code']) || `LAB-${index + 1}`;
+  const flag = valueOf(row, ['异常标志', '提示', 'abnormalFlag', 'flag']) || 'NORMAL';
+  return {
+    itemCode: code,
+    itemName,
+    resultValue,
+    unit: valueOf(row, ['单位', 'unit']),
+    referenceRange: valueOf(row, ['参考范围', '参考值', 'referenceRange', 'range']),
+    abnormalFlag: flag,
+  };
+}
 
 // Computed queue stats
 const waitingCount = computed(() => orders.value.filter(o => ['WAITING','CALLED'].includes(o.status)).length);
@@ -934,7 +1030,7 @@ async function refreshOrders() {
   refreshing.value = false;
 }
 
-function select(row: MedicalOrder) {
+async function select(row: MedicalOrder) {
   current.value = row;
   Object.assign(report, { findings: '', conclusion: '', advice: '' });
   file.value = undefined;
@@ -945,6 +1041,19 @@ function select(row: MedicalOrder) {
   aiMessages.value = [];
   aiModel.value = '';
   specimenId.value = '';
+  labResultRows.value = [];
+  lab.barcode = makeLabBarcode(row);
+  await refreshLabQr();
+  if (row.orderType === 'LAB') {
+    labResultRows.value = (await getLabResults(row.id)).map(item => ({
+      itemCode: item.itemCode,
+      itemName: item.itemName,
+      resultValue: item.resultValue,
+      unit: item.unit,
+      referenceRange: item.referenceRange,
+      abnormalFlag: item.abnormalFlag,
+    }));
+  }
   confirmedAt.value = '';
   published.value = false;
   mainTab.value = 'work';
@@ -1091,13 +1200,62 @@ async function prepareSpecimen() {
   ElMessage.success('样本已进入分析阶段');
 }
 
+async function importLabExcel(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = '';
+  if (!file) return;
+  const buffer = await file.arrayBuffer();
+  const workbook = XLSX.read(buffer, { type: 'array' });
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' });
+  const normalized = rows
+    .map((row, index) => normalizeLabRow(row, index))
+    .filter((row): row is LabResultRow => row !== null);
+  if (!normalized.length) {
+    ElMessage.warning('未识别到有效检验结果，请确认 Excel 表头包含“指标名称”和“结果值”');
+    return;
+  }
+  labResultRows.value = normalized;
+  updateLabReportDraft();
+  ElMessage.success(`已导入 ${normalized.length} 项检验结果`);
+}
+
+function updateLabReportDraft() {
+  if (!labResultRows.value.length) return;
+  report.findings = `${lab.specimenType}样本，条码号：${lab.barcode}，共导入 ${labResultRows.value.length} 项检验指标。`;
+  const abnormal = labResultRows.value.filter(row => labFlagLabel(row.abnormalFlag) !== '正常');
+  report.conclusion = abnormal.length
+    ? `异常指标：${abnormal.map(row => `${row.itemName}${labFlagLabel(row.abnormalFlag)}`).join('、')}。`
+    : '本次导入检验指标未见明显异常。';
+}
+
 async function saveLab() {
   if (!current.value) return;
-  await saveLabResults(current.value.id, specimenId.value, [{
-    itemCode: 'HGB', itemName: lab.itemName, resultValue: lab.value,
-    unit: lab.unit, referenceRange: '115-150', abnormalFlag: 'NORMAL', createdByType: 'HUMAN'
-  }]);
-  ElMessage.success('检验指标已保存');
+  if (!specimenId.value) {
+    ElMessage.warning('请先完成样本登记并流转至分析');
+    return;
+  }
+  if (!labResultRows.value.length) {
+    ElMessage.warning('请先导入检验结果 Excel');
+    return;
+  }
+  const saved = await saveLabResults(current.value.id, specimenId.value, labResultRows.value.map(row => ({
+    ...row,
+    createdByType: 'HUMAN',
+  })));
+  labResultRows.value = saved.map(item => ({
+    itemCode: item.itemCode,
+    itemName: item.itemName,
+    resultValue: item.resultValue,
+    unit: item.unit,
+    referenceRange: item.referenceRange,
+    abnormalFlag: item.abnormalFlag,
+  }));
+  updateLabReportDraft();
+  await saveReportDraft(current.value.id, report);
+  ElMessage.success('检验结果已保存并同步至报告');
+  mainTab.value = 'report';
 }
 
 async function generateAiDraft() {
@@ -1149,7 +1307,14 @@ function printReport() {
 
 function logout() { auth.signOut(); router.push('/login'); }
 
-onMounted(loadOrders);
+watch(() => lab.barcode, () => {
+  refreshLabQr().catch(() => {});
+});
+
+onMounted(async () => {
+  await refreshLabQr();
+  await loadOrders();
+});
 </script>
 
 <style scoped>
@@ -1703,6 +1868,59 @@ onMounted(loadOrders);
 .lab-grid { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
 .lab-field { display: flex; flex-direction: column; gap: 4px; min-width: 140px; }
 .lab-field label { font-size: 12px; color: #6b7280; }
+.lab-qr-card {
+  width: 132px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 8px;
+  border: 1px solid #dbe3ef;
+  border-radius: 6px;
+  background: #fff;
+}
+.lab-qr-card img { width: 112px; height: 112px; display: block; }
+.lab-qr-card span { font-size: 11px; color: #64748b; word-break: break-all; text-align: center; }
+.lab-qr-card__empty {
+  width: 112px;
+  height: 112px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f8fafc;
+  color: #94a3b8;
+  font-weight: 700;
+}
+.lab-import-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.lab-import-btn {
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 12px;
+  border-radius: 4px;
+  background: #0899a5;
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+}
+.lab-import-btn:hover { background: #0cbdcc; }
+.lab-import-btn input { display: none; }
+.lab-import-empty {
+  min-height: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed #dbe3ef;
+  border-radius: 6px;
+  color: #9ca3af;
+  font-size: 13px;
+  background: #f8fafc;
+}
 
 /* ── Disposal section ── */
 .disposal-section { display: flex; flex-direction: column; gap: 10px; }
@@ -1810,6 +2028,31 @@ onMounted(loadOrders);
   font-size: 11.5px; color: #777;
   border-top: 1px solid #e5e7eb;
   padding-top: 8px; margin-top: 10px;
+}
+
+.lab-report-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0 18px;
+  font-size: 13.5px;
+}
+.lab-report-table th {
+  border-top: 1px solid #333;
+  border-bottom: 1px solid #333;
+  padding: 6px 8px;
+  text-align: left;
+  font-weight: 700;
+}
+.lab-report-table td {
+  border-bottom: 1px solid #e5e7eb;
+  padding: 7px 8px;
+  line-height: 1.5;
+}
+.lab-report-table__value { font-weight: 700; }
+.lab-report-table__empty {
+  text-align: center;
+  color: #9ca3af;
+  padding: 24px 0 !important;
 }
 
 .med-report__actions {
