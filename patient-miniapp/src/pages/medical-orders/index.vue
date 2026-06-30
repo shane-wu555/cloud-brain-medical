@@ -161,16 +161,18 @@ function goToPendingPayments() {
 
 onShow(async () => {
   await auth.loadProfile();
+  let patient;
   try {
-    auth.requireBoundPatient();
+    patient = auth.requireBoundPatient();
   } catch (error) {
     uni.showToast({ title: (error as Error).message, icon: 'none' });
     uni.navigateTo({ url: '/pages/real-name/index' });
     return;
   }
+  const patientQuery = `patientId=${encodeURIComponent(patient.id)}`;
   const [orderResponse, response] = await Promise.all([
-    request<MedicalOrder[]>({ url: '/medical-orders', method: 'GET' }),
-    request<Report[]>({ url: '/medical-orders/reports', method: 'GET' })
+    request<MedicalOrder[]>({ url: `/medical-orders?${patientQuery}`, method: 'GET' }),
+    request<Report[]>({ url: `/medical-orders/reports?${patientQuery}`, method: 'GET' })
   ]);
   orders.value = orderResponse;
   reports.value = response.filter((item) => item.reportType === 'CHECK' || item.reportType === 'LAB');

@@ -148,14 +148,15 @@ function canPay(prescription: Prescription) {
 
 async function load() {
   await auth.loadProfile();
+  let patient;
   try {
-    auth.requireBoundPatient();
+    patient = auth.requireBoundPatient();
   } catch (error) {
     uni.showToast({ title: (error as Error).message, icon: 'none' });
     uni.navigateTo({ url: '/pages/real-name/index' });
     return;
   }
-  prescriptions.value = await request<Prescription[]>({ url: '/prescriptions', method: 'GET' });
+  prescriptions.value = await request<Prescription[]>({ url: `/prescriptions?patientId=${encodeURIComponent(patient.id)}`, method: 'GET' });
 }
 
 function goToPendingPayments() {

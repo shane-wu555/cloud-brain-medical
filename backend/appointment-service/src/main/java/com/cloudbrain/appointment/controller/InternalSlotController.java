@@ -31,6 +31,14 @@ public class InternalSlotController {
         return service.syncSlot(request.scheduleId(), request.capacity());
     }
 
+    @PostMapping("/batch")
+    public java.util.List<SlotInventory> syncBatch(
+            @RequestHeader(name = "X-Internal-Api-Key", required = false) String apiKey,
+            @RequestBody java.util.List<AppointmentController.SyncSlotRequest> requests) {
+        if (!internalApiKey.equals(apiKey)) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "内部接口认证失败");
+        return service.syncSlots(requests);
+    }
+
     @GetMapping
     public java.util.List<SlotInventory> list(
             @RequestHeader(name = "X-Internal-Api-Key", required = false) String apiKey) {

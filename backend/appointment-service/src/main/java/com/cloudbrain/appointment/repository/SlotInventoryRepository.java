@@ -3,6 +3,7 @@ package com.cloudbrain.appointment.repository;
 import com.cloudbrain.appointment.entity.SlotInventory;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.PreparedStatement;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -44,6 +45,24 @@ public class SlotInventoryRepository {
                 inventory.getLocked(),
                 inventory.getBooked());
         return inventory;
+    }
+
+    public void saveAllCapacities(List<SlotCapacity> capacities) {
+        if (capacities == null || capacities.isEmpty()) {
+            return;
+        }
+        jdbcTemplate.batchUpdate("""
+                insert into slot_inventory (slot_id, capacity, locked, booked)
+                values (?, ?, 0, 0)
+                on conflict (slot_id) do update set
+                    capacity = greatest(excluded.capacity, slot_inventory.locked + slot_inventory.booked)
+                """,
+                capacities,
+                500,
+                (PreparedStatement ps, SlotCapacity item) -> {
+                    ps.setString(1, item.slotId());
+                    ps.setInt(2, item.capacity());
+                });
     }
 
     public boolean tryLock(String slotId) {
@@ -91,4 +110,6 @@ public class SlotInventoryRepository {
             return inventory;
         }
     }
+
+    public record SlotCapacity(String slotId, int capacity) {}
 }

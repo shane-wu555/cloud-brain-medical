@@ -90,7 +90,7 @@
           <text>{{ schedule.available > 0 ? '有号' : '满号' }}</text>
         </view>
       </view>
-      <view v-if="recommendedDoctorIds.includes(schedule.doctorId)" class="doctor-actions">
+      <view v-if="isRecommendedDoctor(schedule.doctorId)" class="doctor-actions">
         <view class="recommend-tag">AI 推荐</view>
       </view>
     </view>
@@ -205,10 +205,10 @@ const initialDepartmentId = ref('');
 const initialDoctorId = ref('');
 const focusedDoctorId = ref('');
 const isSearchDoctorEntry = ref(false);
-const EXCLUDED_PATIENT_DEPARTMENT_NAMES = ['检查科', '检验科', '处置室', '药房', '收费处'];
+const EXCLUDED_PATIENT_DEPARTMENT_NAMES = ['检查科', '检验科', '处置科', '药房', '收费处', '系统管理'];
 
 const selectedDepartment = computed(() => departments.value.find((item) => item.id === selectedDepartmentId.value));
-const recommendedDoctorIds = computed(() => aiConsultation.value?.recommendedDoctors.map((item) => item.doctorId) ?? []);
+const recommendedDoctorIds = computed(() => new Set((aiConsultation.value?.recommendedDoctors ?? []).map((item) => item.doctorId)));
 const BOOKABLE_DAY_SPAN = 7;
 
 function formatDateKey(date: Date) {
@@ -248,8 +248,8 @@ const filteredSchedules = computed(() =>
   visibleSchedules.value
     .filter((item) => !selectedDate.value || item.workDate === selectedDate.value)
     .sort((a, b) => {
-      const ar = recommendedDoctorIds.value.includes(a.doctorId) ? 0 : 1;
-      const br = recommendedDoctorIds.value.includes(b.doctorId) ? 0 : 1;
+      const ar = isRecommendedDoctor(a.doctorId) ? 0 : 1;
+      const br = isRecommendedDoctor(b.doctorId) ? 0 : 1;
       if (ar !== br) {
         return ar - br;
       }
@@ -267,6 +267,11 @@ function doctorInfo(doctorId: string) {
   }
   const extra = [doctor.title, doctor.specialty].filter(Boolean).join(' · ');
   return extra || '门诊医生';
+}
+
+function isRecommendedDoctor(doctorId: string) {
+  const doctor = doctorMap.value.get(doctorId);
+  return recommendedDoctorIds.value.has(doctorId) || (!!doctor?.employeeNo && recommendedDoctorIds.value.has(doctor.employeeNo));
 }
 
 function normalizeText(value: unknown) {

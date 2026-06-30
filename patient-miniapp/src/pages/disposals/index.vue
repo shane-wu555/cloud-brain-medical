@@ -162,16 +162,18 @@ function statusClass(status: MedicalOrder['status'], paymentStatus: MedicalOrder
 
 async function load() {
   await auth.loadProfile();
+  let patient;
   try {
-    auth.requireBoundPatient();
+    patient = auth.requireBoundPatient();
   } catch (error) {
     uni.showToast({ title: (error as Error).message, icon: 'none' });
     uni.navigateTo({ url: '/pages/real-name/index' });
     return;
   }
+  const patientQuery = `patientId=${encodeURIComponent(patient.id)}`;
   const [orderList, appointmentList] = await Promise.all([
-    request<MedicalOrder[]>({ url: '/medical-orders?type=DISPOSAL', method: 'GET' }),
-    request<Appointment[]>({ url: '/appointments', method: 'GET' })
+    request<MedicalOrder[]>({ url: `/medical-orders?type=DISPOSAL&${patientQuery}`, method: 'GET' }),
+    request<Appointment[]>({ url: `/appointments?${patientQuery}`, method: 'GET' })
   ]);
   orders.value = orderList;
   appointments.value = appointmentList;

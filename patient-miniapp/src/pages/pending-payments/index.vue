@@ -461,12 +461,13 @@ async function load() {
     return;
   }
   loadWarning.value = '';
+  const patientQuery = `patientId=${encodeURIComponent(patient.id)}`;
   if (mode.value === 'record') {
     const [paymentsResult, appointmentsResult, medicalOrdersResult, prescriptionsResult] = await Promise.allSettled([
-      request<PaymentOrder[]>({ url: '/payments', method: 'GET' }),
-      request<Appointment[]>({ url: `/appointments?patientId=${patient.id}`, method: 'GET' }),
-      request<MedicalOrder[]>({ url: '/medical-orders', method: 'GET' }),
-      request<Prescription[]>({ url: '/prescriptions', method: 'GET' })
+      request<PaymentOrder[]>({ url: `/payments?${patientQuery}`, method: 'GET' }),
+      request<Appointment[]>({ url: `/appointments?${patientQuery}`, method: 'GET' }),
+      request<MedicalOrder[]>({ url: `/medical-orders?${patientQuery}`, method: 'GET' }),
+      request<Prescription[]>({ url: `/prescriptions?${patientQuery}`, method: 'GET' })
     ]);
 
     paymentRecords.value = paymentsResult.status === 'fulfilled' ? paymentsResult.value : [];
@@ -485,10 +486,10 @@ async function load() {
   }
   const warnings: string[] = [];
   const [appointmentsResult, paymentsResult, medicalOrdersResult, prescriptionsResult] = await Promise.allSettled([
-    request<Appointment[]>({ url: '/appointments?status=PENDING_PAYMENT', method: 'GET' }),
-    request<PaymentOrder[]>({ url: '/payments?businessType=APPOINTMENT&status=PENDING', method: 'GET' }),
-    request<MedicalOrder[]>({ url: '/medical-orders?status=PENDING_PAYMENT', method: 'GET' }),
-    request<Prescription[]>({ url: '/prescriptions', method: 'GET' })
+    request<Appointment[]>({ url: `/appointments?status=PENDING_PAYMENT&${patientQuery}`, method: 'GET' }),
+    request<PaymentOrder[]>({ url: `/payments?businessType=APPOINTMENT&status=PENDING&${patientQuery}`, method: 'GET' }),
+    request<MedicalOrder[]>({ url: `/medical-orders?status=PENDING_PAYMENT&${patientQuery}`, method: 'GET' }),
+    request<Prescription[]>({ url: `/prescriptions?${patientQuery}`, method: 'GET' })
   ]);
 
   const appointments = unwrapResult(appointmentsResult, [], '挂号费');

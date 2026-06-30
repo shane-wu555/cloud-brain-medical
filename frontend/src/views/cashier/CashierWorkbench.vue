@@ -85,7 +85,7 @@
               <h1>线下挂号</h1>
               <p>录入就诊人信息，身份证自动识别出生日期和性别；已有档案会直接复用。</p>
             </div>
-            <el-button :loading="loadingSchedules" @click="loadSchedules">刷新号源</el-button>
+            <el-button :loading="loadingSchedules" @click="refreshSchedules">刷新号源</el-button>
           </div>
 
           <div class="registration-layout">
@@ -280,7 +280,9 @@
             <el-table-column label="金额" width="110" align="right">
               <template #default="{ row }">￥{{ amountText(row.amount) }}</template>
             </el-table-column>
-            <el-table-column prop="paymentMethod" label="方式" width="130" />
+            <el-table-column label="方式" width="130">
+              <template #default="{ row }">{{ paymentMethodLabel(row.paymentMethod) }}</template>
+            </el-table-column>
             <el-table-column label="状态" width="100">
               <template #default="{ row }">
                 <el-tag :type="paymentTagType(row.status)" effect="plain" size="small">{{ paymentOrderStatusLabel(row.status) }}</el-tag>
@@ -358,7 +360,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { useRouter } from 'vue-router';
 import { useAuthStore } from '../../store/auth';
@@ -410,6 +412,7 @@ const router = useRouter();
 const auth = useAuthStore();
 
 const currentPage = ref<PageKey>('payments');
+const authRedirecting = ref(false);
 const loadingAll = ref(false);
 const loadingSchedules = ref(false);
 const searchingPatient = ref(false);
@@ -477,7 +480,9 @@ const lastAutoSearchNumber = ref('');
 const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
 const today = new Date().toLocaleDateString('zh-CN');
 const dayOfWeek = `星期${weekDays[new Date().getDay()]}`;
-const EXCLUDED_REGISTRATION_DEPARTMENT_KEYWORDS = ['处置室', '检查科', '检验科', '药房', '收费处'];
+const EXCLUDED_REGISTRATION_DEPARTMENT_KEYWORDS = ['处置科', '检查科', '检验科', '药房', '收费处', '系统管理'];
+const nowTimestamp = ref(Date.now());
+let nowTimer: number | undefined;
 
 const navItems = computed(() => [
   { key: 'payments' as const, label: '缴费', badge: pendingItems.value.length || '' },
@@ -491,7 +496,6 @@ const canConfirmPatient = computed(() => {
   if (!patientForm.idNumber.trim() || !patientForm.name.trim() || !patientForm.birthDate) return false;
   return patientForm.idType !== 'ID_CARD' || isValidIdCard(patientForm.idNumber);
 });
-const canRegister = computed(() => Boolean(canConfirmPatient.value && selectedSlotId.value));
 const registrationDepartments = computed(() => departments.value.filter(department => isRegistrationDepartment(department.id)));
 
 const doctorOptions = computed(() => {
@@ -499,6 +503,7 @@ const doctorOptions = computed(() => {
   schedules.value
     .filter(item => isRegistrationDepartment(item.departmentId))
     .filter(item => !selectedDepartmentId.value || item.departmentId === selectedDepartmentId.value)
+    .filter(item => hasFutureScheduleSlot(item))
     .forEach(item => map.set(item.doctorId, { id: item.doctorId, name: item.doctorName }));
   return [...map.values()];
 });
@@ -509,8 +514,11 @@ const scheduleOptions = computed<ScheduleOption[]>(() => {
     .filter(item => !selectedDepartmentId.value || item.departmentId === selectedDepartmentId.value)
     .filter(item => !selectedDoctorId.value || item.doctorId === selectedDoctorId.value)
     .flatMap(schedule => (schedule.timeSlots ?? []).map(slot => ({ schedule, slot })))
+    .filter(item => isFutureScheduleSlot(item))
     .sort((left, right) => `${left.schedule.workDate} ${left.slot.startTime}`.localeCompare(`${right.schedule.workDate} ${right.slot.startTime}`));
 });
+const selectedScheduleOption = computed(() => scheduleOptions.value.find(item => item.slot.id === selectedSlotId.value));
+const canRegister = computed(() => Boolean(canConfirmPatient.value && selectedScheduleOption.value && selectedScheduleOption.value.slot.available > 0));
 
 const appointmentMap = computed(() => new Map(appointments.value.map(item => [item.id, item])));
 const medicalOrderMap = computed(() => new Map(medicalOrders.value.map(item => [item.id, item])));
@@ -636,7 +644,11 @@ const qrCells = computed(() => {
 
 function switchPage(page: PageKey) {
   currentPage.value = page;
-  if (page !== 'registration') loadAllData();
+  if (page === 'registration') {
+    loadRegistrationData();
+  } else {
+    loadAllData();
+  }
 }
 
 async function loadAllData() {
@@ -657,16 +669,39 @@ async function loadAllData() {
   }
 }
 
-async function loadSchedules() {
+async function loadSchedules(showFeedback = false) {
   loadingSchedules.value = true;
   try {
     schedules.value = await getSchedules();
-    if (!selectedSlotId.value) {
-      selectedSlotId.value = scheduleOptions.value.find(item => item.slot.available > 0)?.slot.id ?? '';
+    syncSelectedSlot();
+    if (showFeedback) {
+      if (scheduleOptions.value.length > 0) {
+        ElMessage.success(`号源已刷新，共 ${scheduleOptions.value.length} 个未来号源`);
+      } else {
+        ElMessage.warning('号源已刷新，当前筛选下暂无未来号源');
+      }
     }
+  } catch (error) {
+    handleRequestFailure(error, '号源加载失败');
   } finally {
     loadingSchedules.value = false;
   }
+}
+
+async function refreshSchedules() {
+  await loadSchedules(true);
+}
+
+async function loadDepartments() {
+  try {
+    departments.value = await getDepartments();
+  } catch (error) {
+    handleRequestFailure(error, '科室加载失败');
+  }
+}
+
+async function loadRegistrationData() {
+  await Promise.all([loadDepartments(), loadSchedules()]);
 }
 
 async function resolvePatientIds(keyword: string) {
@@ -722,6 +757,34 @@ function isRegistrationDepartment(departmentId: string) {
   const department = departments.value.find(item => item.id === departmentId);
   if (!department) return true;
   return !EXCLUDED_REGISTRATION_DEPARTMENT_KEYWORDS.some(keyword => department.name.includes(keyword));
+}
+
+function hasFutureScheduleSlot(schedule: Schedule) {
+  return (schedule.timeSlots ?? []).some(slot => isFutureScheduleSlot({ schedule, slot }));
+}
+
+function isFutureScheduleSlot(item: ScheduleOption) {
+  const timestamp = scheduleSlotTimestamp(item);
+  return Number.isFinite(timestamp) && timestamp > nowTimestamp.value;
+}
+
+function scheduleSlotTimestamp(item: ScheduleOption) {
+  const time = normalizeSlotTime(item.slot.startTime);
+  if (!item.schedule.workDate || !time) return Number.NaN;
+  return new Date(`${item.schedule.workDate}T${time}`).getTime();
+}
+
+function normalizeSlotTime(value: string) {
+  const time = typeof value === 'string' ? value.slice(0, 8) : '';
+  if (/^\d{2}:\d{2}$/.test(time)) return `${time}:00`;
+  if (/^\d{2}:\d{2}:\d{2}$/.test(time)) return time;
+  return '';
+}
+
+function syncSelectedSlot() {
+  const current = selectedScheduleOption.value;
+  if (current && current.slot.available > 0) return;
+  selectedSlotId.value = scheduleOptions.value.find(item => item.slot.available > 0)?.slot.id ?? '';
 }
 
 function matchesPatientSearch(patientId: string, patientName: string, text: string, search: { keyword: string; patientIds: string[] | null }) {
@@ -948,8 +1011,10 @@ async function register() {
   registering.value = true;
   try {
     const profile = await ensurePatientProfile();
-    const option = scheduleOptions.value.find(item => item.slot.id === selectedSlotId.value);
-    if (!option) throw new Error('请选择可用号源');
+    const option = selectedScheduleOption.value;
+    if (!option) throw new Error('请选择未来可用号源');
+    if (option.slot.available <= 0) throw new Error('该号源已满，请刷新后重新选择');
+    if (!isFutureScheduleSlot(option)) throw new Error('该号源已过期，请刷新后重新选择');
     if (!isRegistrationDepartment(option.schedule.departmentId)) throw new Error('该科室不支持窗口挂号');
     const department = departments.value.find(item => item.id === option.schedule.departmentId);
     lastAppointment.value = await createOfflineAppointment({
@@ -1058,6 +1123,19 @@ function paymentOrderStatusLabel(status: string) {
   }[status] ?? status;
 }
 
+function paymentMethodLabel(method?: string) {
+  return {
+    WECHAT: '微信支付',
+    WECHAT_TEST: '微信支付',
+    ALIPAY: '支付宝',
+    ALIPAY_TEST: '支付宝',
+    SIMULATED: '模拟支付',
+    OFFLINE_WINDOW: '窗口收费',
+    CASH: '现金',
+    CARD: '银行卡'
+  }[method ?? ''] ?? (method || '-');
+}
+
 function urgencyLabel(value: string) {
   return value === 'EMERGENCY' ? '急诊' : '常规';
 }
@@ -1111,8 +1189,32 @@ function errorMessage(error: unknown, fallback: string) {
   return candidate.message || fallback;
 }
 
+function isUnauthorized(error: unknown) {
+  return (error as { response?: { status?: number } })?.response?.status === 401;
+}
+
+function handleRequestFailure(error: unknown, fallback: string) {
+  if (isUnauthorized(error)) {
+    redirectToLogin();
+    return;
+  }
+  ElMessage.warning(errorMessage(error, fallback));
+}
+
+function redirectToLogin() {
+  if (authRedirecting.value) return;
+  authRedirecting.value = true;
+  auth.signOut();
+  ElMessage.error('登录已过期，请重新登录');
+  router.replace('/login');
+}
+
 function unwrap<T>(result: PromiseSettledResult<T>, fallback: T, label: string) {
   if (result.status === 'fulfilled') return result.value;
+  if (isUnauthorized(result.reason)) {
+    redirectToLogin();
+    return fallback;
+  }
   ElMessage.warning(`${label}加载失败`);
   return fallback;
 }
@@ -1122,11 +1224,7 @@ function logout() {
   router.push('/login');
 }
 
-watch(scheduleOptions, (options) => {
-  if (!options.some(item => item.slot.id === selectedSlotId.value)) {
-    selectedSlotId.value = options.find(item => item.slot.available > 0)?.slot.id ?? '';
-  }
-});
+watch(scheduleOptions, syncSelectedSlot);
 
 watch(registrationDepartments, (options) => {
   if (selectedDepartmentId.value && !options.some(item => item.id === selectedDepartmentId.value)) {
@@ -1141,7 +1239,15 @@ watch(doctorOptions, (options) => {
 });
 
 onMounted(async () => {
-  await Promise.all([loadAllData(), loadSchedules(), getDepartments().then(list => { departments.value = list; })]);
+  nowTimer = window.setInterval(() => {
+    nowTimestamp.value = Date.now();
+  }, 60_000);
+  await loadAllData();
+});
+
+onBeforeUnmount(() => {
+  if (nowTimer) window.clearInterval(nowTimer);
+  if (autoSearchTimer) window.clearTimeout(autoSearchTimer);
 });
 </script>
 

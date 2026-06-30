@@ -93,6 +93,11 @@ public class AuthService {
                     "INVALID_CREDENTIALS", client.ip(), client.userAgent());
             throw new IllegalArgumentException("账号或密码错误");
         }
+        if (!account.isActive()) {
+            auditRepository.record("LOGIN", request.username(), account.getId(), false,
+                    "ACCOUNT_DISABLED", client.ip(), client.userAgent());
+            throw new IllegalArgumentException("账号已停用，请联系管理员");
+        }
         log.info("Login accepted: username={}, userId={}, role={}",
                 request.username(), account.getId(), account.getRole());
         Map<String, Object> result = issueLogin(account);
