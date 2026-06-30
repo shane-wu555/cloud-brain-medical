@@ -27,6 +27,16 @@ public class DoctorCatalogRepository {
         return jdbc.query("select id,name,description from department where active order by name",
                 (rs, row) -> new Department(rs.getString(1), rs.getString(2), rs.getString(3)));
     }
+    public List<Department> schedulingDepartments() {
+        return jdbc.query("""
+                select distinct d.id, d.name, d.description
+                from department d
+                join staff s on s.department_id = d.id
+                where d.active and s.active and s.role_type = 'OUTPATIENT_DOCTOR'
+                  and d.name not in ('影像检查科','检验科','处置科','药房','系统管理','收费处')
+                order by d.name
+                """, (rs, row) -> new Department(rs.getString(1), rs.getString(2), rs.getString(3)));
+    }
     public Department createDepartment(String name, String description) {
         String id = "dept-" + UUID.randomUUID();
         jdbc.update("insert into department (id,name,description) values (?,?,?)", id, name, description);
@@ -56,6 +66,7 @@ public class DoctorCatalogRepository {
 
     public Doctor createDoctor(String employeeNo, String name, String title,
             String departmentId, String roleType, String specialty) {
+        validateSchedulingDepartment(departmentId);
         String id = UUID.randomUUID().toString();
         jdbc.update("insert into staff (id,employee_no,name,title,department_id,role_type,specialty) values (?,?,?,?,?,?,?)",
                 id, employeeNo, name, title, departmentId, roleType, specialty);
@@ -73,6 +84,160 @@ public class DoctorCatalogRepository {
         return doctors(departmentId).stream().filter(d -> d.id().equals(id)).findFirst().orElseThrow();
     }
 
+    public Doctor findDoctor(String id) {
+        return jdbc.query("""
+                select s.id, s.employee_no, s.name, s.title, s.department_id, p.name as dept_name,
+                       s.specialty, s.role_type
+                from staff s
+                join department p on p.id = s.department_id
+                where s.active and s.role_type = 'OUTPATIENT_DOCTOR' and s.id = ?
+                """, (rs, row) -> new Doctor(
+                rs.getString("id"), rs.getString("employee_no"), rs.getString("name"),
+                rs.getString("title"), rs.getString("department_id"), rs.getString("dept_name"),
+                rs.getString("specialty"), rs.getString("role_type")), id).stream().findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("医生不存在"));
+    }
+
+    public Doctor updateDoctor(String id, String name, String title, String departmentId, String specialty) {
+        validateSchedulingDepartment(departmentId);
+        if (jdbc.update("""
+                update staff
+                set name = ?, title = ?, department_id = ?, specialty = ?
+                where id = ? and active and role_type = 'OUTPATIENT_DOCTOR'
+                """, name, title, departmentId, specialty, id) != 1) {
+            throw new IllegalArgumentException("医生不存在");
+        }
+        jdbc.update("""
+                insert into outpatient_room (id,department_id,name,location)
+                select ?,id,name || ' Default Room','Outpatient Building'
+                from department where id=?
+                on conflict (id) do nothing
+                """, "room-" + departmentId, departmentId);
+        jdbc.update("""
+                insert into outpatient_doctor (staff_id, room_id)
+                values (?,?)
+                on conflict (staff_id) do update set room_id = excluded.room_id
+                """, id, "room-" + departmentId);
+        return findDoctor(id);
+    }
+
+    // ── 请假/手术安排 ─────────────────────────────────────────────────
+    public List<DoctorEvent> doctorEvents() {
+        String sql = """
+                select e.id, e.staff_id, s.name as doctor_name, d.name as department_name,
+                       e.event_type, e.note, sl.event_date, sl.period
+                from doctor_event e
+                join staff s on s.id = e.staff_id
+                join department d on d.id = s.department_id
+                join doctor_event_slot sl on sl.event_id = e.id
+                where sl.event_date > current_date
+                order by sl.event_date, sl.period, s.name
+                """;
+        java.util.LinkedHashMap<String, DoctorEventBuilder> map = new java.util.LinkedHashMap<>();
+        jdbc.query(sql, rs -> {
+            String id = rs.getString("id");
+            DoctorEventBuilder builder = map.get(id);
+            if (builder == null) {
+                builder = new DoctorEventBuilder(
+                        id,
+                        rs.getString("staff_id"),
+                        rs.getString("doctor_name"),
+                        rs.getString("department_name"),
+                        rs.getString("event_type"),
+                        rs.getString("note"));
+                map.put(id, builder);
+            }
+            builder.addSlot(rs.getDate("event_date").toLocalDate(), rs.getString("period"));
+        });
+        return map.values().stream().map(DoctorEventBuilder::build).toList();
+    }
+
+    public List<DoctorEvent> doctorEvents(LocalDate startInclusive, LocalDate endInclusive) {
+        return doctorEvents().stream()
+                .map(event -> event.withDates(event.dates().stream()
+                        .filter(date -> !date.isBefore(startInclusive) && !date.isAfter(endInclusive))
+                        .toList()))
+                .filter(event -> !event.dates().isEmpty())
+                .toList();
+    }
+
+    public DoctorEvent createDoctorEvent(String doctorId, String eventType,
+            List<LocalDate> dates, List<String> periods, String note) {
+        validateDoctorEvent(doctorId, eventType, dates, periods);
+        String id = "doctor-event-" + UUID.randomUUID();
+        jdbc.update("insert into doctor_event (id, staff_id, event_type, note) values (?,?,?,?)",
+                id, doctorId, eventType, note);
+        replaceDoctorEventSlots(id, dates, periods);
+        return findDoctorEvent(id);
+    }
+
+    public DoctorEvent updateDoctorEvent(String id, String doctorId, String eventType,
+            List<LocalDate> dates, List<String> periods, String note) {
+        validateDoctorEvent(doctorId, eventType, dates, periods);
+        if (jdbc.update("""
+                update doctor_event
+                set staff_id = ?, event_type = ?, note = ?, updated_at = now()
+                where id = ?
+                """, doctorId, eventType, note, id) != 1) {
+            throw new IllegalArgumentException("安排不存在");
+        }
+        replaceDoctorEventSlots(id, dates, periods);
+        return findDoctorEvent(id);
+    }
+
+    public void deleteDoctorEvent(String id) {
+        if (jdbc.update("delete from doctor_event where id = ?", id) != 1) {
+            throw new IllegalArgumentException("安排不存在");
+        }
+    }
+
+    private DoctorEvent findDoctorEvent(String id) {
+        return doctorEvents().stream().filter(event -> event.id().equals(id)).findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("安排不存在或已不在未来日期内"));
+    }
+
+    private void replaceDoctorEventSlots(String eventId, List<LocalDate> dates, List<String> periods) {
+        jdbc.update("delete from doctor_event_slot where event_id = ?", eventId);
+        for (LocalDate date : uniqueDates(dates)) {
+            for (String period : uniquePeriods(periods)) {
+                jdbc.update("""
+                        insert into doctor_event_slot (id, event_id, event_date, period)
+                        values (?, ?, ?, ?)
+                        """, eventId + "-" + date + "-" + period, eventId, date, period);
+            }
+        }
+    }
+
+    private void validateDoctorEvent(String doctorId, String eventType, List<LocalDate> dates, List<String> periods) {
+        findDoctor(doctorId);
+        if (!"LEAVE".equals(eventType) && !"SURGERY".equals(eventType)) {
+            throw new IllegalArgumentException("安排类型不正确");
+        }
+        if (uniqueDates(dates).isEmpty()) {
+            throw new IllegalArgumentException("请选择日期");
+        }
+        LocalDate earliest = LocalDate.now().plusDays(7);
+        if (uniqueDates(dates).stream().anyMatch(date -> date.isBefore(earliest))) {
+            throw new IllegalArgumentException("请假/手术日期必须在当前日期 7 天之后");
+        }
+        if (uniquePeriods(periods).isEmpty()) {
+            throw new IllegalArgumentException("请选择上午或下午");
+        }
+    }
+
+    private List<LocalDate> uniqueDates(List<LocalDate> dates) {
+        if (dates == null) return List.of();
+        return dates.stream().filter(java.util.Objects::nonNull).distinct().sorted().toList();
+    }
+
+    private List<String> uniquePeriods(List<String> periods) {
+        if (periods == null) return List.of();
+        return periods.stream()
+                .filter(period -> "上午".equals(period) || "下午".equals(period))
+                .distinct()
+                .toList();
+    }
+
     // ── 排班 ───────────────────────────────────────────────────────────
     public List<Schedule> schedules(String doctorId, String departmentId) {
         StringBuilder sql = new StringBuilder("""
@@ -86,6 +251,12 @@ public class DoctorCatalogRepository {
         if (departmentId != null && !departmentId.isBlank()) { sql.append(" and s.department_id = ?"); args.add(departmentId); }
         sql.append(" order by s.work_date, s.period");
         return jdbc.query(sql.toString(), (rs, row) -> mapSchedule(rs), args.toArray());
+    }
+
+    public List<Schedule> schedules(String doctorId, String departmentId, LocalDate startInclusive, LocalDate endInclusive) {
+        return schedules(doctorId, departmentId).stream()
+                .filter(schedule -> !schedule.workDate().isBefore(startInclusive) && !schedule.workDate().isAfter(endInclusive))
+                .toList();
     }
 
     public Schedule findSchedule(String id) {
@@ -128,6 +299,9 @@ public class DoctorCatalogRepository {
 
     public Schedule createSchedule(String doctorId, String departmentId,
             LocalDate date, String period, int capacity) {
+        validateSchedulingDepartment(departmentId);
+        validateSchedulePeriod(period);
+        validateDoctorCanScheduleOnDate(doctorId, date);
         String id = "schedule-" + UUID.randomUUID();
         jdbc.update("insert into schedule (id,staff_id,department_id,work_date,period,capacity) values (?,?,?,?,?,?)",
                 id, doctorId, departmentId, date, period, capacity);
@@ -157,6 +331,18 @@ public class DoctorCatalogRepository {
                        LocalTime.of(14,0), LocalTime.of(14,30), LocalTime.of(15,0), LocalTime.of(15,30));
     }
 
+    public void deleteSchedulesForDepartmentWindow(String departmentId, LocalDate startInclusive, LocalDate endInclusive) {
+        validateSchedulingDepartment(departmentId);
+        List<String> ids = jdbc.query("""
+                select id from schedule
+                where department_id = ? and work_date between ? and ?
+                """, (rs, row) -> rs.getString("id"), departmentId, startInclusive, endInclusive);
+        if (ids.isEmpty()) return;
+        String placeholders = String.join(",", java.util.Collections.nCopies(ids.size(), "?"));
+        jdbc.update("delete from schedule_slot where schedule_id in (" + placeholders + ")", ids.toArray());
+        jdbc.update("delete from schedule where id in (" + placeholders + ")", ids.toArray());
+    }
+
     public Schedule suspendSchedule(String id, String reason) {
         if (jdbc.update("update schedule set status='SUSPENDED', suspension_reason=? where id=? and status='PUBLISHED'",
                 reason, id) != 1) throw new IllegalArgumentException("排班不存在或已停诊");
@@ -164,6 +350,9 @@ public class DoctorCatalogRepository {
     }
 
     public Schedule reschedule(String id, LocalDate date, String period) {
+        validateSchedulePeriod(period);
+        Schedule current = findSchedule(id);
+        validateDoctorCanScheduleOnDate(current.doctorId(), date, id);
         if (jdbc.update("update schedule set work_date=?, period=? where id=? and status='PUBLISHED'",
                 date, period, id) != 1) throw new IllegalArgumentException("仅已发布排班允许调班");
         Schedule schedule = findSchedule(id);
@@ -172,10 +361,86 @@ public class DoctorCatalogRepository {
         return schedule;
     }
 
+    private void validateSchedulePeriod(String period) {
+        if (!List.of("上午", "下午", "全天").contains(period)) {
+            throw new IllegalArgumentException("排班时段只能是上午、下午或全天");
+        }
+    }
+
+    private void validateDoctorCanScheduleOnDate(String doctorId, LocalDate date) {
+        validateDoctorCanScheduleOnDate(doctorId, date, null);
+    }
+
+    private void validateDoctorCanScheduleOnDate(String doctorId, LocalDate date, String ignoredScheduleId) {
+        StringBuilder sql = new StringBuilder("""
+                select count(*) from schedule
+                where staff_id = ? and work_date = ? and status <> 'SUSPENDED'
+                """);
+        List<Object> args = new ArrayList<>(List.of(doctorId, date));
+        if (ignoredScheduleId != null && !ignoredScheduleId.isBlank()) {
+            sql.append(" and id <> ?");
+            args.add(ignoredScheduleId);
+        }
+        Integer count = jdbc.queryForObject(sql.toString(), Integer.class, args.toArray());
+        if (count != null && count > 0) {
+            throw new IllegalArgumentException("同一医生同一天只能安排上午、下午或全天中的一种");
+        }
+    }
+
+    private void validateSchedulingDepartment(String departmentId) {
+        Boolean allowed = jdbc.queryForObject("""
+                select count(*) > 0
+                from department
+                where id = ? and active
+                  and name not in ('影像检查科','检验科','处置科','药房','系统管理','收费处')
+                """, Boolean.class, departmentId);
+        if (!Boolean.TRUE.equals(allowed)) {
+            throw new IllegalArgumentException("该科室不参与门诊排班");
+        }
+    }
+
     public record Department(String id, String name, String description) {}
     public record Doctor(String id, String employeeNo, String name, String title,
             String departmentId, String departmentName, String specialty, String roleType) {}
+    public record DoctorEvent(String id, String doctorId, String doctorName, String departmentName,
+            String eventType, List<LocalDate> dates, List<String> periods, String note) {
+        public DoctorEvent withDates(List<LocalDate> dates) {
+            return new DoctorEvent(id, doctorId, doctorName, departmentName, eventType, dates, periods, note);
+        }
+    }
     public record Schedule(String id, String doctorId, String doctorName, String departmentId,
             LocalDate workDate, String period, int capacity, String status) {}
     public record ScheduleTimeSlot(String id, String scheduleId, LocalTime startTime, int capacity) {}
+
+    private static class DoctorEventBuilder {
+        private final String id;
+        private final String doctorId;
+        private final String doctorName;
+        private final String departmentName;
+        private final String eventType;
+        private final String note;
+        private final List<LocalDate> dates = new ArrayList<>();
+        private final List<String> periods = new ArrayList<>();
+
+        private DoctorEventBuilder(String id, String doctorId, String doctorName,
+                String departmentName, String eventType, String note) {
+            this.id = id;
+            this.doctorId = doctorId;
+            this.doctorName = doctorName;
+            this.departmentName = departmentName;
+            this.eventType = eventType;
+            this.note = note;
+        }
+
+        private void addSlot(LocalDate date, String period) {
+            if (!dates.contains(date)) dates.add(date);
+            if (!periods.contains(period)) periods.add(period);
+        }
+
+        private DoctorEvent build() {
+            dates.sort(LocalDate::compareTo);
+            return new DoctorEvent(id, doctorId, doctorName, departmentName, eventType,
+                    List.copyOf(dates), List.copyOf(periods), note);
+        }
+    }
 }

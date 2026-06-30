@@ -93,11 +93,11 @@
                   <strong>{{ pendingSuggestions.length }}</strong>
                 </button>
                 <button class="task-item" @click="currentPage = 'manualSchedule'">
-                  <span>当前排班</span>
+                  <span>排班信息</span>
                   <strong>{{ schedules.length }}</strong>
                 </button>
-                <button class="task-item" @click="currentPage = 'accounts'">
-                  <span>医生账号</span>
+                <button class="task-item" @click="currentPage = 'doctorProfile'">
+                  <span>医生账号与档案</span>
                   <strong>{{ allStaffAccounts.length }}</strong>
                 </button>
               </div>
@@ -109,7 +109,7 @@
           <div class="page-head">
             <div>
               <h1>AI 智能排班</h1>
-              <p>输入科室需求、请假、手术和高峰规则，生成待管理员确认的排班建议。</p>
+              <p>自动生成当前日期第 8 天到第 15 天的门诊重排建议，管理员确认后才更新正式排班。</p>
             </div>
             <el-button
               type="success"
@@ -129,44 +129,20 @@
                   <p>{{ aiCandidates.length }} 名候选医生，{{ aiDemands.length }} 条排班需求。</p>
                 </div>
               </div>
-              <el-form label-position="top" class="compact-form">
+              <el-form label-position="top" class="compact-form ai-param-form">
                 <el-form-item label="排班科室">
-                  <el-select v-model="aiForm.departmentId" class="full" filterable>
+                  <el-select v-model="aiForm.departmentId" class="full" clearable filterable placeholder="全部门诊科室">
                     <el-option
-                      v-for="department in departments"
+                      v-for="department in schedulableDepartments"
                       :key="department.id"
                       :label="department.name"
                       :value="department.id"
                     />
                   </el-select>
                 </el-form-item>
-                <div class="form-grid">
-                  <el-form-item label="开始日期">
-                    <el-date-picker v-model="aiForm.startDate" class="full" type="date" value-format="YYYY-MM-DD" />
-                  </el-form-item>
-                  <el-form-item label="连续天数">
-                    <el-input-number v-model="aiForm.days" class="full-number" :min="1" :max="14" />
-                  </el-form-item>
-                </div>
-                <el-form-item label="排班时段">
-                  <el-checkbox-group v-model="aiForm.periods">
-                    <el-checkbox-button label="上午" />
-                    <el-checkbox-button label="下午" />
-                    <el-checkbox-button label="全天" />
-                  </el-checkbox-group>
+                <el-form-item label="基础预计挂号量">
+                  <el-input-number v-model="aiForm.baseVisits" class="full-number" :min="1" :max="100" />
                 </el-form-item>
-                <div class="form-grid">
-                  <el-form-item label="基础预计挂号量">
-                    <el-input-number v-model="aiForm.baseVisits" class="full-number" :min="1" :max="100" />
-                  </el-form-item>
-                  <el-form-item label="风险等级">
-                    <el-select v-model="aiForm.riskLevel" class="full">
-                      <el-option label="低" value="LOW" />
-                      <el-option label="中" value="MEDIUM" />
-                      <el-option label="高" value="HIGH" />
-                    </el-select>
-                  </el-form-item>
-                </div>
                 <div class="peak-row">
                   <el-checkbox v-model="aiForm.weekendPeak">周末高峰</el-checkbox>
                   <el-slider v-model="aiForm.weekendIncrease" :min="0" :max="80" :step="5" />
@@ -177,56 +153,9 @@
                   <el-slider v-model="aiForm.morningIncrease" :min="0" :max="80" :step="5" />
                   <span>{{ aiForm.morningIncrease }}%</span>
                 </div>
-                <el-button type="primary" class="full" :loading="suggestionLoading" @click="generateSuggestions">
-                  生成 AI 排班建议
+                <el-button type="primary" class="full" :loading="suggestionLoading" @click="loadAiReplanPreview(true)">
+                  刷新待确认重排建议
                 </el-button>
-              </el-form>
-            </section>
-
-            <section class="work-card">
-              <div class="card-head">
-                <div>
-                  <h2>医生可用性</h2>
-                  <p>请假日和手术日会作为不可排班日期传给 AI。</p>
-                </div>
-              </div>
-              <el-form label-position="top" class="compact-form">
-                <el-form-item label="医生">
-                  <el-select v-model="selectedDoctorId" class="full" filterable>
-                    <el-option
-                      v-for="doctor in aiDoctors"
-                      :key="doctor.id"
-                      :label="`${doctor.employeeNo} / ${doctor.name}`"
-                      :value="doctor.id"
-                    />
-                  </el-select>
-                </el-form-item>
-                <template v-if="selectedDoctorId && availability[selectedDoctorId]">
-                  <el-form-item label="每周可接诊容量">
-                    <el-input-number
-                      v-model="availability[selectedDoctorId].weeklyCapacity"
-                      class="full-number"
-                      :min="1"
-                      :max="120"
-                    />
-                  </el-form-item>
-                  <el-form-item label="请假日期">
-                    <el-date-picker
-                      v-model="availability[selectedDoctorId].leaveDates"
-                      class="full"
-                      type="dates"
-                      value-format="YYYY-MM-DD"
-                    />
-                  </el-form-item>
-                  <el-form-item label="手术安排日期">
-                    <el-date-picker
-                      v-model="availability[selectedDoctorId].surgeryDates"
-                      class="full"
-                      type="dates"
-                      value-format="YYYY-MM-DD"
-                    />
-                  </el-form-item>
-                </template>
               </el-form>
             </section>
 
@@ -237,7 +166,7 @@
                   <p>确认后写入正式排班并同步号源。</p>
                 </div>
               </div>
-              <el-table :data="suggestions" height="430" empty-text="暂无 AI 建议">
+              <el-table :data="suggestions" empty-text="暂无 AI 建议">
                 <el-table-column prop="workDate" label="日期" width="112" />
                 <el-table-column prop="period" label="时段" width="86" />
                 <el-table-column prop="doctorName" label="医生" width="112" />
@@ -272,15 +201,18 @@
         <section v-show="currentPage === 'manualSchedule'" class="work-page">
           <div class="page-head">
             <div>
-              <h1>手动排班</h1>
-              <p>查询、补录和停诊已发布排班。</p>
+              <h1>排班信息</h1>
+              <p>查看、补录和停诊已发布排班。</p>
             </div>
-            <el-button @click="loadSchedules">刷新排班</el-button>
+            <div class="head-actions">
+              <el-button @click="loadSchedules">刷新排班</el-button>
+              <el-button type="primary" @click="openManualScheduleCreate">新增排班</el-button>
+            </div>
           </div>
 
           <div class="query-bar">
             <el-select v-model="scheduleFilter.departmentId" clearable placeholder="全部科室" filterable>
-              <el-option v-for="department in departments" :key="department.id" :label="department.name" :value="department.id" />
+              <el-option v-for="department in schedulableDepartments" :key="department.id" :label="department.name" :value="department.id" />
             </el-select>
             <el-select v-model="scheduleFilter.doctorId" clearable placeholder="全部医生" filterable>
               <el-option v-for="doctor in filteredScheduleDoctors" :key="doctor.id" :label="doctor.name" :value="doctor.id" />
@@ -290,13 +222,17 @@
 
           <section class="work-card">
             <el-table :data="schedules" empty-text="暂无排班">
-              <el-table-column prop="doctorName" label="医生" width="120" />
-              <el-table-column prop="workDate" label="日期" width="120" />
-              <el-table-column prop="period" label="时段" width="90" />
-              <el-table-column prop="capacity" label="号源" width="80" />
-              <el-table-column prop="booked" label="已约" width="80" />
-              <el-table-column prop="available" label="可约" width="80" />
-              <el-table-column label="状态" width="100">
+              <el-table-column prop="doctorName" label="医生" min-width="140" />
+              <el-table-column label="科室" min-width="160">
+                <template #default="{ row }">{{ departmentName(row.departmentId) }}</template>
+              </el-table-column>
+              <el-table-column prop="workDate" label="日期" min-width="140" />
+              <el-table-column prop="period" label="时段" min-width="110" />
+              <el-table-column prop="capacity" label="号源" min-width="100" />
+              <el-table-column prop="booked" label="已约" min-width="100" />
+              <el-table-column prop="locked" label="锁定" min-width="100" />
+              <el-table-column prop="available" label="可约" min-width="100" />
+              <el-table-column label="状态" min-width="120">
                 <template #default="{ row }">
                   <el-tag :type="scheduleStatusType(row.status)">{{ scheduleStatusLabel(row.status) }}</el-tag>
                 </template>
@@ -310,25 +246,173 @@
               </el-table-column>
             </el-table>
           </section>
+        </section>
+
+        <section v-show="currentPage === 'doctorProfile'" class="work-page">
+          <div class="page-head">
+            <div>
+              <h1>医生账号与档案</h1>
+              <p>账号信息优先展示，点击医生详情后维护职称、科室和专长。</p>
+            </div>
+            <div class="head-actions">
+              <el-input v-model.trim="doctorKeyword" class="head-search" clearable placeholder="搜索姓名/工号/科室" />
+              <el-button type="primary" @click="openDoctorCreate">新增医生</el-button>
+            </div>
+          </div>
 
           <section class="work-card">
-            <div class="card-head">
-              <div>
-                <h2>新增排班</h2>
-                <p>用于临时补班或快速录入常规排班。</p>
-              </div>
+            <el-table :data="filteredDoctors" empty-text="暂无医生账号">
+              <el-table-column prop="employeeNo" label="工号" width="120" />
+              <el-table-column prop="name" label="姓名" width="120" />
+              <el-table-column label="登录账号" width="120">
+                <template #default="{ row }">{{ accountByEmployeeNo(row.employeeNo)?.username || row.employeeNo }}</template>
+              </el-table-column>
+              <el-table-column label="角色" width="120">
+                <template #default="{ row }">{{ roleLabel(row.roleType) }}</template>
+              </el-table-column>
+              <el-table-column label="手机号" width="140">
+                <template #default="{ row }">{{ accountByEmployeeNo(row.employeeNo)?.phone || '未填写' }}</template>
+              </el-table-column>
+              <el-table-column label="状态" width="110">
+                <template #default="{ row }">
+                  <el-switch
+                    v-if="accountByEmployeeNo(row.employeeNo)"
+                    :model-value="accountByEmployeeNo(row.employeeNo)?.active"
+                    active-text="启用"
+                    inactive-text="停用"
+                    inline-prompt
+                    @change="toggleDoctorAccount(row, $event)"
+                  />
+                  <el-tag v-else type="info">未创建</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="创建时间" min-width="160">
+                <template #default="{ row }">{{ formatDateTime(accountByEmployeeNo(row.employeeNo)?.createdAt || '') }}</template>
+              </el-table-column>
+              <el-table-column label="操作" width="190" fixed="right">
+                <template #default="{ row }">
+                  <el-button type="primary" link @click="openDoctorDetail(row)">医生详情</el-button>
+                  <el-button
+                    type="primary"
+                    link
+                    :disabled="!accountByEmployeeNo(row.employeeNo)"
+                    @click="resetDoctorPassword(row)"
+                  >
+                    重置密码
+                  </el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+          </section>
+        </section>
+
+        <section v-show="currentPage === 'doctorEvents'" class="work-page">
+          <div class="page-head">
+            <div>
+              <h1>医生请假/手术</h1>
+              <p>仅显示当前日期之后的请假与手术安排，保存后用于后续排班参考。</p>
             </div>
-            <el-form label-position="top" class="inline-form">
-              <el-form-item label="医生">
-                <el-select v-model="manualScheduleForm.doctorId" class="full" filterable @change="syncManualDoctor">
+            <div class="head-actions">
+              <el-button :loading="eventLoading" @click="loadDoctorEvents">刷新</el-button>
+              <el-button type="primary" @click="openDoctorEventCreate">新增安排</el-button>
+            </div>
+          </div>
+
+          <div class="query-bar">
+            <el-input v-model.trim="eventKeyword" clearable placeholder="搜索医生/科室/备注" />
+            <el-select v-model="eventTypeFilter" clearable placeholder="全部类型">
+              <el-option label="请假" value="LEAVE" />
+              <el-option label="手术" value="SURGERY" />
+            </el-select>
+          </div>
+
+          <section class="work-card">
+            <el-table :data="filteredDoctorEvents" v-loading="eventLoading" empty-text="暂无未来安排">
+              <el-table-column prop="doctorName" label="医生" width="120" />
+              <el-table-column prop="departmentName" label="科室" width="150" />
+              <el-table-column label="类型" width="90">
+                <template #default="{ row }">
+                  <el-tag :type="row.eventType === 'LEAVE' ? 'warning' : 'danger'">{{ doctorEventTypeLabel(row.eventType) }}</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="日期" min-width="220">
+                <template #default="{ row }">{{ row.dates.join('、') }}</template>
+              </el-table-column>
+              <el-table-column label="午别" width="130">
+                <template #default="{ row }">{{ row.periods.join('、') }}</template>
+              </el-table-column>
+              <el-table-column prop="note" label="备注" min-width="180" show-overflow-tooltip />
+              <el-table-column label="操作" width="130" fixed="right">
+                <template #default="{ row }">
+                  <el-button type="primary" link @click="openDoctorEventEdit(row)">编辑</el-button>
+                  <el-button type="danger" link @click="removeDoctorEvent(row)">删除</el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+          </section>
+        </section>
+
+        <el-dialog v-model="doctorDialogVisible" title="新增医生" width="560px">
+          <el-form label-position="top" class="compact-form">
+            <div class="form-grid">
+              <el-form-item label="工号">
+                <el-input v-model.trim="doctorForm.employeeNo" placeholder="如 00010009" />
+              </el-form-item>
+              <el-form-item label="姓名">
+                <el-input v-model.trim="doctorForm.name" placeholder="医生姓名" />
+              </el-form-item>
+            </div>
+            <div class="form-grid">
+              <el-form-item label="职称">
+                <el-input v-model.trim="doctorForm.title" />
+              </el-form-item>
+              <el-form-item label="科室">
+                <el-select v-model="doctorForm.departmentId" class="full" filterable>
                   <el-option
-                    v-for="doctor in doctors"
-                    :key="doctor.id"
-                    :label="`${doctor.employeeNo} / ${doctor.name} / ${doctor.departmentName}`"
-                    :value="doctor.id"
+                    v-for="department in schedulableDepartments"
+                    :key="department.id"
+                    :label="department.name"
+                    :value="department.id"
                   />
                 </el-select>
               </el-form-item>
+            </div>
+            <el-form-item label="专长">
+              <el-input v-model.trim="doctorForm.specialty" placeholder="如 头痛、眩晕、癫痫" />
+            </el-form-item>
+            <el-form-item>
+              <el-checkbox v-model="doctorForm.createAccount">同步创建登录账号</el-checkbox>
+            </el-form-item>
+            <template v-if="doctorForm.createAccount">
+              <div class="form-grid">
+                <el-form-item label="手机号">
+                  <el-input v-model.trim="doctorForm.phone" placeholder="可选" />
+                </el-form-item>
+                <el-form-item label="初始密码">
+                  <el-input v-model="doctorForm.password" type="password" show-password />
+                </el-form-item>
+              </div>
+            </template>
+          </el-form>
+          <template #footer>
+            <el-button @click="doctorDialogVisible = false">取消</el-button>
+            <el-button type="primary" :loading="doctorSaving" @click="submitDoctor">保存医生</el-button>
+          </template>
+        </el-dialog>
+
+        <el-dialog v-model="manualScheduleDialogVisible" title="新增排班" width="560px">
+          <el-form label-position="top" class="compact-form">
+            <el-form-item label="医生">
+              <el-select v-model="manualScheduleForm.doctorId" class="full" filterable @change="syncManualDoctor">
+                <el-option
+                  v-for="doctor in schedulableDoctors"
+                  :key="doctor.id"
+                  :label="`${doctor.employeeNo} / ${doctor.name} / ${doctor.departmentName}`"
+                  :value="doctor.id"
+                />
+              </el-select>
+            </el-form-item>
+            <div class="form-grid">
               <el-form-item label="日期">
                 <el-date-picker v-model="manualScheduleForm.workDate" class="full" type="date" value-format="YYYY-MM-DD" />
               </el-form-item>
@@ -339,143 +423,91 @@
                   <el-option label="全天" value="全天" />
                 </el-select>
               </el-form-item>
-              <el-form-item label="号源">
-                <el-input-number v-model="manualScheduleForm.capacity" class="full-number" :min="1" :max="100" />
+            </div>
+            <el-form-item label="号源">
+              <el-input-number v-model="manualScheduleForm.capacity" class="full-number" :min="1" :max="100" />
+            </el-form-item>
+          </el-form>
+          <template #footer>
+            <el-button @click="manualScheduleDialogVisible = false">取消</el-button>
+            <el-button type="primary" :loading="scheduleSaving" @click="submitManualSchedule">保存排班</el-button>
+          </template>
+        </el-dialog>
+
+        <el-drawer v-model="doctorDetailVisible" title="医生详情" size="420px">
+          <el-form label-position="top" class="compact-form">
+            <el-form-item label="姓名">
+              <el-input v-model.trim="doctorDetailForm.name" disabled />
+            </el-form-item>
+            <div class="form-grid">
+              <el-form-item label="工号">
+                <el-input v-model="doctorDetailForm.employeeNo" disabled />
               </el-form-item>
-              <el-button type="primary" :loading="scheduleSaving" @click="submitManualSchedule">保存排班</el-button>
-            </el-form>
-          </section>
-        </section>
-
-        <section v-show="currentPage === 'doctorProfile'" class="work-page">
-          <div class="page-head">
-            <div>
-              <h1>医生档案</h1>
-              <p>维护可参与门诊排班的医生目录，可同步创建登录账号。</p>
+              <el-form-item label="职称">
+                <el-input v-model.trim="doctorDetailForm.title" />
+              </el-form-item>
             </div>
-            <el-input v-model.trim="doctorKeyword" class="head-search" clearable placeholder="搜索姓名/工号/科室" />
-          </div>
+            <el-form-item label="科室">
+              <el-select v-model="doctorDetailForm.departmentId" class="full" filterable>
+                <el-option
+                  v-for="department in schedulableDepartments"
+                  :key="department.id"
+                  :label="department.name"
+                  :value="department.id"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="专长">
+              <el-input v-model.trim="doctorDetailForm.specialty" type="textarea" :rows="4" />
+            </el-form-item>
+            <el-button type="primary" :loading="doctorSaving" @click="submitDoctorDetail">保存修改</el-button>
+          </el-form>
+        </el-drawer>
 
-          <div class="doctor-layout">
-            <section class="work-card">
-              <div class="card-head">
-                <div>
-                  <h2>新增医生</h2>
-                  <p>医生档案用于排班、挂号和患者端展示。</p>
-                </div>
-              </div>
-              <el-form label-position="top" class="compact-form">
-                <div class="form-grid">
-                  <el-form-item label="工号">
-                    <el-input v-model.trim="doctorForm.employeeNo" placeholder="如 00010009" />
-                  </el-form-item>
-                  <el-form-item label="姓名">
-                    <el-input v-model.trim="doctorForm.name" placeholder="医生姓名" />
-                  </el-form-item>
-                </div>
-                <div class="form-grid">
-                  <el-form-item label="职称">
-                    <el-input v-model.trim="doctorForm.title" />
-                  </el-form-item>
-                  <el-form-item label="科室">
-                    <el-select v-model="doctorForm.departmentId" class="full" filterable>
-                      <el-option
-                        v-for="department in departments"
-                        :key="department.id"
-                        :label="department.name"
-                        :value="department.id"
-                      />
-                    </el-select>
-                  </el-form-item>
-                </div>
-                <el-form-item label="专长">
-                  <el-input v-model.trim="doctorForm.specialty" placeholder="如 头痛、眩晕、癫痫" />
-                </el-form-item>
-                <el-form-item>
-                  <el-checkbox v-model="doctorForm.createAccount">同步创建登录账号</el-checkbox>
-                </el-form-item>
-                <template v-if="doctorForm.createAccount">
-                  <div class="form-grid">
-                    <el-form-item label="手机号">
-                      <el-input v-model.trim="doctorForm.phone" placeholder="可选" />
-                    </el-form-item>
-                    <el-form-item label="初始密码">
-                      <el-input v-model="doctorForm.password" type="password" show-password />
-                    </el-form-item>
-                  </div>
-                </template>
-                <el-button type="primary" class="full" :loading="doctorSaving" @click="submitDoctor">
-                  保存医生
-                </el-button>
-              </el-form>
-            </section>
-
-            <section class="work-card">
-              <el-table :data="filteredDoctors" height="520" empty-text="暂无医生">
-                <el-table-column prop="employeeNo" label="工号" width="110" />
-                <el-table-column prop="name" label="姓名" width="100" />
-                <el-table-column prop="title" label="职称" width="112" />
-                <el-table-column prop="departmentName" label="科室" width="130" />
-                <el-table-column prop="specialty" label="专长" min-width="180" show-overflow-tooltip />
-                <el-table-column label="账号" width="96">
-                  <template #default="{ row }">
-                    <el-tag :type="accountByEmployeeNo(row.employeeNo) ? 'success' : 'info'">
-                      {{ accountByEmployeeNo(row.employeeNo) ? '已创建' : '未创建' }}
-                    </el-tag>
-                  </template>
-                </el-table-column>
-              </el-table>
-            </section>
-          </div>
-        </section>
-
-        <section v-show="currentPage === 'accounts'" class="work-page">
-          <div class="page-head">
-            <div>
-              <h1>医生账号</h1>
-              <p>管理医生登录状态，必要时重置初始密码。</p>
+        <el-dialog v-model="eventDialogVisible" :title="editingEventId ? '编辑安排' : '新增安排'" width="560px">
+          <el-form label-position="top" class="compact-form">
+            <el-form-item label="医生">
+              <el-select v-model="eventForm.doctorId" class="full" filterable>
+                <el-option
+                  v-for="doctor in schedulableDoctors"
+                  :key="doctor.id"
+                  :label="`${doctor.employeeNo} / ${doctor.name} / ${doctor.departmentName}`"
+                  :value="doctor.id"
+                />
+              </el-select>
+            </el-form-item>
+            <div class="form-grid">
+              <el-form-item label="类型">
+                <el-select v-model="eventForm.eventType" class="full">
+                  <el-option label="请假" value="LEAVE" />
+                  <el-option label="手术" value="SURGERY" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="午别">
+                <el-checkbox-group v-model="eventForm.periods">
+                  <el-checkbox-button label="上午" />
+                  <el-checkbox-button label="下午" />
+                </el-checkbox-group>
+              </el-form-item>
             </div>
-            <el-button @click="loadAccounts">刷新账号</el-button>
-          </div>
-
-          <div class="query-bar">
-            <el-select v-model="accountFilter.role" clearable placeholder="全部医生角色" @change="loadAccounts">
-              <el-option v-for="role in accountRoleOptions" :key="role.value" :label="role.label" :value="role.value" />
-            </el-select>
-          </div>
-
-          <section class="work-card">
-            <el-table :data="staffAccounts" empty-text="暂无账号">
-              <el-table-column prop="employeeNo" label="工号" width="120" />
-              <el-table-column prop="name" label="姓名" width="120" />
-              <el-table-column label="角色" width="140">
-                <template #default="{ row }">{{ roleLabel(row.role) }}</template>
-              </el-table-column>
-              <el-table-column prop="phone" label="手机号" width="140">
-                <template #default="{ row }">{{ row.phone || '未填写' }}</template>
-              </el-table-column>
-              <el-table-column label="状态" width="110">
-                <template #default="{ row }">
-                  <el-switch
-                    v-model="row.active"
-                    active-text="启用"
-                    inactive-text="停用"
-                    inline-prompt
-                    @change="toggleAccount(row)"
-                  />
-                </template>
-              </el-table-column>
-              <el-table-column prop="createdAt" label="创建时间" min-width="170">
-                <template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template>
-              </el-table-column>
-              <el-table-column label="操作" width="120" fixed="right">
-                <template #default="{ row }">
-                  <el-button type="primary" link @click="resetPassword(row)">重置密码</el-button>
-                </template>
-              </el-table-column>
-            </el-table>
-          </section>
-        </section>
+            <el-form-item label="日期">
+              <el-date-picker
+                v-model="eventForm.dates"
+                class="full"
+                type="dates"
+                value-format="YYYY-MM-DD"
+                :disabled-date="disablePastAndToday"
+              />
+            </el-form-item>
+            <el-form-item label="备注">
+              <el-input v-model.trim="eventForm.note" type="textarea" :rows="3" />
+            </el-form-item>
+          </el-form>
+          <template #footer>
+            <el-button @click="eventDialogVisible = false">取消</el-button>
+            <el-button type="primary" :loading="eventSaving" @click="submitDoctorEvent">保存安排</el-button>
+          </template>
+        </el-dialog>
       </main>
     </div>
   </div>
@@ -488,19 +520,26 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { useAuthStore } from '../../store/auth';
 import {
   createDoctor,
+  createDoctorEvent,
   createSchedule,
+  deleteDoctorEvent,
   getAiScheduleSuggestions,
+  getAiReplanPreview,
   getDepartments,
+  getDoctorEvents,
   getDoctors,
   getSchedules,
-  publishAiScheduleSuggestion,
+  publishAiScheduleSuggestions,
   suspendSchedule,
+  updateDoctor,
+  updateDoctorEvent,
   type AiDoctorCandidate,
   type AiScheduleDemand,
   type AiScheduleResponse,
   type AiScheduleSuggestion,
   type Department,
   type Doctor,
+  type DoctorEvent,
   type Schedule
 } from '../../api/doctor';
 import { getDashboardOverview, type DashboardOverview } from '../../api/dashboard';
@@ -513,7 +552,7 @@ import {
 } from '../../api/auth';
 
 type RiskLevel = 'LOW' | 'MEDIUM' | 'HIGH';
-type PageKey = 'overview' | 'aiSchedule' | 'manualSchedule' | 'doctorProfile' | 'accounts';
+type PageKey = 'overview' | 'aiSchedule' | 'manualSchedule' | 'doctorProfile' | 'doctorEvents';
 
 interface AvailabilitySettings {
   leaveDates: string[];
@@ -530,19 +569,33 @@ const suggestionLoading = ref(false);
 const publishLoading = ref(false);
 const scheduleSaving = ref(false);
 const doctorSaving = ref(false);
+const eventLoading = ref(false);
+const eventSaving = ref(false);
 
 const overview = ref<DashboardOverview | null>(null);
 const departments = ref<Department[]>([]);
 const doctors = ref<Doctor[]>([]);
 const schedules = ref<Schedule[]>([]);
+const doctorEvents = ref<DoctorEvent[]>([]);
 const staffAccounts = ref<StaffAccount[]>([]);
 const allStaffAccounts = ref<StaffAccount[]>([]);
 const aiResponse = ref<AiScheduleResponse | null>(null);
 const publishedSuggestionIds = ref<string[]>([]);
 const selectedDoctorId = ref('');
 const doctorKeyword = ref('');
+const eventKeyword = ref('');
+const eventTypeFilter = ref('');
+const doctorDialogVisible = ref(false);
+const manualScheduleDialogVisible = ref(false);
+const doctorDetailVisible = ref(false);
+const eventDialogVisible = ref(false);
+const editingEventId = ref('');
+const selectedDoctorDetail = ref<Doctor | null>(null);
 
 const availability = reactive<Record<string, AvailabilitySettings>>({});
+const NON_REGISTRATION_DEPARTMENT_NAMES = ['影像检查科', '检验科', '处置科', '药房', '系统管理', '收费处'];
+const REPLAN_WINDOW_START_OFFSET = 7;
+const REPLAN_WINDOW_DAYS = 8;
 const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
 const today = new Date().toLocaleDateString('zh-CN');
 const dayOfWeek = `星期${weekDays[new Date().getDay()]}`;
@@ -564,9 +617,8 @@ const accountRoleOptions = [
 
 const aiForm = reactive({
   departmentId: '',
-  startDate: todayIso(),
-  days: 7,
-  periods: ['上午', '下午'],
+  startDate: addDays(todayIso(), REPLAN_WINDOW_START_OFFSET),
+  days: REPLAN_WINDOW_DAYS,
   baseVisits: 24,
   riskLevel: 'MEDIUM' as RiskLevel,
   weekendPeak: true,
@@ -600,24 +652,48 @@ const doctorForm = reactive({
   password: 'abc12345'
 });
 
+const doctorDetailForm = reactive({
+  id: '',
+  employeeNo: '',
+  name: '',
+  title: '',
+  departmentId: '',
+  specialty: ''
+});
+
+const eventForm = reactive({
+  doctorId: '',
+  eventType: 'LEAVE' as DoctorEvent['eventType'],
+  dates: [] as string[],
+  periods: ['上午'] as string[],
+  note: ''
+});
+
 const accountFilter = reactive({
   role: 'OUTPATIENT_DOCTOR'
 });
 
 const departmentMap = computed(() => new Map(departments.value.map((item) => [item.id, item.name])));
+const schedulableDepartments = computed(() =>
+  departments.value.filter((department) => !NON_REGISTRATION_DEPARTMENT_NAMES.includes(department.name))
+);
+const schedulableDepartmentIds = computed(() => new Set(schedulableDepartments.value.map((department) => department.id)));
+const schedulableDoctors = computed(() =>
+  doctors.value.filter((doctor) => schedulableDepartmentIds.value.has(doctor.departmentId))
+);
 
 const navItems = computed<Array<{ key: PageKey; label: string; badge?: number }>>(() => [
   { key: 'overview', label: '运营概览' },
   { key: 'aiSchedule', label: 'AI 智能排班', badge: pendingSuggestions.value.length || undefined },
-  { key: 'manualSchedule', label: '手动排班', badge: schedules.value.length || undefined },
-  { key: 'doctorProfile', label: '医生档案', badge: doctors.value.length || undefined },
-  { key: 'accounts', label: '医生账号', badge: staffAccounts.value.length || undefined }
+  { key: 'manualSchedule', label: '排班信息', badge: schedules.value.length || undefined },
+  { key: 'doctorProfile', label: '医生账号与档案', badge: doctors.value.length || undefined },
+  { key: 'doctorEvents', label: '医生请假/手术', badge: doctorEvents.value.length || undefined }
 ]);
 
-const aiDoctors = computed(() => doctors.value.filter((doctor) => doctor.departmentId === aiForm.departmentId));
+const aiDoctors = computed(() => schedulableDoctors.value.filter((doctor) => doctor.departmentId === aiForm.departmentId));
 
 const filteredScheduleDoctors = computed(() =>
-  doctors.value.filter((doctor) => !scheduleFilter.departmentId || doctor.departmentId === scheduleFilter.departmentId)
+  schedulableDoctors.value.filter((doctor) => !scheduleFilter.departmentId || doctor.departmentId === scheduleFilter.departmentId)
 );
 
 const filteredDoctors = computed(() => {
@@ -630,6 +706,19 @@ const filteredDoctors = computed(() => {
   );
 });
 
+const filteredDoctorEvents = computed(() => {
+  const keyword = eventKeyword.value.trim().toLowerCase();
+  return doctorEvents.value.filter((event) => {
+    const matchesType = !eventTypeFilter.value || event.eventType === eventTypeFilter.value;
+    const matchesKeyword =
+      !keyword ||
+      [event.doctorName, event.departmentName, event.note, doctorEventTypeLabel(event.eventType)]
+        .filter(Boolean)
+        .some((value) => value.toLowerCase().includes(keyword));
+    return matchesType && matchesKeyword;
+  });
+});
+
 const suggestions = computed(() => aiResponse.value?.suggestions ?? []);
 
 const pendingSuggestions = computed(() =>
@@ -639,6 +728,13 @@ const pendingSuggestions = computed(() =>
 const aiCandidates = computed<AiDoctorCandidate[]>(() =>
   aiDoctors.value.map((doctor) => {
     const settings = ensureAvailability(doctor.id);
+    const unavailableSlots = doctorEvents.value
+      .filter((event) => event.doctorId === doctor.id)
+      .flatMap((event) =>
+        event.dates.flatMap((date) =>
+          event.periods.map((period) => ({ date, period, type: event.eventType }))
+        )
+      );
     return {
       doctorId: doctor.id,
       doctorName: doctor.name,
@@ -646,7 +742,8 @@ const aiCandidates = computed<AiDoctorCandidate[]>(() =>
       specialty: doctor.specialty ?? '',
       weeklyCapacity: settings.weeklyCapacity,
       leaveDates: uniqueDates(settings.leaveDates),
-      surgeryDates: uniqueDates(settings.surgeryDates)
+      surgeryDates: uniqueDates(settings.surgeryDates),
+      unavailableSlots
     };
   })
 );
@@ -677,20 +774,24 @@ watch(
 async function refreshAll() {
   pageLoading.value = true;
   try {
-    const [overviewData, departmentData, doctorData, accountData, allAccountData] = await Promise.all([
+    const [overviewData, departmentData, doctorData, accountData, allAccountData, eventData] = await Promise.all([
       getDashboardOverview(),
       getDepartments(),
       getDoctors(),
       getStaffAccounts(accountFilter.role || undefined),
-      getStaffAccounts()
+      getStaffAccounts(),
+      getDoctorEvents()
     ]);
     overview.value = overviewData;
     departments.value = departmentData;
     doctors.value = doctorData;
     staffAccounts.value = accountData;
     allStaffAccounts.value = allAccountData;
+    doctorEvents.value = eventData;
     seedDefaults();
+    syncAvailabilityFromEvents();
     await loadSchedules();
+    await loadAiReplanPreview(false);
   } catch (error) {
     ElMessage.error(errorMessage(error));
   } finally {
@@ -701,7 +802,8 @@ async function refreshAll() {
 async function loadSchedules() {
   schedules.value = await getSchedules({
     departmentId: scheduleFilter.departmentId || undefined,
-    doctorId: scheduleFilter.doctorId || undefined
+    doctorId: scheduleFilter.doctorId || undefined,
+    bookingWindowOnly: false
   });
 }
 
@@ -718,27 +820,70 @@ async function loadAccounts() {
   }
 }
 
-function seedDefaults() {
-  if (!aiForm.departmentId) {
-    aiForm.departmentId = departments.value[0]?.id ?? '';
+async function loadDoctorEvents() {
+  eventLoading.value = true;
+  try {
+    doctorEvents.value = await getDoctorEvents();
+    syncAvailabilityFromEvents();
+  } catch (error) {
+    ElMessage.error(errorMessage(error));
+  } finally {
+    eventLoading.value = false;
   }
+}
+
+async function loadAiReplanPreview(showFeedback = false) {
+  suggestionLoading.value = true;
+  try {
+    aiForm.startDate = addDays(todayIso(), REPLAN_WINDOW_START_OFFSET);
+    aiForm.days = REPLAN_WINDOW_DAYS;
+    aiResponse.value = await getAiReplanPreview({
+      departmentId: aiForm.departmentId || undefined,
+      baseVisits: aiForm.baseVisits,
+      riskLevel: aiForm.riskLevel,
+      weekendPeak: aiForm.weekendPeak,
+      weekendIncrease: aiForm.weekendIncrease,
+      morningPeak: aiForm.morningPeak,
+      morningIncrease: aiForm.morningIncrease
+    });
+    publishedSuggestionIds.value = [];
+    if (showFeedback) {
+      if (suggestions.value.length > 0) {
+        ElMessage.success(`已生成 ${suggestions.value.length} 条第 8-15 天待确认排班建议`);
+      } else {
+        ElMessage.warning('当前窗口暂无可用重排建议');
+      }
+    }
+  } catch (error) {
+    if (showFeedback) {
+      ElMessage.error(errorMessage(error));
+    }
+  } finally {
+    suggestionLoading.value = false;
+  }
+}
+
+function seedDefaults() {
   if (!doctorForm.departmentId) {
-    doctorForm.departmentId = departments.value[0]?.id ?? '';
+    doctorForm.departmentId = schedulableDepartments.value[0]?.id ?? '';
   }
   if (!manualScheduleForm.doctorId) {
-    manualScheduleForm.doctorId = doctors.value[0]?.id ?? '';
+    manualScheduleForm.doctorId = schedulableDoctors.value[0]?.id ?? '';
     syncManualDoctor();
   }
-  doctors.value.forEach((doctor) => ensureAvailability(doctor.id));
-  selectedDoctorId.value = aiDoctors.value[0]?.id ?? doctors.value[0]?.id ?? '';
+  schedulableDoctors.value.forEach((doctor) => ensureAvailability(doctor.id));
+  selectedDoctorId.value = aiDoctors.value[0]?.id ?? schedulableDoctors.value[0]?.id ?? '';
+  if (!eventForm.doctorId) {
+    eventForm.doctorId = schedulableDoctors.value[0]?.id ?? '';
+  }
 }
 
 function buildDemands() {
-  if (!aiForm.departmentId || !aiForm.startDate || aiForm.periods.length === 0) return [];
+  if (!aiForm.departmentId || !aiForm.startDate) return [];
   const items: AiScheduleDemand[] = [];
   for (let day = 0; day < aiForm.days; day += 1) {
     const workDate = addDays(aiForm.startDate, day);
-    for (const period of aiForm.periods) {
+    for (const period of ['上午', '下午']) {
       let expectedVisits = aiForm.baseVisits;
       if (aiForm.weekendPeak && isWeekend(workDate)) {
         expectedVisits *= 1 + aiForm.weekendIncrease / 100;
@@ -803,9 +948,12 @@ async function publishSuggestion(suggestion: AiScheduleSuggestion, silent = fals
       return;
     }
   }
-  await publishAiScheduleSuggestion(suggestion.suggestionId, {
-    ...suggestion,
-    aiRecordId: aiResponse.value?.aiRecordId ?? null
+  await publishAiScheduleSuggestions({
+    aiRecordId: aiResponse.value?.aiRecordId ?? null,
+    suggestions: [{
+      ...suggestion,
+      aiRecordId: aiResponse.value?.aiRecordId ?? null
+    }]
   });
   publishedSuggestionIds.value = [...publishedSuggestionIds.value, suggestion.suggestionId];
   if (!silent) {
@@ -817,7 +965,7 @@ async function publishSuggestion(suggestion: AiScheduleSuggestion, silent = fals
 async function publishPendingSuggestions() {
   if (pendingSuggestions.value.length === 0) return;
   try {
-    await ElMessageBox.confirm(`确认发布 ${pendingSuggestions.value.length} 条 AI 排班建议？`, '批量确认', {
+    await ElMessageBox.confirm(`确认发布 ${pendingSuggestions.value.length} 条 AI 排班建议并更新对应日期窗口？`, '批量确认', {
       type: 'warning'
     });
   } catch {
@@ -825,10 +973,15 @@ async function publishPendingSuggestions() {
   }
   publishLoading.value = true;
   try {
-    for (const suggestion of pendingSuggestions.value) {
-      await publishSuggestion(suggestion, true);
-    }
-    ElMessage.success('AI 排班建议已发布');
+    await publishAiScheduleSuggestions({
+      aiRecordId: aiResponse.value?.aiRecordId ?? null,
+      suggestions: pendingSuggestions.value.map((suggestion) => ({
+        ...suggestion,
+        aiRecordId: aiResponse.value?.aiRecordId ?? null
+      }))
+    });
+    publishedSuggestionIds.value = suggestions.value.map((suggestion) => suggestion.suggestionId);
+    ElMessage.success('AI 排班建议已确认并更新正式排班');
     await loadSchedules();
   } catch (error) {
     ElMessage.error(errorMessage(error));
@@ -840,6 +993,14 @@ async function publishPendingSuggestions() {
 function syncManualDoctor() {
   const doctor = doctors.value.find((item) => item.id === manualScheduleForm.doctorId);
   manualScheduleForm.departmentId = doctor?.departmentId ?? '';
+}
+
+function openManualScheduleCreate() {
+  if (!manualScheduleForm.doctorId) {
+    manualScheduleForm.doctorId = schedulableDoctors.value[0]?.id ?? '';
+  }
+  syncManualDoctor();
+  manualScheduleDialogVisible.value = true;
 }
 
 async function submitManualSchedule() {
@@ -858,6 +1019,7 @@ async function submitManualSchedule() {
       capacity: manualScheduleForm.capacity
     });
     ElMessage.success('排班已保存');
+    manualScheduleDialogVisible.value = false;
     await loadSchedules();
   } catch (error) {
     ElMessage.error(errorMessage(error));
@@ -881,6 +1043,11 @@ async function stopSchedule(schedule: Schedule) {
   } catch (error) {
     ElMessage.error(errorMessage(error));
   }
+}
+
+function openDoctorCreate() {
+  resetDoctorForm();
+  doctorDialogVisible.value = true;
 }
 
 async function submitDoctor() {
@@ -909,6 +1076,7 @@ async function submitDoctor() {
     }
     ElMessage.success(doctorForm.createAccount ? '医生档案和账号已创建' : '医生档案已创建');
     resetDoctorForm();
+    doctorDialogVisible.value = false;
     doctors.value = await getDoctors();
     await loadAccounts();
     seedDefaults();
@@ -916,6 +1084,110 @@ async function submitDoctor() {
     ElMessage.error(errorMessage(error));
   } finally {
     doctorSaving.value = false;
+  }
+}
+
+function openDoctorDetail(doctor: Doctor) {
+  selectedDoctorDetail.value = doctor;
+  doctorDetailForm.id = doctor.id;
+  doctorDetailForm.employeeNo = doctor.employeeNo;
+  doctorDetailForm.name = doctor.name;
+  doctorDetailForm.title = doctor.title;
+  doctorDetailForm.departmentId = doctor.departmentId;
+  doctorDetailForm.specialty = doctor.specialty ?? '';
+  doctorDetailVisible.value = true;
+}
+
+async function submitDoctorDetail() {
+  if (!doctorDetailForm.id || !doctorDetailForm.departmentId) {
+    ElMessage.warning('请补全科室');
+    return;
+  }
+  doctorSaving.value = true;
+  try {
+    const saved = await updateDoctor(doctorDetailForm.id, {
+      name: doctorDetailForm.name,
+      title: doctorDetailForm.title,
+      departmentId: doctorDetailForm.departmentId,
+      specialty: doctorDetailForm.specialty
+    });
+    const index = doctors.value.findIndex((item) => item.id === saved.id);
+    if (index >= 0) {
+      doctors.value.splice(index, 1, saved);
+    }
+    doctorDetailVisible.value = false;
+    ElMessage.success('医生详情已保存');
+  } catch (error) {
+    ElMessage.error(errorMessage(error));
+  } finally {
+    doctorSaving.value = false;
+  }
+}
+
+function openDoctorEventCreate() {
+  resetDoctorEventForm();
+  eventDialogVisible.value = true;
+}
+
+function openDoctorEventEdit(event: DoctorEvent) {
+  editingEventId.value = event.id;
+  eventForm.doctorId = event.doctorId;
+  eventForm.eventType = event.eventType;
+  eventForm.dates = [...event.dates];
+  eventForm.periods = [...event.periods];
+  eventForm.note = event.note ?? '';
+  eventDialogVisible.value = true;
+}
+
+async function submitDoctorEvent() {
+  if (!eventForm.doctorId || eventForm.dates.length === 0 || eventForm.periods.length === 0) {
+    ElMessage.warning('请补全医生、日期和午别');
+    return;
+  }
+  eventSaving.value = true;
+  try {
+    const payload = {
+      doctorId: eventForm.doctorId,
+      eventType: eventForm.eventType,
+      dates: uniqueDates(eventForm.dates),
+      periods: [...eventForm.periods],
+      note: eventForm.note
+    };
+    if (editingEventId.value) {
+      await updateDoctorEvent(editingEventId.value, payload);
+      ElMessage.success('安排已更新');
+    } else {
+      await createDoctorEvent(payload);
+      ElMessage.success('安排已新增');
+    }
+    eventDialogVisible.value = false;
+    resetDoctorEventForm();
+    await loadDoctorEvents();
+    if (payload.dates.some((date) => isWithinReplanWindow(date))) {
+      currentPage.value = 'aiSchedule';
+      await loadAiReplanPreview(true);
+    }
+  } catch (error) {
+    ElMessage.error(errorMessage(error));
+  } finally {
+    eventSaving.value = false;
+  }
+}
+
+async function removeDoctorEvent(event: DoctorEvent) {
+  try {
+    await ElMessageBox.confirm(`确认删除 ${event.doctorName} 的${doctorEventTypeLabel(event.eventType)}安排？`, '删除确认', {
+      type: 'warning'
+    });
+  } catch {
+    return;
+  }
+  try {
+    await deleteDoctorEvent(event.id);
+    ElMessage.success('安排已删除');
+    await loadDoctorEvents();
+  } catch (error) {
+    ElMessage.error(errorMessage(error));
   }
 }
 
@@ -931,6 +1203,18 @@ async function toggleAccount(account: StaffAccount) {
     account.active = !account.active;
     ElMessage.error(errorMessage(error));
   }
+}
+
+async function toggleDoctorAccount(doctor: Doctor, active: string | number | boolean) {
+  const account = accountByEmployeeNo(doctor.employeeNo);
+  if (!account) return;
+  account.active = Boolean(active);
+  await toggleAccount(account);
+}
+
+function resetDoctorPassword(doctor: Doctor) {
+  const account = accountByEmployeeNo(doctor.employeeNo);
+  if (account) resetPassword(account);
 }
 
 async function resetPassword(account: StaffAccount) {
@@ -957,12 +1241,21 @@ function resetDoctorForm() {
   doctorForm.employeeNo = '';
   doctorForm.name = '';
   doctorForm.title = '主治医师';
-  doctorForm.departmentId = departments.value[0]?.id ?? '';
+  doctorForm.departmentId = schedulableDepartments.value[0]?.id ?? '';
   doctorForm.roleType = 'OUTPATIENT_DOCTOR';
   doctorForm.specialty = '';
   doctorForm.createAccount = true;
   doctorForm.phone = '';
   doctorForm.password = 'abc12345';
+}
+
+function resetDoctorEventForm() {
+  editingEventId.value = '';
+  eventForm.doctorId = schedulableDoctors.value[0]?.id ?? '';
+  eventForm.eventType = 'LEAVE';
+  eventForm.dates = [];
+  eventForm.periods = ['上午'];
+  eventForm.note = '';
 }
 
 function accountByEmployeeNo(employeeNo: string) {
@@ -982,6 +1275,24 @@ function ensureAvailability(doctorId: string) {
   return availability[doctorId];
 }
 
+function syncAvailabilityFromEvents() {
+  doctors.value.forEach((doctor) => {
+    availability[doctor.id] = {
+      leaveDates: [],
+      surgeryDates: [],
+      weeklyCapacity: ensureAvailability(doctor.id).weeklyCapacity
+    };
+  });
+  doctorEvents.value.forEach((event) => {
+    const settings = ensureAvailability(event.doctorId);
+    if (event.eventType === 'LEAVE') {
+      settings.leaveDates = uniqueDates([...settings.leaveDates, ...event.dates]);
+    } else if (event.eventType === 'SURGERY') {
+      settings.surgeryDates = uniqueDates([...settings.surgeryDates, ...event.dates]);
+    }
+  });
+}
+
 function uniqueDates(dates: string[]) {
   return Array.from(new Set((dates ?? []).filter(Boolean))).sort();
 }
@@ -996,6 +1307,10 @@ function departmentName(id: string) {
 
 function roleLabel(role: string) {
   return roleLabels[role] ?? role;
+}
+
+function doctorEventTypeLabel(type: string) {
+  return type === 'LEAVE' ? '请假' : type === 'SURGERY' ? '手术' : type;
 }
 
 function scheduleStatusLabel(status: string) {
@@ -1029,6 +1344,19 @@ function addDays(isoDate: string, days: number) {
 function isWeekend(isoDate: string) {
   const day = new Date(`${isoDate}T00:00:00`).getDay();
   return day === 0 || day === 6;
+}
+
+function disablePastAndToday(date: Date) {
+  const earliest = new Date();
+  earliest.setHours(0, 0, 0, 0);
+  earliest.setDate(earliest.getDate() + REPLAN_WINDOW_START_OFFSET);
+  return date < earliest;
+}
+
+function isWithinReplanWindow(isoDate: string) {
+  const start = addDays(todayIso(), REPLAN_WINDOW_START_OFFSET);
+  const end = addDays(start, REPLAN_WINDOW_DAYS - 1);
+  return isoDate >= start && isoDate <= end;
 }
 
 function errorMessage(error: unknown) {
@@ -1199,6 +1527,12 @@ onMounted(refreshAll);
   gap: 12px;
 }
 
+.head-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .page-head h1 {
   margin: 0 0 4px;
   color: #111827;
@@ -1225,6 +1559,10 @@ onMounted(refreshAll);
 
 .query-bar .el-select {
   width: 190px;
+}
+
+.query-bar .el-input {
+  width: 260px;
 }
 
 .stat-strip {
@@ -1270,10 +1608,9 @@ onMounted(refreshAll);
 }
 
 .schedule-ai-layout {
-  display: grid;
-  grid-template-columns: 370px 330px minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   gap: 16px;
-  align-items: start;
 }
 
 .work-card {
@@ -1285,7 +1622,7 @@ onMounted(refreshAll);
 }
 
 .suggestions-card {
-  min-height: 520px;
+  width: 100%;
 }
 
 .card-head {
@@ -1307,6 +1644,21 @@ onMounted(refreshAll);
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+.ai-param-form {
+  display: grid;
+  grid-template-columns: minmax(240px, 1.2fr) minmax(180px, 0.8fr) minmax(280px, 1.4fr) minmax(280px, 1.4fr) minmax(180px, 0.8fr);
+  gap: 12px;
+  align-items: end;
+}
+
+.ai-param-form :deep(.el-form-item) {
+  margin-bottom: 0;
+}
+
+.ai-param-form > .peak-row {
+  min-height: 32px;
 }
 
 .form-grid {
@@ -1378,12 +1730,8 @@ onMounted(refreshAll);
 }
 
 @media (max-width: 1280px) {
-  .schedule-ai-layout {
+  .ai-param-form {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .suggestions-card {
-    grid-column: span 2;
   }
 
   .inline-form {
@@ -1425,13 +1773,8 @@ onMounted(refreshAll);
 
   .overview-layout,
   .doctor-layout,
-  .schedule-ai-layout,
   .stat-strip {
     grid-template-columns: 1fr;
-  }
-
-  .suggestions-card {
-    grid-column: span 1;
   }
 }
 
@@ -1456,13 +1799,20 @@ onMounted(refreshAll);
   }
 
   .form-grid,
-  .inline-form {
+  .inline-form,
+  .ai-param-form {
     grid-template-columns: 1fr;
   }
 
   .head-search,
-  .query-bar .el-select {
+  .query-bar .el-select,
+  .query-bar .el-input {
     width: 100%;
+  }
+
+  .head-actions {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
 </style>

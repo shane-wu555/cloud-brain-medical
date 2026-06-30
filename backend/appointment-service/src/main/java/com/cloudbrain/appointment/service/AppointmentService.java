@@ -66,6 +66,7 @@ public class AppointmentService {
         validateRequired(request.doctorId(), "doctorId");
         validateRequired(request.visitDate(), "visitDate");
         validateRequired(request.period(), "period");
+        validateBookingWindow(request.visitDate());
         LocalTime startTime = parseStartTime(request);
         validateNoRepeatedAppointment(request, startTime);
 
@@ -84,6 +85,7 @@ public class AppointmentService {
         validateRequired(request.doctorId(), "doctorId");
         validateRequired(request.visitDate(), "visitDate");
         validateRequired(request.period(), "period");
+        validateBookingWindow(request.visitDate());
         LocalTime startTime = parseStartTime(request);
         validateNoRepeatedAppointment(request, startTime);
         if (!slotInventoryRepository.bookOffline(request.scheduleId())) {
@@ -191,6 +193,21 @@ public class AppointmentService {
         return slotInventoryRepository.save(inventory);
     }
 
+    @Transactional
+    public List<SlotInventory> syncSlots(List<AppointmentController.SyncSlotRequest> requests) {
+        if (requests == null || requests.isEmpty()) {
+            return List.of();
+        }
+        List<SlotInventoryRepository.SlotCapacity> capacities = requests.stream()
+                .filter(request -> request.scheduleId() != null && !request.scheduleId().isBlank())
+                .map(request -> new SlotInventoryRepository.SlotCapacity(request.scheduleId(), request.capacity()))
+                .toList();
+        slotInventoryRepository.saveAllCapacities(capacities);
+        return capacities.stream()
+                .map(item -> new SlotInventory(item.slotId(), item.capacity(), 0))
+                .toList();
+    }
+
     @Scheduled(fixedDelayString="${appointment.lock-expiration-scan-ms:30000}")
     @Transactional
     public void releaseExpiredLocks() {
@@ -263,6 +280,14 @@ public class AppointmentService {
     private void validateRequired(String value, String fieldName) {
         if (value == null || value.isBlank()) {
             throw new IllegalArgumentException(fieldName + " 不能为空");
+        }
+    }
+
+    private void validateBookingWindow(String visitDate) {
+        LocalDate date = LocalDate.parse(visitDate);
+        LocalDate today = LocalDate.now();
+        if (date.isBefore(today) || date.isAfter(today.plusDays(6))) {
+            throw new IllegalArgumentException("只能挂当前日期起 7 天内的号源");
         }
     }
 

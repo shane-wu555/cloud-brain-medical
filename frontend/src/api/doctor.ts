@@ -17,6 +17,17 @@ export interface Doctor {
   roleType: string;
 }
 
+export interface DoctorEvent {
+  id: string;
+  doctorId: string;
+  doctorName: string;
+  departmentName: string;
+  eventType: 'LEAVE' | 'SURGERY';
+  dates: string[];
+  periods: string[];
+  note: string;
+}
+
 export interface ScheduleTimeSlot {
   id: string;
   startTime: string;
@@ -49,6 +60,7 @@ export interface AiDoctorCandidate {
   weeklyCapacity: number;
   leaveDates: string[];
   surgeryDates: string[];
+  unavailableSlots?: Array<{ date: string; period: string; type: 'LEAVE' | 'SURGERY' }>;
 }
 
 export interface AiScheduleDemand {
@@ -57,6 +69,7 @@ export interface AiScheduleDemand {
   period: string;
   expectedVisits: number;
   riskLevel: 'LOW' | 'MEDIUM' | 'HIGH';
+  historicalVisits?: number | null;
 }
 
 export interface AiScheduleSuggestion {
@@ -84,7 +97,49 @@ export async function getDoctors(departmentId?: string) {
   return (await http.get<Doctor[]>('/doctors', { params: { departmentId } })).data;
 }
 
-export async function getSchedules(params: { doctorId?: string; departmentId?: string } = {}) {
+export async function getDoctor(id: string) {
+  return (await http.get<Doctor>(`/doctors/${id}`)).data;
+}
+
+export async function updateDoctor(
+  id: string,
+  payload: Pick<Doctor, 'name' | 'title' | 'departmentId' | 'specialty'>
+) {
+  return (await http.put<Doctor>(`/doctors/${id}`, payload)).data;
+}
+
+export async function getDoctorEvents() {
+  return (await http.get<DoctorEvent[]>('/doctors/events')).data;
+}
+
+export async function createDoctorEvent(payload: {
+  doctorId: string;
+  eventType: DoctorEvent['eventType'];
+  dates: string[];
+  periods: string[];
+  note: string;
+}) {
+  return (await http.post<DoctorEvent>('/doctors/events', payload)).data;
+}
+
+export async function updateDoctorEvent(
+  id: string,
+  payload: {
+    doctorId: string;
+    eventType: DoctorEvent['eventType'];
+    dates: string[];
+    periods: string[];
+    note: string;
+  }
+) {
+  return (await http.put<DoctorEvent>(`/doctors/events/${id}`, payload)).data;
+}
+
+export async function deleteDoctorEvent(id: string) {
+  await http.delete(`/doctors/events/${id}`);
+}
+
+export async function getSchedules(params: { doctorId?: string; departmentId?: string; bookingWindowOnly?: boolean } = {}) {
   return (await http.get<Schedule[]>('/schedules', { params })).data;
 }
 
@@ -105,11 +160,30 @@ export async function getAiScheduleSuggestions(payload: {
   return (await http.post<AiScheduleResponse>('/schedules/ai-suggestions', payload)).data;
 }
 
+export async function getAiReplanPreview(params: {
+  departmentId?: string;
+  baseVisits?: number;
+  riskLevel?: AiScheduleDemand['riskLevel'];
+  weekendPeak?: boolean;
+  weekendIncrease?: number;
+  morningPeak?: boolean;
+  morningIncrease?: number;
+} = {}) {
+  return (await http.get<AiScheduleResponse>('/schedules/ai-replan-preview', { params })).data;
+}
+
 export async function publishAiScheduleSuggestion(
   suggestionId: string,
   payload: AiScheduleSuggestion & { aiRecordId?: string | null }
 ) {
   return (await http.post<Schedule>(`/schedules/ai-suggestions/${suggestionId}/publish`, payload)).data;
+}
+
+export async function publishAiScheduleSuggestions(payload: {
+  aiRecordId?: string | null;
+  suggestions: Array<AiScheduleSuggestion & { aiRecordId?: string | null }>;
+}) {
+  return (await http.post<Schedule[]>('/schedules/ai-suggestions/publish-batch', payload)).data;
 }
 
 export async function suspendSchedule(id: string, reason: string) {
