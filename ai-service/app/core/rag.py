@@ -1,4 +1,5 @@
 import hashlib
+import logging
 import math
 import re
 from dataclasses import dataclass
@@ -10,6 +11,8 @@ except ModuleNotFoundError:  # pragma: no cover - exercised in minimal local env
     psycopg = None
 
 from .config import settings
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -60,30 +63,34 @@ _RULE_SOURCES = [
     ),
 ]
 
+_MANAGED_SOURCE_TYPES = ("HOSPITAL_RULE", "DEPARTMENT", "DOCTOR", "SCHEDULE", "DOCTOR_EVENT", "MEDICAL_ITEM", "DRUG")
 
-def retrieve(query: str, limit: int = 3) -> list[KnowledgeSource]:
+
+def retrieve(query: str, limit: int = 3, source_types: Iterable[str] | None = None) -> list[KnowledgeSource]:
+    allowed_source_types = _source_type_filter(source_types)
     config = settings()
     if config.rag_database_url:
         try:
-            return search_persistent(query, limit)
+            return search_persistent(query, limit, allowed_source_types)
         except Exception:
             if not config.allow_fallback:
                 raise
-    return search_memory(query, limit)
+    return search_memory(query, limit, allowed_source_types)
 
 
-def search_memory(query: str, limit: int = 3) -> list[KnowledgeSource]:
+def search_memory(query: str, limit: int = 3, source_types: tuple[str, ...] | None = None) -> list[KnowledgeSource]:
+    sources = _filter_sources(_RULE_SOURCES, source_types)
     terms = [term for term in re.split(r"[\s，。；、,.!?！？]+", query) if term]
     if not terms:
-        return _RULE_SOURCES[:limit]
+        return sources[:limit]
 
     def score(source: KnowledgeSource) -> int:
         text = f"{source.title} {source.content}"
         return sum(1 for term in terms if term in text)
 
-    ranked = sorted(_RULE_SOURCES, key=score, reverse=True)
+    ranked = sorted(sources, key=score, reverse=True)
     selected = [source for source in ranked if score(source) > 0]
-    return (selected or _RULE_SOURCES)[:limit]
+    return (selected or sources)[:limit]
 
 
 def ensure_schema() -> None:
@@ -158,36 +165,52 @@ def reindex_from_hospital_data() -> dict[str, int]:
                         "{}",
                     ),
                 )
+            indexed_ids = [doc.source_id for doc in documents]
+            if indexed_ids:
+                cur.execute(
+                    f"""
+                    delete from {schema}.knowledge_document
+                    where source_type = any(%s) and not (id = any(%s))
+                    """,
+                    (list(_MANAGED_SOURCE_TYPES), indexed_ids),
+                )
     counts: dict[str, int] = {}
     for doc in documents:
         counts[doc.source_type] = counts.get(doc.source_type, 0) + 1
     return counts
 
 
-def search_persistent(query: str, limit: int = 3) -> list[KnowledgeSource]:
+def search_persistent(query: str, limit: int = 3, source_types: tuple[str, ...] | None = None) -> list[KnowledgeSource]:
     config = settings()
     if not config.rag_database_url:
-        return search_memory(query, limit)
+        return search_memory(query, limit, source_types)
     if psycopg is None:
-        return search_memory(query, limit)
+        return search_memory(query, limit, source_types)
     ensure_schema()
     schema = _identifier(config.rag_schema)
     vector = _vector_literal(embed(query, config.rag_embedding_dim))
     with psycopg.connect(config.rag_database_url) as conn:
         with conn.cursor() as cur:
+            where_clause = ""
+            params: list = [vector]
+            if source_types:
+                where_clause = "where source_type = any(%s)"
+                params.append(list(source_types))
+            params.extend([vector, limit])
             cur.execute(
                 f"""
                 select id, source_type, business_id, title, content,
                        1 - (embedding <=> %s::vector) as score
                 from {schema}.knowledge_document
+                {where_clause}
                 order by embedding <=> %s::vector
                 limit %s
                 """,
-                (vector, vector, limit),
+                tuple(params),
             )
             rows = cur.fetchall()
     if not rows:
-        return search_memory(query, limit)
+        return search_memory(query, limit, source_types)
     return [
         KnowledgeSource(
             source_id=row[0],
@@ -221,6 +244,20 @@ def _tokens(text: str) -> list[str]:
     return parts + chars
 
 
+def _source_type_filter(source_types: Iterable[str] | None) -> tuple[str, ...] | None:
+    if source_types is None:
+        return None
+    normalized = tuple(sorted({source_type for source_type in source_types if source_type}))
+    return normalized or None
+
+
+def _filter_sources(sources: Iterable[KnowledgeSource], source_types: tuple[str, ...] | None) -> list[KnowledgeSource]:
+    if not source_types:
+        return list(sources)
+    allowed = set(source_types)
+    return [source for source in sources if source.source_type in allowed]
+
+
 def _rule_documents() -> Iterable[KnowledgeSource]:
     return _RULE_SOURCES
 
@@ -238,7 +275,7 @@ def _business_documents(conn) -> list[KnowledgeSource]:
     )))
     documents.extend(_query_documents(conn, "DOCTOR", "doctor", """
         select d.id, d.name, coalesce(d.title, ''), p.name, coalesce(d.specialty, ''), d.role_type
-        from doctor.doctor d join doctor.department p on p.id = d.department_id
+        from doctor.staff d join doctor.department p on p.id = d.department_id
         where d.active = true
     """, lambda row: KnowledgeSource(
         source_id=f"doctor-{row[0]}",
@@ -247,8 +284,34 @@ def _business_documents(conn) -> list[KnowledgeSource]:
         title=f"医生：{row[1]}",
         content=f"{row[1]}，{row[2]}，科室 {row[3]}，角色 {row[5]}，擅长 {row[4]}。",
     )))
+    documents.extend(_query_documents(conn, "SCHEDULE", "doctor", """
+        select s.id, d.name, p.name, s.work_date, s.period, s.capacity, s.status
+        from doctor.schedule s
+        join doctor.staff d on d.id = s.staff_id
+        join doctor.department p on p.id = s.department_id
+        where s.status = 'PUBLISHED'
+    """, lambda row: KnowledgeSource(
+        source_id=f"schedule-{row[0]}",
+        source_type="SCHEDULE",
+        business_id=row[0],
+        title=f"排班：{row[1]} {row[3]} {row[4]}",
+        content=f"医生 {row[1]}，科室 {row[2]}，日期 {row[3]}，时段 {row[4]}，号源容量 {row[5]}，状态 {row[6]}。",
+    )))
+    documents.extend(_query_documents(conn, "DOCTOR_EVENT", "doctor", """
+        select e.id, d.name, p.name, e.event_type, sl.event_date, sl.period, coalesce(e.note, '')
+        from doctor.doctor_event e
+        join doctor.staff d on d.id = e.staff_id
+        join doctor.department p on p.id = d.department_id
+        join doctor.doctor_event_slot sl on sl.event_id = e.id
+    """, lambda row: KnowledgeSource(
+        source_id=f"doctor-event-{row[0]}-{row[4]}-{row[5]}",
+        source_type="DOCTOR_EVENT",
+        business_id=row[0],
+        title=f"医生安排：{row[1]} {row[4]} {row[5]}",
+        content=f"医生 {row[1]}，科室 {row[2]}，安排类型 {row[3]}，日期 {row[4]}，时段 {row[5]}，备注 {row[6]}。",
+    )))
     documents.extend(_query_documents(conn, "MEDICAL_ITEM", "doctor", """
-        select code, name, category, price from doctor.medical_item_catalog where active = true
+        select code, name, category, price from doctor.medical_item where active = true
     """, lambda row: KnowledgeSource(
         source_id=f"medical-item-{row[0]}",
         source_type="MEDICAL_ITEM",
@@ -257,8 +320,8 @@ def _business_documents(conn) -> list[KnowledgeSource]:
         content=f"{row[1]}，类型 {row[2]}，院内价格 {row[3]} 元。开单后需缴费，缴费后进入对应医技队列。",
     )))
     documents.extend(_query_documents(conn, "DRUG", "pharmacy", """
-        select drug_code, drug_name, specification, unit, unit_price
-        from pharmacy.drug_catalog where enabled = true
+        select code, drug_name, specification, unit, unit_price
+        from pharmacy.drug where active = true
     """, lambda row: KnowledgeSource(
         source_id=f"drug-{row[0]}",
         source_type="DRUG",
@@ -277,7 +340,9 @@ def _query_documents(conn, source_type: str, schema_name: str, sql: str, mapper)
                 return []
             cur.execute(sql)
             return [mapper(row) for row in cur.fetchall()]
-    except Exception:
+    except Exception as exc:
+        conn.rollback()
+        logger.warning("Skipping RAG source %s because hospital data query failed: %s", source_type, exc)
         return []
 
 

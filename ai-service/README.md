@@ -53,4 +53,8 @@ AI_RAG_SCHEMA=ai
 AI_RAG_EMBEDDING_DIM=64
 ```
 
-调用 `POST /api/ai/knowledge/reindex` 会读取业务库中的科室、医生擅长、医技项目、药品目录，并合并院内 AI 使用规则，写入 `ai.knowledge_document`。检索失败或未配置数据库时会自动回退到内置规则，便于离线演示。
+调用 `POST /api/ai/knowledge/reindex` 会读取业务库中的科室、医生擅长、正式排班、医生请假/手术安排、医技项目、药品目录，并合并院内 AI 使用规则，写入 `ai.knowledge_document`。重建时会清理这些来源类型下已经不存在的旧文档，避免删除的排班或请假信息继续被检索到。
+
+AI 智能排班会限定检索 `HOSPITAL_RULE`、`DEPARTMENT`、`DOCTOR`、`SCHEDULE`、`DOCTOR_EVENT` 这些排班相关来源，避免混入药品或医技项目等无关知识。新增或修改医生、正式排班、请假/手术安排后，如需让 RAG 立刻使用最新数据库内容，请再次调用 `POST /api/ai/knowledge/reindex`。
+
+检索失败或未配置数据库时会自动回退到内置规则，便于离线演示。
