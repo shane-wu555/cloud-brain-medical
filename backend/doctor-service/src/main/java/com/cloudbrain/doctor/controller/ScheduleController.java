@@ -8,6 +8,7 @@ import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.http.MediaType;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -21,6 +22,8 @@ import org.slf4j.LoggerFactory;
 @RestController @RequestMapping("/api/schedules")
 public class ScheduleController {
     private static final Logger log=LoggerFactory.getLogger(ScheduleController.class);
+    private static final int REPLAN_START_DAYS=7;
+    private static final int REPLAN_DAYS=8;
     private final DoctorCatalogRepository repository;
     private final RestClient appointmentClient;
     private final RestClient aiClient;
@@ -30,7 +33,15 @@ public class ScheduleController {
             @Value("${services.ai.base-url:http://localhost:8000}") String aiUrl) {
         this.repository=repository; this.internalApiKey=internalApiKey;
         this.appointmentClient=RestClient.builder().baseUrl(appointmentUrl).build();
-        this.aiClient=RestClient.builder().requestFactory(new SimpleClientHttpRequestFactory()).baseUrl(aiUrl).build();
+        SimpleClientHttpRequestFactory aiRequestFactory=new SimpleClientHttpRequestFactory();
+        aiRequestFactory.setConnectTimeout(10000);
+        aiRequestFactory.setReadTimeout(180000);
+        this.aiClient=RestClient.builder().requestFactory(aiRequestFactory).baseUrl(aiUrl).build();
+    }
+    @ExceptionHandler(IllegalArgumentException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public Map<String,String> badRequest(IllegalArgumentException exception) {
+        return Map.of("message",exception.getMessage());
     }
     @GetMapping public List<ScheduleDto> list(@RequestParam(name="doctorId", required=false) String doctorId,
             @RequestParam(name="departmentId", required=false) String departmentId,
@@ -59,18 +70,29 @@ public class ScheduleController {
     }
     private AiScheduleResponse requestAiSuggestions(AiScheduleRequest request) {
         AiScheduleRequest normalizedRequest=normalizeAiScheduleRequest(request);
+        long startedAt=System.currentTimeMillis();
+        Map<String,Object> payload=aiSchedulePayload(normalizedRequest);
+        log.info("AI schedule request prepared: candidates={}, demands={}, departments={}, unavailableSlots={}",
+                normalizedRequest.candidates().size(),normalizedRequest.demands().size(),
+                normalizedRequest.demands().stream().map(AiScheduleDemand::departmentId).distinct().count(),
+                normalizedRequest.candidates().stream().mapToInt(candidate -> Optional.ofNullable(candidate.unavailableSlots()).orElse(List.of()).size()).sum());
         try {
-            AiScheduleResponse response=aiClient.post().uri("/api/ai/schedule-suggestions")
+            Map<String,Object> response=aiClient.post().uri("/api/ai/schedule-suggestions")
                     .contentType(MediaType.APPLICATION_JSON)
                     .accept(MediaType.APPLICATION_JSON)
-                    .body(aiSchedulePayload(normalizedRequest))
-                    .retrieve().body(AiScheduleResponse.class);
-            return response==null?new AiScheduleResponse(null,List.of()):response;
+                    .body(payload)
+                    .retrieve().body(new ParameterizedTypeReference<Map<String,Object>>(){});
+            AiScheduleResponse mapped=mapAiScheduleResponse(response);
+            log.info("AI schedule response mapped: elapsedMs={}, rawSuggestions={}, mappedSuggestions={}, fallbackUsed={}, provider={}, model={}, ragSources={}",
+                    System.currentTimeMillis()-startedAt,objectListSize(response==null?null:response.get("suggestions")),
+                    mapped.suggestions().size(),mapped.fallbackUsed(),mapped.provider(),mapped.model(),mapped.knowledgeSources().size());
+            return mapped;
         } catch (RestClientResponseException exception) {
-            log.warn("AI schedule service rejected request: status={}, body={}", exception.getStatusCode(), exception.getResponseBodyAsString());
+            log.warn("AI schedule service rejected request: elapsedMs={}, status={}, body={}",
+                    System.currentTimeMillis()-startedAt,exception.getStatusCode(),exception.getResponseBodyAsString());
             return fallbackAiSuggestions(normalizedRequest, "AI 服务拒绝请求，已使用本地均衡规则生成待确认建议");
         } catch (RestClientException exception) {
-            log.warn("AI schedule service unavailable", exception);
+            log.warn("AI schedule service unavailable: elapsedMs={}, message={}",System.currentTimeMillis()-startedAt,exception.getMessage());
             return fallbackAiSuggestions(normalizedRequest, "AI 服务暂不可用，已使用本地均衡规则生成待确认建议");
         }
     }
@@ -81,16 +103,28 @@ public class ScheduleController {
             @RequestParam(name="weekendPeak", defaultValue="true") boolean weekendPeak,
             @RequestParam(name="weekendIncrease", defaultValue="35") int weekendIncrease,
             @RequestParam(name="morningPeak", defaultValue="true") boolean morningPeak,
-            @RequestParam(name="morningIncrease", defaultValue="25") int morningIncrease) {
-        LocalDate start=LocalDate.now().plusDays(7);
-        LocalDate end=LocalDate.now().plusDays(14);
+            @RequestParam(name="morningIncrease", defaultValue="25") int morningIncrease,
+            @RequestParam(name="force", defaultValue="false") boolean force) {
+        LocalDate start=LocalDate.now().plusDays(REPLAN_START_DAYS);
+        LocalDate end=start.plusDays(REPLAN_DAYS-1);
         List<DoctorCatalogRepository.Department> departments=repository.schedulingDepartments().stream()
                 .filter(department -> departmentId==null||departmentId.isBlank()||department.id().equals(departmentId))
                 .toList();
+        List<DoctorCatalogRepository.DoctorEvent> events=repository.doctorEvents(start,end);
+        List<DoctorCatalogRepository.Department> departmentsNeedingReplan=departmentsNeedingReplan(departments,start,end,events);
+        List<DoctorCatalogRepository.Department> targetDepartments=departmentsNeedingReplan;
+        if(targetDepartments.isEmpty()) {
+            if(force&&departmentId!=null&&!departmentId.isBlank()) {
+                targetDepartments=departments;
+                log.info("AI schedule replan forced for selected department: departmentId={}, window={}..{}",departmentId,start,end);
+            } else {
+                log.info("AI schedule replan skipped: window {} to {} already covered and has no event conflicts",start,end);
+                return new AiScheduleResponse(null,List.of(),"backend","not-required",false,List.of());
+            }
+        }
         List<AiDoctorCandidate> candidates=new ArrayList<>();
         List<AiScheduleDemand> demands=new ArrayList<>();
-        List<DoctorCatalogRepository.DoctorEvent> events=repository.doctorEvents(start,end);
-        for(DoctorCatalogRepository.Department department:departments) {
+        for(DoctorCatalogRepository.Department department:targetDepartments) {
             List<DoctorCatalogRepository.Doctor> doctors=repository.doctors(department.id());
             for(DoctorCatalogRepository.Doctor doctor:doctors) {
                 List<DoctorUnavailableSlot> unavailableSlots=events.stream()
@@ -113,7 +147,10 @@ public class ScheduleController {
                         expectedVisits(date,"下午",baseVisits,weekendPeak,weekendIncrease,morningPeak,morningIncrease),riskLevel,null));
             }
         }
-        if(candidates.isEmpty()||demands.isEmpty()) return new AiScheduleResponse(null,List.of());
+        log.info("AI schedule replan preview request: force={}, selectedDepartment={}, checkedDepartments={}, targetDepartments={}, candidates={}, demands={}, events={}, window={}..{}",
+                force,departmentId,departments.size(),targetDepartments.stream().map(DoctorCatalogRepository.Department::id).toList(),
+                candidates.size(),demands.size(),events.size(),start,end);
+        if(candidates.isEmpty()||demands.isEmpty()) return new AiScheduleResponse(null,List.of(),null,null,false,List.of());
         return requestAiSuggestions(new AiScheduleRequest(candidates,demands));
     }
     @PostMapping("/ai-suggestions/{suggestionId}/publish") @PreAuthorize("hasRole('ADMIN')")
@@ -169,8 +206,14 @@ public class ScheduleController {
         Map<String,SlotDto> slots=slotsById();
         return dto(s,repository.timeSlots(id),slots);
     }
-    private void syncSlot(String id,int capacity) { appointmentClient.post().uri("/api/internal/appointment-slots")
-            .header("X-Internal-Api-Key",internalApiKey).body(Map.of("scheduleId",id,"capacity",capacity)).retrieve().toBodilessEntity(); }
+    private void syncSlot(String id,int capacity) {
+        try {
+            appointmentClient.post().uri("/api/internal/appointment-slots")
+                    .header("X-Internal-Api-Key",internalApiKey).body(Map.of("scheduleId",id,"capacity",capacity)).retrieve().toBodilessEntity();
+        } catch (RestClientException exception) {
+            log.warn("Appointment slot sync failed: scheduleSlotId={}, capacity={}, message={}",id,capacity,exception.getMessage());
+        }
+    }
     private void syncSlots(List<DoctorCatalogRepository.ScheduleTimeSlot> timeSlots, Map<String,SlotDto> overrides) {
         for (DoctorCatalogRepository.ScheduleTimeSlot slot : timeSlots) {
             SlotDto override=overrides.get(slot.id());
@@ -182,11 +225,23 @@ public class ScheduleController {
         List<Map<String,Object>> payload=timeSlots.stream()
                 .map(slot -> Map.<String,Object>of("scheduleId",slot.id(),"capacity",slot.capacity()))
                 .toList();
-        appointmentClient.post().uri("/api/internal/appointment-slots/batch")
-                .header("X-Internal-Api-Key",internalApiKey).body(payload).retrieve().toBodilessEntity();
+        try {
+            appointmentClient.post().uri("/api/internal/appointment-slots/batch")
+                    .header("X-Internal-Api-Key",internalApiKey).body(payload).retrieve().toBodilessEntity();
+        } catch (RestClientException exception) {
+            log.warn("Appointment slot batch sync failed: slots={}, message={}",payload.size(),exception.getMessage());
+        }
     }
-    private List<SlotDto> slots() { var result=appointmentClient.get().uri("/api/internal/appointment-slots")
-            .header("X-Internal-Api-Key",internalApiKey).retrieve().body(new ParameterizedTypeReference<List<SlotDto>>(){}); return result==null?List.of():result; }
+    private List<SlotDto> slots() {
+        try {
+            var result=appointmentClient.get().uri("/api/internal/appointment-slots")
+                    .header("X-Internal-Api-Key",internalApiKey).retrieve().body(new ParameterizedTypeReference<List<SlotDto>>(){});
+            return result==null?List.of():result;
+        } catch (RestClientException exception) {
+            log.warn("Appointment slot inventory query failed; schedule list will use schedule capacity only: message={}",exception.getMessage());
+            return List.of();
+        }
+    }
     private Map<String,SlotDto> slotsById() {
         return slots().stream()
                 .filter(slot -> slot.scheduleId() != null && !slot.scheduleId().isBlank())
@@ -247,6 +302,104 @@ public class ScheduleController {
         payload.put("historicalVisits", demand.historicalVisits());
         return payload;
     }
+    private AiScheduleResponse mapAiScheduleResponse(Map<String,Object> response) {
+        if(response==null) return new AiScheduleResponse(null,List.of(),null,null,false,List.of());
+        List<AiScheduleSuggestion> suggestions=new ArrayList<>();
+        Object rawSuggestions=response.get("suggestions");
+        if(rawSuggestions instanceof List<?> items) {
+            for(Object rawItem:items) {
+                if(rawItem instanceof Map<?,?> item) {
+                    suggestions.add(new AiScheduleSuggestion(
+                            stringValue(item.get("suggestionId")),
+                            stringValue(item.get("doctorId")),
+                            stringValue(item.get("doctorName")),
+                            stringValue(item.get("departmentId")),
+                            stringValue(item.get("workDate")),
+                            stringValue(item.get("period")),
+                            intValue(item.get("capacity"),20),
+                            stringValue(item.get("reason")),
+                            booleanValue(item.get("requiresAdminConfirmation"),true)));
+                }
+            }
+        }
+        List<Map<String,Object>> knowledgeSources=new ArrayList<>();
+        Object rawSources=response.get("knowledgeSources");
+        if(rawSources instanceof List<?> items) {
+            for(Object rawItem:items) {
+                if(rawItem instanceof Map<?,?> item) {
+                    Map<String,Object> source=new LinkedHashMap<>();
+                    item.forEach((key,value) -> source.put(String.valueOf(key),value));
+                    knowledgeSources.add(source);
+                }
+            }
+        }
+        return new AiScheduleResponse(
+                stringValue(response.get("aiRecordId")),
+                suggestions,
+                stringValue(response.get("provider")),
+                stringValue(response.get("model")),
+                booleanValue(response.get("fallbackUsed"),false),
+                knowledgeSources);
+    }
+    private String stringValue(Object value) {
+        return value==null?null:String.valueOf(value);
+    }
+    private int intValue(Object value,int defaultValue) {
+        if(value instanceof Number number) return number.intValue();
+        if(value==null) return defaultValue;
+        try {
+            return Integer.parseInt(String.valueOf(value));
+        } catch(NumberFormatException exception) {
+            return defaultValue;
+        }
+    }
+    private boolean booleanValue(Object value,boolean defaultValue) {
+        if(value instanceof Boolean bool) return bool;
+        if(value==null) return defaultValue;
+        return Boolean.parseBoolean(String.valueOf(value));
+    }
+    private int objectListSize(Object value) {
+        return value instanceof List<?> items?items.size():0;
+    }
+    private List<DoctorCatalogRepository.Department> departmentsNeedingReplan(List<DoctorCatalogRepository.Department> departments,LocalDate start,LocalDate end,
+            List<DoctorCatalogRepository.DoctorEvent> events) {
+        List<DoctorCatalogRepository.Department> result=new ArrayList<>();
+        for(DoctorCatalogRepository.Department department:departments) {
+            List<DoctorCatalogRepository.Schedule> schedules=repository.schedules(null,department.id(),start,end).stream()
+                    .filter(schedule -> "PUBLISHED".equals(schedule.status()))
+                    .toList();
+            boolean needed=false;
+            for(LocalDate date=start;!date.isAfter(end);date=date.plusDays(1)) {
+                if(!coversPeriod(schedules,date,"上午")) {
+                    log.info("AI schedule replan needed: missing schedule coverage, department={}, date={}, period=上午",department.id(),date);
+                    needed=true;
+                }
+                if(!coversPeriod(schedules,date,"下午")) {
+                    log.info("AI schedule replan needed: missing schedule coverage, department={}, date={}, period=下午",department.id(),date);
+                    needed=true;
+                }
+            }
+            if(hasEventConflict(schedules,events)) {
+                log.info("AI schedule replan needed: published schedule conflicts with doctor leave/surgery, department={}",department.id());
+                needed=true;
+            }
+            if(needed) {
+                result.add(department);
+            }
+        }
+        return result;
+    }
+    private boolean coversPeriod(List<DoctorCatalogRepository.Schedule> schedules,LocalDate date,String period) {
+        return schedules.stream().anyMatch(schedule -> date.equals(schedule.workDate())
+                && (period.equals(schedule.period())||"全天".equals(schedule.period())));
+    }
+    private boolean hasEventConflict(List<DoctorCatalogRepository.Schedule> schedules,List<DoctorCatalogRepository.DoctorEvent> events) {
+        return schedules.stream().anyMatch(schedule -> events.stream()
+                .filter(event -> event.doctorId().equals(schedule.doctorId()))
+                .filter(event -> event.dates().contains(schedule.workDate()))
+                .anyMatch(event -> event.periods().stream().anyMatch(period ->
+                        period.equals(schedule.period())||"全天".equals(schedule.period())||"全天".equals(period))));
+    }
     private AiScheduleRequest normalizeAiScheduleRequest(AiScheduleRequest request) {
         if(request==null) return new AiScheduleRequest(List.of(),List.of());
         List<AiDoctorCandidate> candidates=Optional.ofNullable(request.candidates()).orElse(List.of()).stream()
@@ -292,7 +445,7 @@ public class ScheduleController {
                     notice+"；结合预计挂号量 "+demand.expectedVisits()+"、风险等级 "+demand.riskLevel()+"、医生可用性和均衡分配生成。",
                     true));
         }
-        return new AiScheduleResponse("local-ai-schedule-record-"+UUID.randomUUID(),suggestions);
+        return new AiScheduleResponse("local-ai-schedule-record-"+UUID.randomUUID(),suggestions,"backend","local-balanced",true,List.of());
     }
     private boolean hasUnavailableSlot(AiDoctorCandidate candidate,String workDate,String period) {
         return Optional.ofNullable(candidate.unavailableSlots()).orElse(List.of()).stream()
@@ -317,7 +470,7 @@ public class ScheduleController {
     public record AiDoctorCandidate(String doctorId,String doctorName,String departmentId,String specialty,int weeklyCapacity,List<String> leaveDates,List<String> surgeryDates,List<DoctorUnavailableSlot> unavailableSlots) {}
     public record DoctorUnavailableSlot(String date,String period,String type) {}
     public record AiScheduleDemand(String departmentId,String workDate,String period,int expectedVisits,String riskLevel,Integer historicalVisits) {}
-    public record AiScheduleResponse(String aiRecordId,List<AiScheduleSuggestion> suggestions) {}
+    public record AiScheduleResponse(String aiRecordId,List<AiScheduleSuggestion> suggestions,String provider,String model,boolean fallbackUsed,List<Map<String,Object>> knowledgeSources) {}
     public record AiScheduleSuggestion(String suggestionId,String doctorId,String doctorName,String departmentId,String workDate,String period,int capacity,String reason,boolean requiresAdminConfirmation) {}
     public record PublishAiScheduleRequest(String aiRecordId,String doctorId,String departmentId,String workDate,String period,int capacity,String reason) {}
     public record PublishAiScheduleBatchRequest(String aiRecordId,List<PublishAiScheduleRequest> suggestions) {}

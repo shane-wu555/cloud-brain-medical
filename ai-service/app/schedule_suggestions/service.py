@@ -1,3 +1,5 @@
+import logging
+import time
 from uuid import uuid4
 
 from app.clinical_assistance.models import ClinicalKnowledgeSource
@@ -10,22 +12,54 @@ from .models import ScheduleSuggestion, ScheduleSuggestionRequest, ScheduleSugge
 
 VALID_PERIODS = {"\u4e0a\u5348", "\u4e0b\u5348", "\u5168\u5929"}
 ALL_DAY = "\u5168\u5929"
+SCHEDULE_RAG_SOURCE_TYPES = ("HOSPITAL_RULE", "DEPARTMENT", "DOCTOR", "SCHEDULE", "DOCTOR_EVENT")
+logger = logging.getLogger(__name__)
 
 
 def suggest(request: ScheduleSuggestionRequest) -> ScheduleSuggestionResponse:
+    started_at = time.perf_counter()
     request = _sanitize_request(request)
     config = settings()
+    logger.info(
+        "Schedule suggestion request sanitized: candidates=%s, demands=%s, llmEnabled=%s",
+        len(request.candidates),
+        len(request.demands),
+        config.llm_enabled,
+    )
     if not request.candidates or not request.demands:
-        return _mock_suggest(request)
+        response = _mock_suggest(request)
+        logger.info(
+            "Schedule suggestion completed by local rules: elapsedMs=%s, suggestions=%s",
+            round((time.perf_counter() - started_at) * 1000),
+            len(response.suggestions),
+        )
+        return response
     if config.llm_enabled:
         try:
-            return _suggest_with_llm(request, config)
+            response = _suggest_with_llm(request, config)
+            logger.info(
+                "Schedule suggestion completed by LLM: elapsedMs=%s, suggestions=%s, ragSources=%s, provider=%s, model=%s",
+                round((time.perf_counter() - started_at) * 1000),
+                len(response.suggestions),
+                len(response.knowledge_sources),
+                response.provider,
+                response.model,
+            )
+            return response
         except (LlmError, ValueError, KeyError) as exc:
+            logger.warning("Schedule suggestion LLM failed, fallbackAllowed=%s: %s", config.allow_fallback, exc)
             if not config.allow_fallback:
                 if isinstance(exc, LlmError):
                     raise
                 raise invalid_llm_output(exc) from exc
-    return _mock_suggest(request, fallback_used=config.llm_enabled)
+    response = _mock_suggest(request, fallback_used=config.llm_enabled)
+    logger.info(
+        "Schedule suggestion completed by local fallback: elapsedMs=%s, suggestions=%s, ragSources=%s",
+        round((time.perf_counter() - started_at) * 1000),
+        len(response.suggestions),
+        len(response.knowledge_sources),
+    )
+    return response
 
 
 def _sanitize_request(request: ScheduleSuggestionRequest) -> ScheduleSuggestionRequest:
@@ -45,6 +79,7 @@ def _sanitize_request(request: ScheduleSuggestionRequest) -> ScheduleSuggestionR
 
 def _suggest_with_llm(request: ScheduleSuggestionRequest, config) -> ScheduleSuggestionResponse:
     sources = _knowledge_sources(request)
+    started_at = time.perf_counter()
     result = chat_json(
         config,
         system_prompt="""
@@ -64,21 +99,22 @@ capacity 必须在 1 到 100 之间。
         },
     )
     payload = extract_json_object(result.content)
-    suggestions = [
-        ScheduleSuggestion(
-            suggestionId=item.get("suggestionId") or f"ai-schedule-{uuid4()}",
-            doctorId=item["doctorId"],
-            doctorName=item["doctorName"],
-            departmentId=item["departmentId"],
-            workDate=item["workDate"],
-            period=item["period"],
-            capacity=max(1, min(100, int(item["capacity"]))),
-            reason=item.get("reason", "由 AI 根据科室需求和医生可用性生成，需管理员确认。"),
-            requiresAdminConfirmation=True,
-        )
-        for item in payload.get("suggestions", [])
-        if isinstance(item, dict)
-    ]
+    suggestions: list[ScheduleSuggestion] = []
+    assigned_doctor_dates: set[tuple[str, str]] = set()
+    raw_suggestions = payload.get("suggestions", [])
+    for item in raw_suggestions:
+        if not isinstance(item, dict):
+            continue
+        suggestion = _coerce_llm_suggestion(item, request, assigned_doctor_dates)
+        if suggestion is not None:
+            suggestions.append(suggestion)
+    logger.info(
+        "Schedule LLM response parsed: elapsedMs=%s, rawSuggestions=%s, acceptedSuggestions=%s, ragSources=%s",
+        round((time.perf_counter() - started_at) * 1000),
+        len(raw_suggestions) if isinstance(raw_suggestions, list) else 0,
+        len(suggestions),
+        len(sources),
+    )
     if not suggestions:
         raise ValueError("LLM response contains no schedule suggestions")
     return ScheduleSuggestionResponse(
@@ -89,6 +125,49 @@ capacity 必须在 1 到 100 之间。
         model=result.model,
         fallbackUsed=False,
     )
+
+
+def _coerce_llm_suggestion(item: dict, request: ScheduleSuggestionRequest, assigned_doctor_dates: set[tuple[str, str]]) -> ScheduleSuggestion | None:
+    doctor_id = str(item.get("doctorId") or "")
+    department_id = str(item.get("departmentId") or "")
+    work_date = str(item.get("workDate") or "")
+    period = _normalize_period(item.get("period"))
+    candidate = next((candidate for candidate in request.candidates if candidate.doctor_id == doctor_id), None)
+    if candidate is None or candidate.department_id != department_id:
+        return None
+    demand = next(
+        (
+            demand
+            for demand in request.demands
+            if demand.department_id == department_id and demand.work_date == work_date and demand.period == period
+        ),
+        None,
+    )
+    if demand is None:
+        return None
+    if (doctor_id, work_date) in assigned_doctor_dates:
+        return None
+    if _is_unavailable(candidate, work_date, period):
+        return None
+    assigned_doctor_dates.add((doctor_id, work_date))
+    return ScheduleSuggestion(
+        suggestionId=item.get("suggestionId") or f"ai-schedule-{uuid4()}",
+        doctorId=candidate.doctor_id,
+        doctorName=candidate.doctor_name,
+        departmentId=candidate.department_id,
+        workDate=work_date,
+        period=period,
+        capacity=_capacity(item.get("capacity")),
+        reason=str(item.get("reason") or "由 AI 根据本地科室需求、医生可用性和院内知识来源生成，需管理员确认。"),
+        requiresAdminConfirmation=True,
+    )
+
+
+def _capacity(value) -> int:
+    try:
+        return max(1, min(100, int(value)))
+    except (TypeError, ValueError):
+        return 20
 
 
 def _mock_suggest(request: ScheduleSuggestionRequest, fallback_used: bool = False) -> ScheduleSuggestionResponse:
@@ -112,10 +191,8 @@ def _mock_suggest(request: ScheduleSuggestionRequest, fallback_used: bool = Fals
             for candidate in candidates
             if (
                 candidate.department_id == demand.department_id
-                and demand.work_date not in candidate.leave_dates
-                and demand.work_date not in candidate.surgery_dates
                 and (candidate.doctor_id, demand.work_date) not in assigned_doctor_dates
-                and not _has_unavailable_slot(candidate, demand.work_date, demand.period)
+                and not _is_unavailable(candidate, demand.work_date, demand.period)
             )
         ]
         if not available:
@@ -153,6 +230,12 @@ def _mock_suggest(request: ScheduleSuggestionRequest, fallback_used: bool = Fals
     )
 
 
+def _is_unavailable(candidate, work_date: str, period: str) -> bool:
+    if candidate.unavailable_slots:
+        return _has_unavailable_slot(candidate, work_date, period)
+    return work_date in candidate.leave_dates or work_date in candidate.surgery_dates
+
+
 def _has_unavailable_slot(candidate, work_date: str, period: str) -> bool:
     for slot in candidate.unavailable_slots:
         slot_date = str(slot.get("date", ""))
@@ -179,9 +262,12 @@ def _normalize_period(value) -> str:
 def _knowledge_sources(request: ScheduleSuggestionRequest) -> list[ClinicalKnowledgeSource]:
     query = " ".join(
         [
-            "排班 科室需求 历史挂号 医生 请假 号源 管理员确认",
+            "AI智能排班 门诊排班 科室需求 历史挂号 医生 请假 手术 号源 管理员确认",
+            *[candidate.doctor_name for candidate in request.candidates if candidate.doctor_name],
             *[candidate.specialty for candidate in request.candidates if candidate.specialty],
             *[demand.department_id for demand in request.demands],
+            *[demand.work_date for demand in request.demands],
+            *[demand.period for demand in request.demands],
         ]
     )
     return [
@@ -193,5 +279,5 @@ def _knowledge_sources(request: ScheduleSuggestionRequest) -> list[ClinicalKnowl
             content=source.content,
             score=source.score,
         )
-        for source in retrieve(query, limit=5)
+        for source in retrieve(query, limit=8, source_types=SCHEDULE_RAG_SOURCE_TYPES)
     ]

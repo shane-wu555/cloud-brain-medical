@@ -87,6 +87,17 @@ export interface AiScheduleSuggestion {
 export interface AiScheduleResponse {
   aiRecordId: string | null;
   suggestions: AiScheduleSuggestion[];
+  provider?: string | null;
+  model?: string | null;
+  fallbackUsed?: boolean;
+  knowledgeSources?: Array<{
+    sourceId?: string;
+    sourceType?: string;
+    businessId?: string | null;
+    title?: string;
+    content?: string;
+    score?: number | null;
+  }>;
 }
 
 export async function getDepartments() {
@@ -168,8 +179,9 @@ export async function getAiReplanPreview(params: {
   weekendIncrease?: number;
   morningPeak?: boolean;
   morningIncrease?: number;
+  force?: boolean;
 } = {}) {
-  return (await http.get<AiScheduleResponse>('/schedules/ai-replan-preview', { params })).data;
+  return (await http.get<AiScheduleResponse>('/schedules/ai-replan-preview', { params, timeout: 180000 })).data;
 }
 
 export async function publishAiScheduleSuggestion(

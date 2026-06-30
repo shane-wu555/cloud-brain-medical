@@ -165,6 +165,9 @@
                   <h2>建议确认</h2>
                   <p>确认后写入正式排班并同步号源。</p>
                 </div>
+                <el-tag v-if="aiSourceLabel" :type="aiResponse?.fallbackUsed ? 'warning' : 'success'" effect="plain">
+                  {{ aiSourceLabel }}
+                </el-tag>
               </div>
               <el-table :data="suggestions" empty-text="暂无 AI 建议">
                 <el-table-column prop="workDate" label="日期" width="112" />
@@ -720,6 +723,13 @@ const filteredDoctorEvents = computed(() => {
 });
 
 const suggestions = computed(() => aiResponse.value?.suggestions ?? []);
+const aiSourceLabel = computed(() => {
+  if (!aiResponse.value) return '';
+  const provider = aiResponse.value.provider || (aiResponse.value.fallbackUsed ? 'backend' : 'AI');
+  const model = aiResponse.value.model ? `/${aiResponse.value.model}` : '';
+  const ragCount = aiResponse.value.knowledgeSources?.length ?? 0;
+  return `${provider}${model}${aiResponse.value.fallbackUsed ? ' 兜底' : ''} · RAG ${ragCount}`;
+});
 
 const pendingSuggestions = computed(() =>
   suggestions.value.filter((suggestion) => !isSuggestionPublished(suggestion.suggestionId))
@@ -791,7 +801,18 @@ async function refreshAll() {
     seedDefaults();
     syncAvailabilityFromEvents();
     await loadSchedules();
-    await loadAiReplanPreview(false);
+    if (needsAutomaticReplan()) {
+      await loadAiReplanPreview(false, false);
+    } else {
+      aiResponse.value = {
+        aiRecordId: null,
+        suggestions: [],
+        provider: 'backend',
+        model: 'not-required',
+        fallbackUsed: false,
+        knowledgeSources: []
+      };
+    }
   } catch (error) {
     ElMessage.error(errorMessage(error));
   } finally {
@@ -832,7 +853,7 @@ async function loadDoctorEvents() {
   }
 }
 
-async function loadAiReplanPreview(showFeedback = false) {
+async function loadAiReplanPreview(showFeedback = false, force = showFeedback) {
   suggestionLoading.value = true;
   try {
     aiForm.startDate = addDays(todayIso(), REPLAN_WINDOW_START_OFFSET);
@@ -844,7 +865,8 @@ async function loadAiReplanPreview(showFeedback = false) {
       weekendPeak: aiForm.weekendPeak,
       weekendIncrease: aiForm.weekendIncrease,
       morningPeak: aiForm.morningPeak,
-      morningIncrease: aiForm.morningIncrease
+      morningIncrease: aiForm.morningIncrease,
+      force
     });
     publishedSuggestionIds.value = [];
     if (showFeedback) {
@@ -1351,6 +1373,45 @@ function disablePastAndToday(date: Date) {
   earliest.setHours(0, 0, 0, 0);
   earliest.setDate(earliest.getDate() + REPLAN_WINDOW_START_OFFSET);
   return date < earliest;
+}
+
+function needsAutomaticReplan() {
+  const start = addDays(todayIso(), REPLAN_WINDOW_START_OFFSET);
+  const end = addDays(start, REPLAN_WINDOW_DAYS - 1);
+  const doctorDepartmentIds = new Set(schedulableDoctors.value.map((doctor) => doctor.departmentId));
+  const departmentIds = aiForm.departmentId
+    ? [aiForm.departmentId]
+    : schedulableDepartments.value.map((department) => department.id).filter((id) => doctorDepartmentIds.has(id));
+
+  return departmentIds.some((departmentId) => {
+    const windowSchedules = schedules.value.filter(
+      (schedule) =>
+        schedule.departmentId === departmentId &&
+        schedule.status === 'PUBLISHED' &&
+        schedule.workDate >= start &&
+        schedule.workDate <= end
+    );
+    for (let day = 0; day < REPLAN_WINDOW_DAYS; day += 1) {
+      const workDate = addDays(start, day);
+      if (!coversSchedulePeriod(windowSchedules, workDate, '上午') || !coversSchedulePeriod(windowSchedules, workDate, '下午')) {
+        return true;
+      }
+    }
+    return windowSchedules.some((schedule) => hasDoctorEventConflict(schedule, start, end));
+  });
+}
+
+function coversSchedulePeriod(items: Schedule[], workDate: string, period: string) {
+  return items.some((schedule) => schedule.workDate === workDate && (schedule.period === period || schedule.period === '全天'));
+}
+
+function hasDoctorEventConflict(schedule: Schedule, start: string, end: string) {
+  return doctorEvents.value.some(
+    (event) =>
+      event.doctorId === schedule.doctorId &&
+      event.dates.some((date) => date >= start && date <= end && date === schedule.workDate) &&
+      event.periods.some((period) => period === schedule.period || period === '全天' || schedule.period === '全天')
+  );
 }
 
 function isWithinReplanWindow(isoDate: string) {
