@@ -49,7 +49,7 @@ public class MedicalReportService {
     public MedicalAttachment upload(String orderId, MultipartFile file, String actor) {
         MedicalOrder order = order(orderId);
         checkExecutor(order, actor);
-        if (!"CHECK".equals(order.orderType())) throw new IllegalArgumentException("仅检查医嘱支持影像附件");
+        if (!Set.of("CHECK", "LAB").contains(order.orderType())) throw new IllegalArgumentException("仅检查或检验医嘱支持附件");
         try {
             String key = "orders/" + orderId + "/" + UUID.randomUUID() + "-" + file.getOriginalFilename();
             String bucket = storage.put(key, file.getInputStream(), file.getSize(), file.getContentType());
@@ -150,6 +150,14 @@ public class MedicalReportService {
         return reports.attachments(orderId);
     }
 
+    public AttachmentDownload attachmentContent(String orderId, String attachmentId, String actor, String role) {
+        MedicalAttachment attachment = attachments(orderId, actor, role).stream()
+                .filter(a -> a.id().equals(attachmentId))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("附件不存在"));
+        return new AttachmentDownload(attachment, storage.get(attachment.objectKey()));
+    }
+
     private MedicalOrder order(String id) {
         return orders.findById(id).orElseThrow(() -> new IllegalArgumentException("医技申请不存在"));
     }
@@ -172,4 +180,6 @@ public class MedicalReportService {
     private boolean blank(String value) {
         return value == null || value.isBlank();
     }
+
+    public record AttachmentDownload(MedicalAttachment attachment, java.io.InputStream stream) {}
 }

@@ -3,6 +3,9 @@ package com.cloudbrain.medicalorder.controller;
 import com.cloudbrain.medicalorder.domain.*;
 import com.cloudbrain.medicalorder.service.MedicalReportService;
 import java.util.List;
+import org.springframework.core.io.InputStreamResource;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.web.bind.annotation.*;
@@ -11,10 +14,19 @@ import org.springframework.web.multipart.MultipartFile;
 @RestController @RequestMapping("/api/medical-orders")
 public class MedicalReportController {
     private final MedicalReportService service;public MedicalReportController(MedicalReportService service){this.service=service;}
-    @PostMapping(value="/{orderId}/attachments",consumes="multipart/form-data") @PreAuthorize("hasRole('CHECK_DOCTOR')")
+    @PostMapping(value="/{orderId}/attachments",consumes="multipart/form-data") @PreAuthorize("hasAnyRole('CHECK_DOCTOR','LAB_DOCTOR')")
     public MedicalAttachment upload(@PathVariable("orderId") String orderId,@RequestPart("file")MultipartFile file,JwtAuthenticationToken auth){return service.upload(orderId,file,auth.getToken().getSubject());}
     @GetMapping("/{orderId}/attachments") @PreAuthorize("isAuthenticated()")
     public List<MedicalAttachment> attachments(@PathVariable("orderId") String orderId,JwtAuthenticationToken auth){return service.attachments(orderId,auth.getToken().getSubject(),auth.getToken().getClaimAsString("role"));}
+    @GetMapping("/{orderId}/attachments/{attachmentId}/content") @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<InputStreamResource> attachmentContent(@PathVariable("orderId") String orderId,@PathVariable("attachmentId") String attachmentId,JwtAuthenticationToken auth){
+        MedicalReportService.AttachmentDownload download = service.attachmentContent(orderId,attachmentId,auth.getToken().getSubject(),auth.getToken().getClaimAsString("role"));
+        String contentType = download.attachment().contentType() == null ? MediaType.APPLICATION_OCTET_STREAM_VALUE : download.attachment().contentType();
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(contentType))
+                .contentLength(download.attachment().sizeBytes())
+                .body(new InputStreamResource(download.stream()));
+    }
     @PostMapping("/{orderId}/ct-analysis") @PreAuthorize("hasRole('CHECK_DOCTOR')")
     public AiMedicalTask analyze(@PathVariable("orderId") String orderId,@RequestBody CtRequest request,JwtAuthenticationToken auth){return service.submitCt(orderId,request.attachmentId(),auth.getToken().getSubject());}
     @GetMapping("/ai-tasks/{taskId}") @PreAuthorize("hasRole('CHECK_DOCTOR')")

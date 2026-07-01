@@ -64,11 +64,23 @@ public class LaboratoryWorkflowService {
                 throw new IllegalArgumentException("AI 生成检验结果必须关联 aiRecordId");
             }
             repository.upsertResult(orderId, specimenId, item.itemCode(), item.itemName(), item.resultValue(),
-                    item.unit(), item.referenceRange(), item.abnormalFlag(), source, item.aiRecordId(), confirmerId);
+                    item.unit(), item.referenceRange(), normalizeFlag(item.abnormalFlag()), source, item.aiRecordId(), confirmerId);
         }
         return repository.results(orderId);
     }
 
     public List<LaboratoryResultItem> results(String orderId) { return repository.results(orderId); }
     private void require(String value, String field) { if (value == null || value.isBlank()) throw new IllegalArgumentException(field + " 不能为空"); }
+
+    private String normalizeFlag(String flag) {
+        if (flag == null || flag.isBlank()) return "NORMAL";
+        String value = flag.trim().toUpperCase();
+        return switch (value) {
+            case "HIGH", "H", "↑", "偏高" -> "HIGH";
+            case "LOW", "L", "↓", "偏低" -> "LOW";
+            case "CRITICAL", "C", "危急", "危急值" -> "CRITICAL";
+            case "NORMAL", "N", "正常" -> "NORMAL";
+            default -> throw new IllegalArgumentException("异常标志必须为 NORMAL、HIGH、LOW 或 CRITICAL");
+        };
+    }
 }
