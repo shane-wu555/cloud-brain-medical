@@ -13,6 +13,8 @@ export interface Doctor {
   title: string;
   departmentId: string;
   departmentName: string;
+  roomId?: string;
+  roomName?: string;
   specialty: string;
   roleType: string;
 }
@@ -42,6 +44,8 @@ export interface Schedule {
   doctorId: string;
   doctorName: string;
   departmentId: string;
+  roomId?: string;
+  roomName?: string;
   workDate: string;
   period: string;
   capacity: number;
@@ -56,19 +60,21 @@ export interface AiDoctorCandidate {
   doctorId: string;
   doctorName: string;
   departmentId: string;
+  roomId?: string;
+  roomName?: string;
   specialty: string;
   weeklyCapacity: number;
-  leaveDates: string[];
-  surgeryDates: string[];
+  historicalAverageVisits?: number;
   unavailableSlots?: Array<{ date: string; period: string; type: 'LEAVE' | 'SURGERY' }>;
 }
 
 export interface AiScheduleDemand {
   departmentId: string;
+  roomId?: string;
+  roomName?: string;
   workDate: string;
   period: string;
   expectedVisits: number;
-  riskLevel: 'LOW' | 'MEDIUM' | 'HIGH';
   historicalVisits?: number | null;
 }
 
@@ -77,6 +83,8 @@ export interface AiScheduleSuggestion {
   doctorId: string;
   doctorName: string;
   departmentId: string;
+  roomId?: string;
+  roomName?: string;
   workDate: string;
   period: string;
   capacity: number;
@@ -90,6 +98,7 @@ export interface AiScheduleResponse {
   provider?: string | null;
   model?: string | null;
   fallbackUsed?: boolean;
+  backgroundSummary?: string | null;
   knowledgeSources?: Array<{
     sourceId?: string;
     sourceType?: string;
@@ -174,9 +183,8 @@ export async function getAiScheduleSuggestions(payload: {
 export async function getAiReplanPreview(params: {
   departmentId?: string;
   baseVisits?: number;
-  riskLevel?: AiScheduleDemand['riskLevel'];
-  weekendPeak?: boolean;
-  weekendIncrease?: number;
+  weekdayPeak?: boolean;
+  weekdayIncrease?: number;
   morningPeak?: boolean;
   morningIncrease?: number;
   force?: boolean;

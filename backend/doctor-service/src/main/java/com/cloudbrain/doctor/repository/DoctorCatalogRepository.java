@@ -47,9 +47,11 @@ public class DoctorCatalogRepository {
     public List<Doctor> doctors(String departmentId) {
         StringBuilder sql = new StringBuilder("""
                 select s.id, s.employee_no, s.name, s.title, s.department_id, p.name as dept_name,
-                       s.specialty, s.role_type
+                       s.specialty, s.role_type, r.id as room_id, r.name as room_name
                 from staff s
                 join department p on p.id = s.department_id
+                left join outpatient_doctor od on od.staff_id = s.id
+                left join outpatient_room r on r.id = od.room_id and r.active
                 where s.active and s.role_type = 'OUTPATIENT_DOCTOR'
                 """);
         List<Object> args = new ArrayList<>();
@@ -61,7 +63,8 @@ public class DoctorCatalogRepository {
         return jdbc.query(sql.toString(), (rs, row) -> new Doctor(
                 rs.getString("id"), rs.getString("employee_no"), rs.getString("name"),
                 rs.getString("title"), rs.getString("department_id"), rs.getString("dept_name"),
-                rs.getString("specialty"), rs.getString("role_type")), args.toArray());
+                rs.getString("specialty"), rs.getString("role_type"),
+                rs.getString("room_id"), rs.getString("room_name")), args.toArray());
     }
 
     public Doctor createDoctor(String employeeNo, String name, String title,
@@ -87,14 +90,17 @@ public class DoctorCatalogRepository {
     public Doctor findDoctor(String id) {
         return jdbc.query("""
                 select s.id, s.employee_no, s.name, s.title, s.department_id, p.name as dept_name,
-                       s.specialty, s.role_type
+                       s.specialty, s.role_type, r.id as room_id, r.name as room_name
                 from staff s
                 join department p on p.id = s.department_id
+                left join outpatient_doctor od on od.staff_id = s.id
+                left join outpatient_room r on r.id = od.room_id and r.active
                 where s.active and s.role_type = 'OUTPATIENT_DOCTOR' and s.id = ?
                 """, (rs, row) -> new Doctor(
                 rs.getString("id"), rs.getString("employee_no"), rs.getString("name"),
                 rs.getString("title"), rs.getString("department_id"), rs.getString("dept_name"),
-                rs.getString("specialty"), rs.getString("role_type")), id).stream().findFirst()
+                rs.getString("specialty"), rs.getString("role_type"),
+                rs.getString("room_id"), rs.getString("room_name")), id).stream().findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("医生不存在"));
     }
 
@@ -238,12 +244,43 @@ public class DoctorCatalogRepository {
                 .toList();
     }
 
+    public List<OutpatientRoom> outpatientRoomsWithDoctors(String departmentId) {
+        return jdbc.query("""
+                select distinct r.id, r.department_id, r.name, r.location
+                from outpatient_room r
+                join outpatient_doctor od on od.room_id = r.id
+                join staff s on s.id = od.staff_id
+                where r.active and s.active and s.role_type = 'OUTPATIENT_DOCTOR' and r.department_id = ?
+                order by r.name
+                """, (rs, row) -> new OutpatientRoom(
+                        rs.getString("id"), rs.getString("department_id"),
+                        rs.getString("name"), rs.getString("location")),
+                departmentId);
+    }
+
+    public OutpatientRoom outpatientRoomForDoctor(String doctorId) {
+        return jdbc.query("""
+                select r.id, r.department_id, r.name, r.location
+                from outpatient_doctor od
+                join outpatient_room r on r.id = od.room_id and r.active
+                where od.staff_id = ?
+                """, (rs, row) -> new OutpatientRoom(
+                        rs.getString("id"), rs.getString("department_id"),
+                        rs.getString("name"), rs.getString("location")),
+                doctorId).stream().findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("医生未绑定门诊诊室"));
+    }
+
     // ── 排班 ───────────────────────────────────────────────────────────
     public List<Schedule> schedules(String doctorId, String departmentId) {
         StringBuilder sql = new StringBuilder("""
                 select s.id, s.staff_id, d.name as doctor_name, s.department_id,
-                       s.work_date, s.period, s.capacity, s.status
-                from schedule s join staff d on d.id = s.staff_id
+                       s.work_date, s.period, s.capacity, s.status,
+                       r.id as room_id, r.name as room_name
+                from schedule s
+                join staff d on d.id = s.staff_id
+                left join outpatient_doctor od on od.staff_id = s.staff_id
+                left join outpatient_room r on r.id = od.room_id and r.active
                 where 1 = 1
                 """);
         List<Object> args = new ArrayList<>();
@@ -262,8 +299,13 @@ public class DoctorCatalogRepository {
     public Schedule findSchedule(String id) {
         return jdbc.query("""
                 select s.id, s.staff_id, d.name as doctor_name, s.department_id,
-                       s.work_date, s.period, s.capacity, s.status
-                from schedule s join staff d on d.id = s.staff_id where s.id = ?
+                       s.work_date, s.period, s.capacity, s.status,
+                       r.id as room_id, r.name as room_name
+                from schedule s
+                join staff d on d.id = s.staff_id
+                left join outpatient_doctor od on od.staff_id = s.staff_id
+                left join outpatient_room r on r.id = od.room_id and r.active
+                where s.id = ?
                 """, (rs, row) -> mapSchedule(rs), id).stream().findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("排班不存在"));
     }
@@ -271,7 +313,8 @@ public class DoctorCatalogRepository {
     private Schedule mapSchedule(java.sql.ResultSet rs) throws java.sql.SQLException {
         return new Schedule(rs.getString("id"), rs.getString("staff_id"), rs.getString("doctor_name"),
                 rs.getString("department_id"), rs.getDate("work_date").toLocalDate(),
-                rs.getString("period"), rs.getInt("capacity"), rs.getString("status"));
+                rs.getString("period"), rs.getInt("capacity"), rs.getString("status"),
+                rs.getString("room_id"), rs.getString("room_name"));
     }
 
     // ── 时间槽 ─────────────────────────────────────────────────────────
@@ -301,7 +344,8 @@ public class DoctorCatalogRepository {
             LocalDate date, String period, int capacity) {
         validateSchedulingDepartment(departmentId);
         validateSchedulePeriod(period);
-        validateDoctorCanScheduleOnDate(doctorId, date);
+        validateDoctorCanScheduleOnDate(doctorId, date, period, null);
+        validateRoomCanScheduleOnDate(doctorId, date, period, null);
         String id = "schedule-" + UUID.randomUUID();
         jdbc.update("insert into schedule (id,staff_id,department_id,work_date,period,capacity) values (?,?,?,?,?,?)",
                 id, doctorId, departmentId, date, period, capacity);
@@ -325,10 +369,14 @@ public class DoctorCatalogRepository {
     }
 
     private List<LocalTime> defaultStartTimes(String period) {
-        if ("上午".equals(period)) return List.of(LocalTime.of(8,0), LocalTime.of(8,30), LocalTime.of(9,0), LocalTime.of(9,30));
-        if ("下午".equals(period)) return List.of(LocalTime.of(14,0), LocalTime.of(14,30), LocalTime.of(15,0), LocalTime.of(15,30));
+        if ("上午".equals(period)) return List.of(LocalTime.of(8,0), LocalTime.of(8,30), LocalTime.of(9,0), LocalTime.of(9,30),
+                LocalTime.of(10,0), LocalTime.of(10,30), LocalTime.of(11,0), LocalTime.of(11,30));
+        if ("下午".equals(period)) return List.of(LocalTime.of(14,0), LocalTime.of(14,30), LocalTime.of(15,0), LocalTime.of(15,30),
+                LocalTime.of(16,0), LocalTime.of(16,30));
         return List.of(LocalTime.of(8,0), LocalTime.of(8,30), LocalTime.of(9,0), LocalTime.of(9,30),
-                       LocalTime.of(14,0), LocalTime.of(14,30), LocalTime.of(15,0), LocalTime.of(15,30));
+                       LocalTime.of(10,0), LocalTime.of(10,30), LocalTime.of(11,0), LocalTime.of(11,30),
+                       LocalTime.of(14,0), LocalTime.of(14,30), LocalTime.of(15,0), LocalTime.of(15,30),
+                       LocalTime.of(16,0), LocalTime.of(16,30));
     }
 
     public void deleteSchedulesForDepartmentWindow(String departmentId, LocalDate startInclusive, LocalDate endInclusive) {
@@ -352,7 +400,8 @@ public class DoctorCatalogRepository {
     public Schedule reschedule(String id, LocalDate date, String period) {
         validateSchedulePeriod(period);
         Schedule current = findSchedule(id);
-        validateDoctorCanScheduleOnDate(current.doctorId(), date, id);
+        validateDoctorCanScheduleOnDate(current.doctorId(), date, period, id);
+        validateRoomCanScheduleOnDate(current.doctorId(), date, period, id);
         if (jdbc.update("update schedule set work_date=?, period=? where id=? and status='PUBLISHED'",
                 date, period, id) != 1) throw new IllegalArgumentException("仅已发布排班允许调班");
         Schedule schedule = findSchedule(id);
@@ -367,23 +416,40 @@ public class DoctorCatalogRepository {
         }
     }
 
-    private void validateDoctorCanScheduleOnDate(String doctorId, LocalDate date) {
-        validateDoctorCanScheduleOnDate(doctorId, date, null);
-    }
-
-    private void validateDoctorCanScheduleOnDate(String doctorId, LocalDate date, String ignoredScheduleId) {
+    private void validateDoctorCanScheduleOnDate(String doctorId, LocalDate date, String period, String ignoredScheduleId) {
         StringBuilder sql = new StringBuilder("""
                 select count(*) from schedule
                 where staff_id = ? and work_date = ? and status <> 'SUSPENDED'
+                  and (period = ? or period = '全天' or ? = '全天')
                 """);
-        List<Object> args = new ArrayList<>(List.of(doctorId, date));
+        List<Object> args = new ArrayList<>(List.of(doctorId, date, period, period));
         if (ignoredScheduleId != null && !ignoredScheduleId.isBlank()) {
             sql.append(" and id <> ?");
             args.add(ignoredScheduleId);
         }
         Integer count = jdbc.queryForObject(sql.toString(), Integer.class, args.toArray());
         if (count != null && count > 0) {
-            throw new IllegalArgumentException("同一医生同一天只能安排上午、下午或全天中的一种");
+            throw new IllegalArgumentException("同一医生同一日期同一时段只能安排一次");
+        }
+    }
+
+    private void validateRoomCanScheduleOnDate(String doctorId, LocalDate date, String period, String ignoredScheduleId) {
+        OutpatientRoom room = outpatientRoomForDoctor(doctorId);
+        StringBuilder sql = new StringBuilder("""
+                select count(*)
+                from schedule s
+                join outpatient_doctor od on od.staff_id = s.staff_id
+                where od.room_id = ? and s.work_date = ? and s.status <> 'SUSPENDED'
+                  and (s.period = ? or s.period = '全天' or ? = '全天')
+                """);
+        List<Object> args = new ArrayList<>(List.of(room.id(), date, period, period));
+        if (ignoredScheduleId != null && !ignoredScheduleId.isBlank()) {
+            sql.append(" and s.id <> ?");
+            args.add(ignoredScheduleId);
+        }
+        Integer count = jdbc.queryForObject(sql.toString(), Integer.class, args.toArray());
+        if (count != null && count > 0) {
+            throw new IllegalArgumentException("同一诊室同一日期同一时段只能安排一名医生");
         }
     }
 
@@ -401,7 +467,9 @@ public class DoctorCatalogRepository {
 
     public record Department(String id, String name, String description) {}
     public record Doctor(String id, String employeeNo, String name, String title,
-            String departmentId, String departmentName, String specialty, String roleType) {}
+            String departmentId, String departmentName, String specialty, String roleType,
+            String roomId, String roomName) {}
+    public record OutpatientRoom(String id, String departmentId, String name, String location) {}
     public record DoctorEvent(String id, String doctorId, String doctorName, String departmentName,
             String eventType, List<LocalDate> dates, List<String> periods, String note) {
         public DoctorEvent withDates(List<LocalDate> dates) {
@@ -409,7 +477,7 @@ public class DoctorCatalogRepository {
         }
     }
     public record Schedule(String id, String doctorId, String doctorName, String departmentId,
-            LocalDate workDate, String period, int capacity, String status) {}
+            LocalDate workDate, String period, int capacity, String status, String roomId, String roomName) {}
     public record ScheduleTimeSlot(String id, String scheduleId, LocalTime startTime, int capacity) {}
 
     private static class DoctorEventBuilder {

@@ -1,4 +1,4 @@
-from app.core.rag import KnowledgeSource, search_memory
+from app.core.rag import search_memory
 from app.schedule_suggestions.models import DoctorCandidate, ScheduleDemand, ScheduleSuggestionRequest
 import app.schedule_suggestions.service as schedule_service
 
@@ -14,51 +14,33 @@ def test_memory_rag_respects_source_type_filter(monkeypatch):
     assert search_memory("排班", limit=5, source_types=("SCHEDULE",)) == []
 
 
-def test_schedule_suggestions_use_schedule_rag_source_types(monkeypatch):
-    captured = {}
+def test_schedule_mock_does_not_require_rag_sources(monkeypatch):
+    monkeypatch.delenv("AI_RAG_DATABASE_URL", raising=False)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
 
-    def fake_retrieve(query, limit=3, source_types=None):
-        captured["query"] = query
-        captured["limit"] = limit
-        captured["source_types"] = source_types
-        return [
-            KnowledgeSource(
-                source_id="schedule-test-1",
-                source_type="SCHEDULE",
-                business_id="schedule-1",
-                title="排班：张医生",
-                content="医生 张医生，科室 全科医学，日期 2026-07-08，时段 上午。",
-                score=0.9,
-            )
-        ]
-
-    monkeypatch.setattr(schedule_service, "retrieve", fake_retrieve)
-
-    request = ScheduleSuggestionRequest(
+    response = schedule_service._mock_suggest(ScheduleSuggestionRequest(
         candidates=[
             DoctorCandidate(
                 doctorId="doctor-1",
                 doctorName="张医生",
                 departmentId="dept-general",
+                roomId="room-1",
                 specialty="全科",
             )
         ],
         demands=[
             ScheduleDemand(
                 departmentId="dept-general",
+                roomId="room-1",
                 workDate="2026-07-08",
                 period="上午",
                 expectedVisits=30,
             )
         ],
-    )
-    sources = schedule_service._knowledge_sources(request)
+    ))
 
-    assert captured["limit"] == 8
-    assert captured["source_types"] == schedule_service.SCHEDULE_RAG_SOURCE_TYPES
-    assert "张医生" in captured["query"]
-    assert "2026-07-08" in captured["query"]
-    assert sources[0].source_type == "SCHEDULE"
+    assert response.suggestions
+    assert response.knowledge_sources == []
 
 
 def test_schedule_mock_uses_slot_level_unavailability(monkeypatch):
@@ -71,7 +53,6 @@ def test_schedule_mock_uses_slot_level_unavailability(monkeypatch):
                 doctorId="doctor-1",
                 doctorName="张医生",
                 departmentId="dept-general",
-                leaveDates=["2026-07-08"],
                 unavailableSlots=[{"date": "2026-07-08", "period": "上午", "type": "LEAVE"}],
             )
         ],
@@ -85,3 +66,59 @@ def test_schedule_mock_uses_slot_level_unavailability(monkeypatch):
 
     assert len(response.suggestions) == 1
     assert response.suggestions[0].period == "下午"
+
+
+def test_schedule_mock_limits_one_doctor_per_room_period(monkeypatch):
+    monkeypatch.delenv("AI_RAG_DATABASE_URL", raising=False)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+
+    request = ScheduleSuggestionRequest(
+        candidates=[
+            DoctorCandidate(doctorId="doctor-1", doctorName="张医生", departmentId="dept-general", roomId="room-1"),
+            DoctorCandidate(doctorId="doctor-2", doctorName="李医生", departmentId="dept-general", roomId="room-1"),
+        ],
+        demands=[
+            ScheduleDemand(departmentId="dept-general", roomId="room-1", workDate="2026-07-08", period="上午"),
+            ScheduleDemand(departmentId="dept-general", roomId="room-1", workDate="2026-07-08", period="上午"),
+        ],
+    )
+
+    response = schedule_service._mock_suggest(request)
+
+    assert len(response.suggestions) == 1
+    assert response.suggestions[0].room_id == "room-1"
+
+
+def test_schedule_mock_prioritizes_high_history_doctor_on_weekdays(monkeypatch):
+    monkeypatch.delenv("AI_RAG_DATABASE_URL", raising=False)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+
+    request = ScheduleSuggestionRequest(
+        candidates=[
+            DoctorCandidate(
+                doctorId="doctor-high",
+                doctorName="高专家",
+                departmentId="dept-general",
+                roomId="room-1",
+                weeklyCapacity=80,
+                historicalAverageVisits=45,
+            ),
+            DoctorCandidate(
+                doctorId="doctor-low",
+                doctorName="普通医生",
+                departmentId="dept-general",
+                roomId="room-1",
+                weeklyCapacity=40,
+                historicalAverageVisits=10,
+            ),
+        ],
+        demands=[
+            ScheduleDemand(departmentId="dept-general", roomId="room-1", workDate="2026-07-11", period="上午", expectedVisits=15),
+            ScheduleDemand(departmentId="dept-general", roomId="room-1", workDate="2026-07-08", period="上午", expectedVisits=45),
+        ],
+    )
+
+    response = schedule_service._mock_suggest(request)
+
+    weekday = next(item for item in response.suggestions if item.work_date == "2026-07-08")
+    assert weekday.doctor_id == "doctor-high"

@@ -140,13 +140,13 @@
                     />
                   </el-select>
                 </el-form-item>
-                <el-form-item label="基础预计挂号量">
+                <el-form-item label="基础预计挂号量/诊室">
                   <el-input-number v-model="aiForm.baseVisits" class="full-number" :min="1" :max="100" />
                 </el-form-item>
                 <div class="peak-row">
-                  <el-checkbox v-model="aiForm.weekendPeak">周末高峰</el-checkbox>
-                  <el-slider v-model="aiForm.weekendIncrease" :min="0" :max="80" :step="5" />
-                  <span>{{ aiForm.weekendIncrease }}%</span>
+                  <el-checkbox v-model="aiForm.weekdayPeak">工作日高峰</el-checkbox>
+                  <el-slider v-model="aiForm.weekdayIncrease" :min="0" :max="80" :step="5" />
+                  <span>{{ aiForm.weekdayIncrease }}%</span>
                 </div>
                 <div class="peak-row">
                   <el-checkbox v-model="aiForm.morningPeak">上午高峰</el-checkbox>
@@ -157,6 +157,7 @@
                   刷新待确认重排建议
                 </el-button>
               </el-form>
+              <p v-if="aiBackgroundSummary" class="ai-summary">{{ aiBackgroundSummary }}</p>
             </section>
 
             <section class="work-card suggestions-card">
@@ -173,6 +174,7 @@
                 <el-table-column prop="workDate" label="日期" width="112" />
                 <el-table-column prop="period" label="时段" width="86" />
                 <el-table-column prop="doctorName" label="医生" width="112" />
+                <el-table-column prop="roomName" label="诊室" width="130" />
                 <el-table-column label="科室" width="126">
                   <template #default="{ row }">{{ departmentName(row.departmentId) }}</template>
                 </el-table-column>
@@ -226,6 +228,7 @@
           <section class="work-card">
             <el-table :data="schedules" empty-text="暂无排班">
               <el-table-column prop="doctorName" label="医生" min-width="140" />
+              <el-table-column prop="roomName" label="诊室" min-width="140" />
               <el-table-column label="科室" min-width="160">
                 <template #default="{ row }">{{ departmentName(row.departmentId) }}</template>
               </el-table-column>
@@ -532,6 +535,7 @@ import {
   getDoctorEvents,
   getDoctors,
   getSchedules,
+  publishAiScheduleSuggestion,
   publishAiScheduleSuggestions,
   suspendSchedule,
   updateDoctor,
@@ -554,12 +558,9 @@ import {
   type StaffAccount
 } from '../../api/auth';
 
-type RiskLevel = 'LOW' | 'MEDIUM' | 'HIGH';
 type PageKey = 'overview' | 'aiSchedule' | 'manualSchedule' | 'doctorProfile' | 'doctorEvents';
 
 interface AvailabilitySettings {
-  leaveDates: string[];
-  surgeryDates: string[];
   weeklyCapacity: number;
 }
 
@@ -623,9 +624,8 @@ const aiForm = reactive({
   startDate: addDays(todayIso(), REPLAN_WINDOW_START_OFFSET),
   days: REPLAN_WINDOW_DAYS,
   baseVisits: 24,
-  riskLevel: 'MEDIUM' as RiskLevel,
-  weekendPeak: true,
-  weekendIncrease: 35,
+  weekdayPeak: true,
+  weekdayIncrease: 35,
   morningPeak: true,
   morningIncrease: 25
 });
@@ -694,6 +694,16 @@ const navItems = computed<Array<{ key: PageKey; label: string; badge?: number }>
 ]);
 
 const aiDoctors = computed(() => schedulableDoctors.value.filter((doctor) => doctor.departmentId === aiForm.departmentId));
+const aiRooms = computed(() => {
+  const map = new Map<string, { roomId: string; roomName: string }>();
+  aiDoctors.value.forEach((doctor) => {
+    const roomId = doctor.roomId || '';
+    if (roomId && !map.has(roomId)) {
+      map.set(roomId, { roomId, roomName: doctor.roomName || roomId });
+    }
+  });
+  return Array.from(map.values());
+});
 
 const filteredScheduleDoctors = computed(() =>
   schedulableDoctors.value.filter((doctor) => !scheduleFilter.departmentId || doctor.departmentId === scheduleFilter.departmentId)
@@ -703,8 +713,8 @@ const filteredDoctors = computed(() => {
   const keyword = doctorKeyword.value.trim().toLowerCase();
   if (!keyword) return doctors.value;
   return doctors.value.filter((doctor) =>
-    [doctor.employeeNo, doctor.name, doctor.departmentName, doctor.specialty]
-      .filter(Boolean)
+    [doctor.employeeNo, doctor.name, doctor.departmentName, doctor.roomName, doctor.specialty]
+      .filter((value): value is string => Boolean(value))
       .some((value) => value.toLowerCase().includes(keyword))
   );
 });
@@ -727,9 +737,9 @@ const aiSourceLabel = computed(() => {
   if (!aiResponse.value) return '';
   const provider = aiResponse.value.provider || (aiResponse.value.fallbackUsed ? 'backend' : 'AI');
   const model = aiResponse.value.model ? `/${aiResponse.value.model}` : '';
-  const ragCount = aiResponse.value.knowledgeSources?.length ?? 0;
-  return `${provider}${model}${aiResponse.value.fallbackUsed ? ' 兜底' : ''} · RAG ${ragCount}`;
+  return `${provider}${model}${aiResponse.value.fallbackUsed ? ' 兜底' : ''}`;
 });
+const aiBackgroundSummary = computed(() => aiResponse.value?.backgroundSummary || '');
 
 const pendingSuggestions = computed(() =>
   suggestions.value.filter((suggestion) => !isSuggestionPublished(suggestion.suggestionId))
@@ -749,10 +759,11 @@ const aiCandidates = computed<AiDoctorCandidate[]>(() =>
       doctorId: doctor.id,
       doctorName: doctor.name,
       departmentId: doctor.departmentId,
+      roomId: doctor.roomId || '',
+      roomName: doctor.roomName || '',
       specialty: doctor.specialty ?? '',
       weeklyCapacity: settings.weeklyCapacity,
-      leaveDates: uniqueDates(settings.leaveDates),
-      surgeryDates: uniqueDates(settings.surgeryDates),
+      historicalAverageVisits: 0,
       unavailableSlots
     };
   })
@@ -810,6 +821,7 @@ async function refreshAll() {
         provider: 'backend',
         model: 'not-required',
         fallbackUsed: false,
+        backgroundSummary: '当前排班窗口已覆盖，暂不需要 AI 重排。',
         knowledgeSources: []
       };
     }
@@ -861,9 +873,8 @@ async function loadAiReplanPreview(showFeedback = false, force = showFeedback) {
     aiResponse.value = await getAiReplanPreview({
       departmentId: aiForm.departmentId || undefined,
       baseVisits: aiForm.baseVisits,
-      riskLevel: aiForm.riskLevel,
-      weekendPeak: aiForm.weekendPeak,
-      weekendIncrease: aiForm.weekendIncrease,
+      weekdayPeak: aiForm.weekdayPeak,
+      weekdayIncrease: aiForm.weekdayIncrease,
       morningPeak: aiForm.morningPeak,
       morningIncrease: aiForm.morningIncrease,
       force
@@ -903,23 +914,27 @@ function seedDefaults() {
 function buildDemands() {
   if (!aiForm.departmentId || !aiForm.startDate) return [];
   const items: AiScheduleDemand[] = [];
+  const rooms = aiRooms.value.length > 0 ? aiRooms.value : [{ roomId: '', roomName: '' }];
   for (let day = 0; day < aiForm.days; day += 1) {
     const workDate = addDays(aiForm.startDate, day);
-    for (const period of ['上午', '下午']) {
-      let expectedVisits = aiForm.baseVisits;
-      if (aiForm.weekendPeak && isWeekend(workDate)) {
-        expectedVisits *= 1 + aiForm.weekendIncrease / 100;
+    for (const room of rooms) {
+      for (const period of ['上午', '下午']) {
+        let expectedVisits = aiForm.baseVisits;
+        if (aiForm.weekdayPeak && isWeekday(workDate)) {
+          expectedVisits *= 1 + aiForm.weekdayIncrease / 100;
+        }
+        if (aiForm.morningPeak && period === '上午') {
+          expectedVisits *= 1 + aiForm.morningIncrease / 100;
+        }
+        items.push({
+          departmentId: aiForm.departmentId,
+          roomId: room.roomId,
+          roomName: room.roomName,
+          workDate,
+          period,
+          expectedVisits: Math.max(1, Math.round(expectedVisits)),
+        });
       }
-      if (aiForm.morningPeak && period === '上午') {
-        expectedVisits *= 1 + aiForm.morningIncrease / 100;
-      }
-      items.push({
-        departmentId: aiForm.departmentId,
-        workDate,
-        period,
-        expectedVisits: Math.max(1, Math.round(expectedVisits)),
-        riskLevel: aiForm.riskLevel
-      });
     }
   }
   return items;
@@ -970,12 +985,9 @@ async function publishSuggestion(suggestion: AiScheduleSuggestion, silent = fals
       return;
     }
   }
-  await publishAiScheduleSuggestions({
-    aiRecordId: aiResponse.value?.aiRecordId ?? null,
-    suggestions: [{
-      ...suggestion,
-      aiRecordId: aiResponse.value?.aiRecordId ?? null
-    }]
+  await publishAiScheduleSuggestion(suggestion.suggestionId, {
+    ...suggestion,
+    aiRecordId: aiResponse.value?.aiRecordId ?? null
   });
   publishedSuggestionIds.value = [...publishedSuggestionIds.value, suggestion.suggestionId];
   if (!silent) {
@@ -1289,8 +1301,6 @@ function accountByEmployeeNo(employeeNo: string) {
 function ensureAvailability(doctorId: string) {
   if (!availability[doctorId]) {
     availability[doctorId] = {
-      leaveDates: [],
-      surgeryDates: [],
       weeklyCapacity: 40
     };
   }
@@ -1300,18 +1310,8 @@ function ensureAvailability(doctorId: string) {
 function syncAvailabilityFromEvents() {
   doctors.value.forEach((doctor) => {
     availability[doctor.id] = {
-      leaveDates: [],
-      surgeryDates: [],
       weeklyCapacity: ensureAvailability(doctor.id).weeklyCapacity
     };
-  });
-  doctorEvents.value.forEach((event) => {
-    const settings = ensureAvailability(event.doctorId);
-    if (event.eventType === 'LEAVE') {
-      settings.leaveDates = uniqueDates([...settings.leaveDates, ...event.dates]);
-    } else if (event.eventType === 'SURGERY') {
-      settings.surgeryDates = uniqueDates([...settings.surgeryDates, ...event.dates]);
-    }
   });
 }
 
@@ -1363,9 +1363,9 @@ function addDays(isoDate: string, days: number) {
   return date.toISOString().slice(0, 10);
 }
 
-function isWeekend(isoDate: string) {
+function isWeekday(isoDate: string) {
   const day = new Date(`${isoDate}T00:00:00`).getDay();
-  return day === 0 || day === 6;
+  return day >= 1 && day <= 5;
 }
 
 function disablePastAndToday(date: Date) {
@@ -1746,6 +1746,15 @@ onMounted(refreshAll);
   gap: 10px;
   min-height: 36px;
   color: #475569;
+}
+
+.ai-summary {
+  margin: 12px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid #e5e7eb;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 .task-list {

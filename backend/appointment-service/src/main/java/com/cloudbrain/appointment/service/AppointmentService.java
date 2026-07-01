@@ -185,6 +185,10 @@ public class AppointmentService {
         return slotInventoryRepository.findAll();
     }
 
+    public AppointmentRepository.SchedulingHistorySummary schedulingHistorySummary(int lookbackDays) {
+        return appointmentRepository.schedulingHistorySummary(lookbackDays);
+    }
+
     @Transactional
     public SlotInventory syncSlot(String scheduleId, int capacity) {
         SlotInventory inventory = slotInventoryRepository.findByScheduleId(scheduleId)

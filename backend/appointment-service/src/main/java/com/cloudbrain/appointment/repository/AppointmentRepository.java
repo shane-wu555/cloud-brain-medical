@@ -107,6 +107,67 @@ public class AppointmentRepository {
         return count == null ? 0 : count;
     }
 
+    public SchedulingHistorySummary schedulingHistorySummary(int lookbackDays) {
+        int days = Math.max(7, Math.min(365, lookbackDays));
+        Integer sampleSize = jdbcTemplate.queryForObject("""
+                select count(*)
+                from appointment
+                where status <> 'CANCELLED'
+                  and visit_date >= current_date - ?
+                """, Integer.class, days);
+        List<DoctorVisitAverage> doctorAverages = jdbcTemplate.query("""
+                select doctor_id, max(doctor_name) as doctor_name, department_id, max(department_name) as department_name,
+                       round(avg(daily_count))::int as average_visits
+                from (
+                    select doctor_id, doctor_name, department_id, department_name, visit_date, count(*) as daily_count
+                    from appointment
+                    where status <> 'CANCELLED'
+                      and visit_date >= current_date - ?
+                    group by doctor_id, doctor_name, department_id, department_name, visit_date
+                ) daily
+                group by doctor_id, department_id
+                order by average_visits desc, doctor_name
+                limit 100
+                """, (rs, row) -> new DoctorVisitAverage(
+                        rs.getString("doctor_id"),
+                        rs.getString("doctor_name"),
+                        rs.getString("department_id"),
+                        rs.getString("department_name"),
+                        rs.getInt("average_visits")),
+                days);
+        List<DepartmentVisitAverage> departmentAverages = jdbcTemplate.query("""
+                select department_id, max(department_name) as department_name,
+                       round(avg(daily_count))::int as average_visits
+                from (
+                    select department_id, department_name, visit_date, count(*) as daily_count
+                    from appointment
+                    where status <> 'CANCELLED'
+                      and visit_date >= current_date - ?
+                    group by department_id, department_name, visit_date
+                ) daily
+                group by department_id
+                order by average_visits desc, department_name
+                """, (rs, row) -> new DepartmentVisitAverage(
+                        rs.getString("department_id"),
+                        rs.getString("department_name"),
+                        rs.getInt("average_visits")),
+                days);
+        List<WeekdayVisitAverage> weekdayAverages = jdbcTemplate.query("""
+                select dow, round(avg(daily_count))::int as average_visits
+                from (
+                    select extract(isodow from visit_date)::int as dow, visit_date, count(*) as daily_count
+                    from appointment
+                    where status <> 'CANCELLED'
+                      and visit_date >= current_date - ?
+                    group by extract(isodow from visit_date)::int, visit_date
+                ) daily
+                group by dow
+                order by dow
+                """, (rs, row) -> new WeekdayVisitAverage(rs.getInt("dow"), rs.getInt("average_visits")), days);
+        int samples = sampleSize == null ? 0 : sampleSize;
+        return new SchedulingHistorySummary(days, samples, samples >= 200, doctorAverages, departmentAverages, weekdayAverages);
+    }
+
     public int nextQueueNumber(String doctorId, String visitDate) {
         jdbcTemplate.query(
                 "select pg_advisory_xact_lock(hashtext(?))",
@@ -192,6 +253,17 @@ public class AppointmentRepository {
             return AppointmentStatus.CANCELLED;
         }
     }
+
+    public record SchedulingHistorySummary(
+            int lookbackDays,
+            int sampleSize,
+            boolean trainingReady,
+            List<DoctorVisitAverage> doctorAverages,
+            List<DepartmentVisitAverage> departmentAverages,
+            List<WeekdayVisitAverage> weekdayAverages) {}
+    public record DoctorVisitAverage(String doctorId, String doctorName, String departmentId, String departmentName, int averageVisits) {}
+    public record DepartmentVisitAverage(String departmentId, String departmentName, int averageVisits) {}
+    public record WeekdayVisitAverage(int isoDow, int averageVisits) {}
 
     private static class AppointmentRowMapper implements RowMapper<Appointment> {
         @Override

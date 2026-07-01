@@ -30,6 +30,11 @@ services:
   ai:
     base-url: ${AI_SERVICE_URL:http://localhost:8000}
 
+scheduling:
+  insight-enabled: ${SCHEDULING_INSIGHT_ENABLED:false}
+  insight-refresh-ms: ${SCHEDULING_INSIGHT_REFRESH_MS:3600000}
+  insight-initial-delay-ms: ${SCHEDULING_INSIGHT_INITIAL_DELAY_MS:5000}
+
 security:
   jwt:
     secret: ${JWT_SECRET:cloud-brain-medical-development-secret-change-me}
