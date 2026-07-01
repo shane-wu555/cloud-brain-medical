@@ -2,9 +2,6 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
-from app.clinical_assistance.models import ClinicalKnowledgeSource
-
-
 def _string_or_empty(value: Any) -> str:
     if value is None:
         return ""
@@ -32,14 +29,6 @@ def _normalize_period(value: Any) -> str:
     return text
 
 
-def _string_list_or_empty(value: Any) -> list[str]:
-    if value is None:
-        return []
-    if not isinstance(value, list):
-        return []
-    return [str(item) for item in value if item is not None and str(item).strip()]
-
-
 def _dict_list_or_empty(value: Any) -> list[dict]:
     if value is None:
         return []
@@ -52,13 +41,14 @@ class DoctorCandidate(BaseModel):
     doctor_id: str = Field(default="", alias="doctorId")
     doctor_name: str = Field(default="", alias="doctorName")
     department_id: str = Field(default="", alias="departmentId")
+    room_id: str = Field(default="", alias="roomId")
+    room_name: str = Field(default="", alias="roomName")
     specialty: str = ""
     weekly_capacity: int = Field(default=40, alias="weeklyCapacity")
-    leave_dates: list[str] = Field(default_factory=list, alias="leaveDates")
-    surgery_dates: list[str] = Field(default_factory=list, alias="surgeryDates")
+    historical_average_visits: int = Field(default=0, alias="historicalAverageVisits")
     unavailable_slots: list[dict] = Field(default_factory=list, alias="unavailableSlots")
 
-    @field_validator("doctor_id", "doctor_name", "department_id", "specialty", mode="before")
+    @field_validator("doctor_id", "doctor_name", "department_id", "room_id", "room_name", "specialty", mode="before")
     @classmethod
     def default_string(cls, value: Any) -> str:
         return _string_or_empty(value)
@@ -68,10 +58,10 @@ class DoctorCandidate(BaseModel):
     def default_weekly_capacity(cls, value: Any) -> int:
         return _int_or_default(value, 40)
 
-    @field_validator("leave_dates", "surgery_dates", mode="before")
+    @field_validator("historical_average_visits", mode="before")
     @classmethod
-    def default_string_list(cls, value: Any) -> list[str]:
-        return _string_list_or_empty(value)
+    def default_historical_average_visits(cls, value: Any) -> int:
+        return _int_or_default(value, 0)
 
     @field_validator("unavailable_slots", mode="before")
     @classmethod
@@ -83,13 +73,14 @@ class DoctorCandidate(BaseModel):
 
 class ScheduleDemand(BaseModel):
     department_id: str = Field(default="", alias="departmentId")
+    room_id: str = Field(default="", alias="roomId")
+    room_name: str = Field(default="", alias="roomName")
     work_date: str = Field(default="", alias="workDate")
     period: str = ""
     expected_visits: int = Field(default=20, alias="expectedVisits")
-    risk_level: str = Field(default="MEDIUM", alias="riskLevel")
     historical_visits: Optional[int] = Field(default=None, alias="historicalVisits")
 
-    @field_validator("department_id", "work_date", "risk_level", mode="before")
+    @field_validator("department_id", "room_id", "room_name", "work_date", mode="before")
     @classmethod
     def default_string(cls, value: Any) -> str:
         return _string_or_empty(value)
@@ -120,6 +111,7 @@ class ScheduleDemand(BaseModel):
 class ScheduleSuggestionRequest(BaseModel):
     candidates: list[DoctorCandidate] = Field(default_factory=list)
     demands: list[ScheduleDemand] = Field(default_factory=list)
+    background_summary: str = Field(default="", alias="backgroundSummary")
 
     @field_validator("candidates", "demands", mode="before")
     @classmethod
@@ -134,6 +126,8 @@ class ScheduleSuggestion(BaseModel):
     doctor_id: str = Field(alias="doctorId")
     doctor_name: str = Field(alias="doctorName")
     department_id: str = Field(alias="departmentId")
+    room_id: str = Field(default="", alias="roomId")
+    room_name: str = Field(default="", alias="roomName")
     work_date: str = Field(alias="workDate")
     period: str
     capacity: int
@@ -146,7 +140,8 @@ class ScheduleSuggestion(BaseModel):
 class ScheduleSuggestionResponse(BaseModel):
     ai_record_id: str = Field(alias="aiRecordId")
     suggestions: list[ScheduleSuggestion]
-    knowledge_sources: list[ClinicalKnowledgeSource] = Field(default_factory=list, alias="knowledgeSources")
+    knowledge_sources: list[dict[str, Any]] = Field(default_factory=list, alias="knowledgeSources")
+    background_summary: str = Field(default="", alias="backgroundSummary")
     provider: str = "mock"
     model: str = "mock"
     fallback_used: bool = Field(default=False, alias="fallbackUsed")

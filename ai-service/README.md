@@ -21,7 +21,7 @@ AI 服务采用 FastAPI 作为统一入口，按文档预留智能问诊、分�
 - `POST /api/ai/triage`：医技分诊建议。
 - `POST /api/ai/ct-analysis`：CT 影像异步分析任务，包含进度、RAG 风险来源和 AI 报告草稿。
 - `POST /api/ai/tasks/{id}/retry`：重试失败或已完成的 AI 长任务。
-- `POST /api/ai/schedule-suggestions`：结合请假、历史量、科室需求和 RAG 规则生成待管理员确认的排班建议。
+- `POST /api/ai/schedule-suggestions`：结合医生基础信息、请假/手术不可用时段、诊室占用、工作日人流高峰、科室需求和可选历史背景 summary 生成待管理员确认的排班建议。
 - `POST /api/ai/report-drafts`：根据医技执行数据生成报告草稿，需人工确认后才能发布。
 - `POST /api/ai/prescription-suggestions`：根据诊断、主诉、过敏史和本院药品目录生成用药建议草稿。
 - `GET /api/ai/knowledge/search?q=头痛`：检索本院 RAG 知识来源。
@@ -55,6 +55,10 @@ AI_RAG_EMBEDDING_DIM=64
 
 调用 `POST /api/ai/knowledge/reindex` 会读取业务库中的科室、医生擅长、正式排班、医生请假/手术安排、医技项目、药品目录，并合并院内 AI 使用规则，写入 `ai.knowledge_document`。重建时会清理这些来源类型下已经不存在的旧文档，避免删除的排班或请假信息继续被检索到。
 
-AI 智能排班会限定检索 `HOSPITAL_RULE`、`DEPARTMENT`、`DOCTOR`、`SCHEDULE`、`DOCTOR_EVENT` 这些排班相关来源，避免混入药品或医技项目等无关知识。新增或修改医生、正式排班、请假/手术安排后，如需让 RAG 立刻使用最新数据库内容，请再次调用 `POST /api/ai/knowledge/reindex`。
+AI 智能排班不依赖 RAG 检索，避免为一次排班请求额外拉取无关知识。医生服务会先在后端判断哪些科室、诊室、日期和时段需要重排，再把候选医生基础信息、从 `doctor_event` 展开的 `unavailableSlots`、排班需求和可选历史背景 summary 传入 AI 服务。
+
+排班 AI 只输出医生在某日期、诊室和上午/下午时段的建议，不输出具体分钟级挂号时间。管理员发布排班后，医生服务自动生成半小时粒度号源：上午 08:00 至 11:30 共 8 个开始时间，下午 14:00 至 16:30 共 6 个开始时间。
+
+历史挂号分析链路已预留：医生服务可定期调用挂号服务内部历史统计 API，生成平均挂号量、一周内人流变化和医生负载均衡背景 summary。当前演示数据量不足，`scheduling.insight-enabled` 默认关闭，因此排班请求默认不传该 summary；后续挂号记录增多后，可开启配置并在该接口基础上扩展统计模型或训练模型，用于更科学地分配专家号源和诊室出诊。
 
 检索失败或未配置数据库时会自动回退到内置规则，便于离线演示。

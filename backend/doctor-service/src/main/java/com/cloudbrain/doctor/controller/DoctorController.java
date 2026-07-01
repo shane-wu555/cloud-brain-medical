@@ -51,13 +51,15 @@ public class DoctorController {
         repository.deleteDoctorEvent(id);
     }
     private DoctorDto dto(DoctorCatalogRepository.Doctor d) {
-        return new DoctorDto(d.id(),d.employeeNo(),d.name(),d.title(),d.departmentId(),d.departmentName(),d.specialty(),d.roleType());
+        return new DoctorDto(d.id(),d.employeeNo(),d.name(),d.title(),d.departmentId(),d.departmentName(),
+                d.specialty(),d.roleType(),d.roomId(),d.roomName());
     }
     private DoctorEventDto eventDto(DoctorCatalogRepository.DoctorEvent event) {
         return new DoctorEventDto(event.id(), event.doctorId(), event.doctorName(), event.departmentName(),
                 event.eventType(), event.dates(), event.periods(), event.note());
     }
-    public record DoctorDto(String id,String employeeNo,String name,String title,String departmentId,String departmentName,String specialty,String roleType) {}
+    public record DoctorDto(String id,String employeeNo,String name,String title,String departmentId,String departmentName,
+            String specialty,String roleType,String roomId,String roomName) {}
     public record CreateDoctorRequest(String employeeNo,String name,String title,String departmentId,String roleType,String specialty) {}
     public record UpdateDoctorRequest(String name,String title,String departmentId,String specialty) {}
     public record DoctorEventDto(String id,String doctorId,String doctorName,String departmentName,

@@ -28,6 +28,12 @@ public class InternalAppointmentController {
         return service.failPayment(id,request.patientId());
     }
     @PostMapping("/{id}/revisit") public Appointment revisit(@PathVariable("id") String id,@RequestHeader(name="X-Internal-Api-Key",required=false)String key){if(!internalApiKey.equals(key))throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);return service.enterRevisit(id);}
+    @GetMapping("/scheduling-history-summary")
+    public Object schedulingHistorySummary(@RequestHeader(name="X-Internal-Api-Key",required=false) String key,
+            @RequestParam(name="lookbackDays", defaultValue="90") int lookbackDays) {
+        if(!internalApiKey.equals(key)) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,"内部接口认证失败");
+        return service.schedulingHistorySummary(lookbackDays);
+    }
     public record PaymentConfirmation(String patientId,String paymentMethod,String paymentOrderId) {}
     public record PaymentFailure(String patientId,String paymentOrderId) {}
 }

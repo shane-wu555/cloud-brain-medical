@@ -2,17 +2,14 @@ import logging
 import time
 from uuid import uuid4
 
-from app.clinical_assistance.models import ClinicalKnowledgeSource
 from app.core.config import settings
 from app.core.json_utils import extract_json_object
 from app.core.llm import LlmError, chat_json, invalid_llm_output
-from app.core.rag import retrieve
 
 from .models import ScheduleSuggestion, ScheduleSuggestionRequest, ScheduleSuggestionResponse
 
 VALID_PERIODS = {"\u4e0a\u5348", "\u4e0b\u5348", "\u5168\u5929"}
 ALL_DAY = "\u5168\u5929"
-SCHEDULE_RAG_SOURCE_TYPES = ("HOSPITAL_RULE", "DEPARTMENT", "DOCTOR", "SCHEDULE", "DOCTOR_EVENT")
 logger = logging.getLogger(__name__)
 
 
@@ -38,7 +35,7 @@ def suggest(request: ScheduleSuggestionRequest) -> ScheduleSuggestionResponse:
         try:
             response = _suggest_with_llm(request, config)
             logger.info(
-                "Schedule suggestion completed by LLM: elapsedMs=%s, suggestions=%s, ragSources=%s, provider=%s, model=%s",
+                "Schedule suggestion completed by LLM: elapsedMs=%s, suggestions=%s, knowledgeSources=%s, provider=%s, model=%s",
                 round((time.perf_counter() - started_at) * 1000),
                 len(response.suggestions),
                 len(response.knowledge_sources),
@@ -54,7 +51,7 @@ def suggest(request: ScheduleSuggestionRequest) -> ScheduleSuggestionResponse:
                 raise invalid_llm_output(exc) from exc
     response = _mock_suggest(request, fallback_used=config.llm_enabled)
     logger.info(
-        "Schedule suggestion completed by local fallback: elapsedMs=%s, suggestions=%s, ragSources=%s",
+        "Schedule suggestion completed by local fallback: elapsedMs=%s, suggestions=%s, knowledgeSources=%s",
         round((time.perf_counter() - started_at) * 1000),
         len(response.suggestions),
         len(response.knowledge_sources),
@@ -74,60 +71,65 @@ def _sanitize_request(request: ScheduleSuggestionRequest) -> ScheduleSuggestionR
             for demand in request.demands
             if demand.department_id and demand.work_date and demand.period in VALID_PERIODS
         ],
+        backgroundSummary=request.background_summary,
     )
 
 
 def _suggest_with_llm(request: ScheduleSuggestionRequest, config) -> ScheduleSuggestionResponse:
-    sources = _knowledge_sources(request)
     started_at = time.perf_counter()
     result = chat_json(
         config,
         system_prompt="""
-你是医院 AI 排班建议模块。只能生成待管理员确认的排班建议，不能发布排班。
+你是医院 AI 排班建议模块。后端已经筛选出需要重排的科室、诊室、日期和时段，你只需要为输入 demands 生成待管理员确认的医生排班建议，不要判断哪些科室需要重排。
 请严格输出 JSON 对象，字段为 suggestions。
-suggestions 每项包含 suggestionId、doctorId、doctorName、departmentId、workDate、period、capacity、reason、requiresAdminConfirmation。
-必须参考医生可用性、请假日期、手术安排、周末人流高峰、科室需求、历史挂号量、医生之间的分配均衡和 providedKnowledgeSources。
-不得安排 leaveDates 或 surgeryDates 包含 workDate 的医生。
-如果 candidates 中提供 unavailableSlots，不得安排 date=workDate 且 period 与需求 period 相同的医生；period=全天 与上午/下午互斥。
-同一医生同一天只能安排上午、下午、全天中的一种，不能同时安排多个时段。
-周末 expectedVisits 较高时可适当提高 capacity 或优先安排可用容量更高的医生，但仍需保持医生之间负载均衡。
-capacity 必须在 1 到 100 之间。
+suggestions 每项包含 suggestionId、doctorId、doctorName、departmentId、roomId、roomName、workDate、period、capacity、reason、requiresAdminConfirmation。
+只参考 candidates 中的医生基础信息、unavailableSlots，以及 demands 中的 departmentId、roomId、workDate、period、expectedVisits；只有请求提供 backgroundSummary 时才参考历史流量摘要。
+unavailableSlots 由后端从 doctor_event 表按本次重排日期窗口展开，格式为 {date, period, type}。如果某医生存在 date=workDate 且 period 与需求 period 冲突的 unavailableSlot，就不能安排该医生；period=全天 与上午/下午互斥。
+同一医生同一日期同一时段只能安排一次；period=全天 与上午/下午互斥。
+同一 roomId 在同一日期同一时段必须有且仅有一个医生；如果 demand 提供 roomId，建议医生必须属于该 roomId。
+capacity 必须在 1 到 70 之间。
 """,
         user_payload={
             **request.model_dump(by_alias=True),
-            "providedKnowledgeSources": [source.model_dump(by_alias=True) for source in sources],
         },
     )
     payload = extract_json_object(result.content)
     suggestions: list[ScheduleSuggestion] = []
-    assigned_doctor_dates: set[tuple[str, str]] = set()
+    assigned_doctor_slots: set[tuple[str, str, str]] = set()
+    assigned_room_slots: set[tuple[str, str, str]] = set()
     raw_suggestions = payload.get("suggestions", [])
     for item in raw_suggestions:
         if not isinstance(item, dict):
             continue
-        suggestion = _coerce_llm_suggestion(item, request, assigned_doctor_dates)
+        suggestion = _coerce_llm_suggestion(item, request, assigned_doctor_slots, assigned_room_slots)
         if suggestion is not None:
             suggestions.append(suggestion)
     logger.info(
-        "Schedule LLM response parsed: elapsedMs=%s, rawSuggestions=%s, acceptedSuggestions=%s, ragSources=%s",
+        "Schedule LLM response parsed: elapsedMs=%s, rawSuggestions=%s, acceptedSuggestions=%s, knowledgeSources=%s",
         round((time.perf_counter() - started_at) * 1000),
         len(raw_suggestions) if isinstance(raw_suggestions, list) else 0,
         len(suggestions),
-        len(sources),
+        0,
     )
     if not suggestions:
         raise ValueError("LLM response contains no schedule suggestions")
     return ScheduleSuggestionResponse(
         aiRecordId=f"ai-schedule-record-{uuid4()}",
         suggestions=suggestions,
-        knowledgeSources=sources,
+        knowledgeSources=[],
+        backgroundSummary=_background_summary(request),
         provider=result.provider,
         model=result.model,
         fallbackUsed=False,
     )
 
 
-def _coerce_llm_suggestion(item: dict, request: ScheduleSuggestionRequest, assigned_doctor_dates: set[tuple[str, str]]) -> ScheduleSuggestion | None:
+def _coerce_llm_suggestion(
+    item: dict,
+    request: ScheduleSuggestionRequest,
+    assigned_doctor_slots: set[tuple[str, str, str]],
+    assigned_room_slots: set[tuple[str, str, str]],
+) -> ScheduleSuggestion | None:
     doctor_id = str(item.get("doctorId") or "")
     department_id = str(item.get("departmentId") or "")
     work_date = str(item.get("workDate") or "")
@@ -135,26 +137,42 @@ def _coerce_llm_suggestion(item: dict, request: ScheduleSuggestionRequest, assig
     candidate = next((candidate for candidate in request.candidates if candidate.doctor_id == doctor_id), None)
     if candidate is None or candidate.department_id != department_id:
         return None
+    room_id = str(item.get("roomId") or candidate.room_id or "")
+    if candidate.room_id and room_id and candidate.room_id != room_id:
+        return None
     demand = next(
         (
             demand
             for demand in request.demands
-            if demand.department_id == department_id and demand.work_date == work_date and demand.period == period
+            if (
+                demand.department_id == department_id
+                and demand.work_date == work_date
+                and demand.period == period
+                and (not demand.room_id or demand.room_id == room_id or demand.room_id == candidate.room_id)
+            )
         ),
         None,
     )
     if demand is None:
         return None
-    if (doctor_id, work_date) in assigned_doctor_dates:
+    room_id = room_id or demand.room_id
+    room_name = str(item.get("roomName") or candidate.room_name or demand.room_name or "")
+    if _slot_conflicts(assigned_doctor_slots, doctor_id, work_date, period):
+        return None
+    if room_id and _slot_conflicts(assigned_room_slots, room_id, work_date, period):
         return None
     if _is_unavailable(candidate, work_date, period):
         return None
-    assigned_doctor_dates.add((doctor_id, work_date))
+    _reserve_slot(assigned_doctor_slots, doctor_id, work_date, period)
+    if room_id:
+        _reserve_slot(assigned_room_slots, room_id, work_date, period)
     return ScheduleSuggestion(
         suggestionId=item.get("suggestionId") or f"ai-schedule-{uuid4()}",
         doctorId=candidate.doctor_id,
         doctorName=candidate.doctor_name,
         departmentId=candidate.department_id,
+        roomId=room_id,
+        roomName=room_name,
         workDate=work_date,
         period=period,
         capacity=_capacity(item.get("capacity")),
@@ -171,10 +189,10 @@ def _capacity(value) -> int:
 
 
 def _mock_suggest(request: ScheduleSuggestionRequest, fallback_used: bool = False) -> ScheduleSuggestionResponse:
-    sources = _knowledge_sources(request)
     suggestions: list[ScheduleSuggestion] = []
     assigned_counts: dict[str, int] = {}
-    assigned_doctor_dates: set[tuple[str, str]] = set()
+    assigned_doctor_slots: set[tuple[str, str, str]] = set()
+    assigned_room_slots: set[tuple[str, str, str]] = set()
     candidates = [
         candidate
         for candidate in request.candidates
@@ -185,55 +203,65 @@ def _mock_suggest(request: ScheduleSuggestionRequest, fallback_used: bool = Fals
         for demand in request.demands
         if demand.department_id and demand.work_date and demand.period in VALID_PERIODS
     ]
-    for demand in demands:
+    for demand in sorted(demands, key=lambda item: (-item.expected_visits, item.work_date, _period_order(item.period), item.room_id)):
         available = [
             candidate
             for candidate in candidates
             if (
                 candidate.department_id == demand.department_id
-                and (candidate.doctor_id, demand.work_date) not in assigned_doctor_dates
+                and (not demand.room_id or candidate.room_id == demand.room_id)
+                and not _slot_conflicts(assigned_doctor_slots, candidate.doctor_id, demand.work_date, demand.period)
+                and (not candidate.room_id or not _slot_conflicts(assigned_room_slots, candidate.room_id, demand.work_date, demand.period))
                 and not _is_unavailable(candidate, demand.work_date, demand.period)
             )
         ]
         if not available:
             continue
+        weekday = _is_weekday(demand.work_date)
         selected = sorted(
             available,
             key=lambda item: (
                 assigned_counts.get(item.doctor_id, 0),
+                -_doctor_demand_score(item) if weekday else _doctor_demand_score(item),
                 -item.weekly_capacity,
                 item.doctor_name,
             ),
         )[0]
         assigned_counts[selected.doctor_id] = assigned_counts.get(selected.doctor_id, 0) + 1
-        assigned_doctor_dates.add((selected.doctor_id, demand.work_date))
+        _reserve_slot(assigned_doctor_slots, selected.doctor_id, demand.work_date, demand.period)
+        if selected.room_id:
+            _reserve_slot(assigned_room_slots, selected.room_id, demand.work_date, demand.period)
         baseline = demand.historical_visits if demand.historical_visits is not None else demand.expected_visits
         capacity = max(8, min(60, int(max(demand.expected_visits, baseline) * 1.15)))
-        source_label = sources[0].title if sources else "本院排班规则"
+        summary = _background_summary(request)
+        traffic_note = "工作日高需求优先安排历史量/容量更高医生" if weekday else "周末按常规需求保留基础号源"
+        room_note = f"、诊室 {selected.room_name or selected.room_id}" if selected.room_id else ""
+        summary_note = f"；历史摘要：{summary}" if summary else ""
         suggestions.append(
             ScheduleSuggestion(
                 suggestionId=f"ai-schedule-{uuid4()}",
                 doctorId=selected.doctor_id,
                 doctorName=selected.doctor_name,
                 departmentId=selected.department_id,
+                roomId=selected.room_id or demand.room_id,
+                roomName=selected.room_name or demand.room_name,
                 workDate=demand.work_date,
                 period=demand.period,
                 capacity=capacity,
-                reason=f"结合科室需求 {demand.expected_visits} 人次、历史量 {baseline}、风险等级 {demand.risk_level} 和医生可用容量生成；参考来源：{source_label}。需管理员确认后发布。",
+                reason=f"结合预期门诊量 {demand.expected_visits} 人次{room_note}、医生不可用时段和负载均衡生成；{traffic_note}{summary_note}。需管理员确认后发布。",
             )
         )
     return ScheduleSuggestionResponse(
         aiRecordId=f"ai-schedule-record-{uuid4()}",
         suggestions=suggestions,
-        knowledgeSources=sources,
+        knowledgeSources=[],
+        backgroundSummary=_background_summary(request),
         fallbackUsed=fallback_used,
     )
 
 
 def _is_unavailable(candidate, work_date: str, period: str) -> bool:
-    if candidate.unavailable_slots:
-        return _has_unavailable_slot(candidate, work_date, period)
-    return work_date in candidate.leave_dates or work_date in candidate.surgery_dates
+    return _has_unavailable_slot(candidate, work_date, period)
 
 
 def _has_unavailable_slot(candidate, work_date: str, period: str) -> bool:
@@ -259,25 +287,35 @@ def _normalize_period(value) -> str:
     return text
 
 
-def _knowledge_sources(request: ScheduleSuggestionRequest) -> list[ClinicalKnowledgeSource]:
-    query = " ".join(
-        [
-            "AI智能排班 门诊排班 科室需求 历史挂号 医生 请假 手术 号源 管理员确认",
-            *[candidate.doctor_name for candidate in request.candidates if candidate.doctor_name],
-            *[candidate.specialty for candidate in request.candidates if candidate.specialty],
-            *[demand.department_id for demand in request.demands],
-            *[demand.work_date for demand in request.demands],
-            *[demand.period for demand in request.demands],
-        ]
-    )
-    return [
-        ClinicalKnowledgeSource(
-            sourceId=source.source_id,
-            sourceType=source.source_type,
-            businessId=source.business_id,
-            title=source.title,
-            content=source.content,
-            score=source.score,
-        )
-        for source in retrieve(query, limit=8, source_types=SCHEDULE_RAG_SOURCE_TYPES)
-    ]
+def _period_order(period: str) -> int:
+    return {"上午": 0, "下午": 1, ALL_DAY: 2}.get(period, 9)
+
+
+def _is_weekday(work_date: str) -> bool:
+    try:
+        from datetime import date
+
+        return date.fromisoformat(work_date).weekday() < 5
+    except ValueError:
+        return True
+
+
+def _doctor_demand_score(candidate) -> int:
+    return max(candidate.historical_average_visits, candidate.weekly_capacity)
+
+
+def _slot_conflicts(assigned_slots: set[tuple[str, str, str]], owner_id: str, work_date: str, period: str) -> bool:
+    if not owner_id:
+        return False
+    if period == ALL_DAY:
+        return any((owner_id, work_date, existing) in assigned_slots for existing in ("上午", "下午", ALL_DAY))
+    return (owner_id, work_date, period) in assigned_slots or (owner_id, work_date, ALL_DAY) in assigned_slots
+
+
+def _reserve_slot(assigned_slots: set[tuple[str, str, str]], owner_id: str, work_date: str, period: str) -> None:
+    if owner_id:
+        assigned_slots.add((owner_id, work_date, period))
+
+
+def _background_summary(request: ScheduleSuggestionRequest) -> str:
+    return request.background_summary
