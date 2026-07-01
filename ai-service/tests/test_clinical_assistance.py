@@ -223,7 +223,7 @@ def test_ct_analysis_failed_task_can_retry(monkeypatch):
     assert get(task_id)["retryCount"] == 1
 
 
-def test_schedule_suggestions_include_sources_and_admin_confirmation(monkeypatch):
+def test_schedule_suggestions_do_not_require_sources_and_need_admin_confirmation(monkeypatch):
     monkeypatch.setenv("AI_PROVIDER", "mock")
     monkeypatch.delenv("AI_RAG_DATABASE_URL", raising=False)
     monkeypatch.delenv("DATABASE_URL", raising=False)
@@ -231,30 +231,28 @@ def test_schedule_suggestions_include_sources_and_admin_confirmation(monkeypatch
         ScheduleSuggestionRequest(
             candidates=[
                 ScheduleDoctorCandidate(
-                    doctorId="doctor-001",
-                    doctorName="张医生",
-                    departmentId="dept-neuro",
-                    specialty="头痛与脑血管疾病",
-                    weeklyCapacity=40,
-                    leaveDates=[],
-                )
-            ],
-            demands=[
+                        doctorId="doctor-001",
+                        doctorName="张医生",
+                        departmentId="dept-neuro",
+                        specialty="头痛与脑血管疾病",
+                        weeklyCapacity=40,
+                    )
+                ],
+                demands=[
                 ScheduleDemand(
                     departmentId="dept-neuro",
-                    workDate="2026-06-24",
-                    period="上午",
-                    expectedVisits=20,
-                    historicalVisits=30,
-                    riskLevel="MEDIUM",
-                )
-            ],
-        )
+                        workDate="2026-06-24",
+                        period="上午",
+                        expectedVisits=20,
+                        historicalVisits=30,
+                    )
+                ],
+            )
     )
 
     assert response.suggestions
     assert response.suggestions[0].requires_admin_confirmation is True
-    assert response.knowledge_sources
+    assert response.knowledge_sources == []
 
 
 def test_rag_embedding_is_stable_and_memory_search_has_sources(monkeypatch):

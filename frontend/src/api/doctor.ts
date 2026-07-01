@@ -88,7 +88,6 @@ export interface AiScheduleSuggestion {
   workDate: string;
   period: string;
   capacity: number;
-  reason: string;
   requiresAdminConfirmation: boolean;
 }
 

@@ -17,6 +17,7 @@ if "%AI_OPENAI_BASE_URL%"=="" set "AI_OPENAI_BASE_URL=https://dashscope.aliyuncs
 if "%AI_OPENAI_MODEL%"=="" set "AI_OPENAI_MODEL=deepseek-v4-pro"
 if "%AI_ALLOW_FALLBACK%"=="" set "AI_ALLOW_FALLBACK=true"
 if "%AI_TIMEOUT_SECONDS%"=="" set "AI_TIMEOUT_SECONDS=60"
+if "%AI_RAG_CONNECT_TIMEOUT_SECONDS%"=="" set "AI_RAG_CONNECT_TIMEOUT_SECONDS=3"
 
 set "PYTHONPATH=%CD%\ai-service"
 

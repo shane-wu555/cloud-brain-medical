@@ -131,7 +131,6 @@ class ScheduleSuggestion(BaseModel):
     work_date: str = Field(alias="workDate")
     period: str
     capacity: int
-    reason: str
     requires_admin_confirmation: bool = Field(default=True, alias="requiresAdminConfirmation")
 
     model_config = {"populate_by_name": True}

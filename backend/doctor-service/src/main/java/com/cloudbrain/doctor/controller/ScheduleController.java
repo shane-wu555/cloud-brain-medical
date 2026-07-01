@@ -355,7 +355,6 @@ public class ScheduleController {
                             stringValue(item.get("workDate")),
                             stringValue(item.get("period")),
                             intValue(item.get("capacity"),20),
-                            stringValue(item.get("reason")),
                             booleanValue(item.get("requiresAdminConfirmation"),true)));
                 }
             }
@@ -524,14 +523,9 @@ public class ScheduleController {
             suggestions.add(new AiScheduleSuggestion("local-ai-schedule-"+UUID.randomUUID(),
                     selected.doctorId(),selected.doctorName(),selected.departmentId(),
                     selected.roomId(),selected.roomName(),demand.workDate(),demand.period(),capacity,
-                    localReason(notice,demand,request.backgroundSummary()),
                     true));
         }
         return new AiScheduleResponse("local-ai-schedule-record-"+UUID.randomUUID(),suggestions,"backend","local-balanced",true,List.of(),request.backgroundSummary());
-    }
-    private String localReason(String notice,AiScheduleDemand demand,String backgroundSummary) {
-        String summary=backgroundSummary==null||backgroundSummary.isBlank()?"":"；参考历史流量摘要："+backgroundSummary;
-        return notice+"；结合预计门诊量 "+demand.expectedVisits()+"、医生不可用时段、诊室唯一出诊和负载均衡生成"+summary+"。";
     }
     private String insightBackground(ScheduleInsightService.ScheduleInsight insight) {
         return insight!=null&&insight.trainingReady()?insight.summary():"";
@@ -578,7 +572,7 @@ public class ScheduleController {
     public record DoctorUnavailableSlot(String date,String period,String type) {}
     public record AiScheduleDemand(String departmentId,String roomId,String roomName,String workDate,String period,int expectedVisits,Integer historicalVisits) {}
     public record AiScheduleResponse(String aiRecordId,List<AiScheduleSuggestion> suggestions,String provider,String model,boolean fallbackUsed,List<Map<String,Object>> knowledgeSources,String backgroundSummary) {}
-    public record AiScheduleSuggestion(String suggestionId,String doctorId,String doctorName,String departmentId,String roomId,String roomName,String workDate,String period,int capacity,String reason,boolean requiresAdminConfirmation) {}
-    public record PublishAiScheduleRequest(String aiRecordId,String doctorId,String doctorName,String departmentId,String roomId,String roomName,String workDate,String period,int capacity,String reason,boolean requiresAdminConfirmation) {}
+    public record AiScheduleSuggestion(String suggestionId,String doctorId,String doctorName,String departmentId,String roomId,String roomName,String workDate,String period,int capacity,boolean requiresAdminConfirmation) {}
+    public record PublishAiScheduleRequest(String aiRecordId,String doctorId,String doctorName,String departmentId,String roomId,String roomName,String workDate,String period,int capacity,boolean requiresAdminConfirmation) {}
     public record PublishAiScheduleBatchRequest(String aiRecordId,List<PublishAiScheduleRequest> suggestions) {}
 }

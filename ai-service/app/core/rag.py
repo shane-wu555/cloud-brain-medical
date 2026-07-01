@@ -101,7 +101,7 @@ def ensure_schema() -> None:
         raise RuntimeError("psycopg is required for pgvector RAG")
     schema = _identifier(config.rag_schema)
     dim = config.rag_embedding_dim
-    with psycopg.connect(config.rag_database_url) as conn:
+    with _connect(config) as conn:
         with conn.cursor() as cur:
             cur.execute("create extension if not exists vector")
             cur.execute(f"create schema if not exists {schema}")
@@ -135,7 +135,7 @@ def reindex_from_hospital_data() -> dict[str, int]:
         raise RuntimeError("psycopg is required for pgvector RAG")
     ensure_schema()
     documents = list(_rule_documents())
-    with psycopg.connect(config.rag_database_url) as conn:
+    with _connect(config) as conn:
         documents.extend(_business_documents(conn))
         schema = _identifier(config.rag_schema)
         with conn.cursor() as cur:
@@ -189,7 +189,7 @@ def search_persistent(query: str, limit: int = 3, source_types: tuple[str, ...] 
     ensure_schema()
     schema = _identifier(config.rag_schema)
     vector = _vector_literal(embed(query, config.rag_embedding_dim))
-    with psycopg.connect(config.rag_database_url) as conn:
+    with _connect(config) as conn:
         with conn.cursor() as cur:
             where_clause = ""
             params: list = [vector]
@@ -354,3 +354,10 @@ def _identifier(value: str) -> str:
     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", value):
         raise ValueError("Invalid PostgreSQL identifier")
     return value
+
+
+def _connect(config):
+    return psycopg.connect(
+        config.rag_database_url,
+        connect_timeout=config.rag_connect_timeout_seconds,
+    )

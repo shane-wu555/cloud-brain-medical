@@ -82,12 +82,14 @@ def _suggest_with_llm(request: ScheduleSuggestionRequest, config) -> ScheduleSug
         system_prompt="""
 你是医院 AI 排班建议模块。后端已经筛选出需要重排的科室、诊室、日期和时段，你只需要为输入 demands 生成待管理员确认的医生排班建议，不要判断哪些科室需要重排。
 请严格输出 JSON 对象，字段为 suggestions。
-suggestions 每项包含 suggestionId、doctorId、doctorName、departmentId、roomId、roomName、workDate、period、capacity、reason、requiresAdminConfirmation。
+suggestions 每项包含 suggestionId、doctorId、doctorName、departmentId、roomId、roomName、workDate、period、capacity、requiresAdminConfirmation，不要输出排班理由。
 只参考 candidates 中的医生基础信息、unavailableSlots，以及 demands 中的 departmentId、roomId、workDate、period、expectedVisits；只有请求提供 backgroundSummary 时才参考历史流量摘要。
 unavailableSlots 由后端从 doctor_event 表按本次重排日期窗口展开，格式为 {date, period, type}。如果某医生存在 date=workDate 且 period 与需求 period 冲突的 unavailableSlot，就不能安排该医生；period=全天 与上午/下午互斥。
 同一医生同一日期同一时段只能安排一次；period=全天 与上午/下午互斥。
 同一 roomId 在同一日期同一时段必须有且仅有一个医生；如果 demand 提供 roomId，建议医生必须属于该 roomId。
+同一医生同一天尽量上午/下午状态一致：能排则优先排满当天，不能排则优先整天不排，除非可用性或诊室需求不允许。
 capacity 必须在 1 到 70 之间。
+尽量考虑同诊室不同医生之间的负载均衡。
 """,
         user_payload={
             **request.model_dump(by_alias=True),
@@ -176,7 +178,6 @@ def _coerce_llm_suggestion(
         workDate=work_date,
         period=period,
         capacity=_capacity(item.get("capacity")),
-        reason=str(item.get("reason") or "由 AI 根据本地科室需求、医生可用性和院内知识来源生成，需管理员确认。"),
         requiresAdminConfirmation=True,
     )
 
@@ -233,10 +234,6 @@ def _mock_suggest(request: ScheduleSuggestionRequest, fallback_used: bool = Fals
             _reserve_slot(assigned_room_slots, selected.room_id, demand.work_date, demand.period)
         baseline = demand.historical_visits if demand.historical_visits is not None else demand.expected_visits
         capacity = max(8, min(60, int(max(demand.expected_visits, baseline) * 1.15)))
-        summary = _background_summary(request)
-        traffic_note = "工作日高需求优先安排历史量/容量更高医生" if weekday else "周末按常规需求保留基础号源"
-        room_note = f"、诊室 {selected.room_name or selected.room_id}" if selected.room_id else ""
-        summary_note = f"；历史摘要：{summary}" if summary else ""
         suggestions.append(
             ScheduleSuggestion(
                 suggestionId=f"ai-schedule-{uuid4()}",
@@ -248,7 +245,6 @@ def _mock_suggest(request: ScheduleSuggestionRequest, fallback_used: bool = Fals
                 workDate=demand.work_date,
                 period=demand.period,
                 capacity=capacity,
-                reason=f"结合预期门诊量 {demand.expected_visits} 人次{room_note}、医生不可用时段和负载均衡生成；{traffic_note}{summary_note}。需管理员确认后发布。",
             )
         )
     return ScheduleSuggestionResponse(
