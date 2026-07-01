@@ -67,7 +67,7 @@ type SmsPurpose = 'REGISTER' | 'LOGIN' | 'RESET_PASSWORD';
 
 const auth = useAuthStore();
 const mode = ref<Mode>('PASSWORD');
-const phone = ref('13800000011');
+const phone = ref('13801000001');
 const password = ref('abc12345');
 const name = ref('新患者');
 const smsCode = ref('');

@@ -38,9 +38,10 @@
           <div class="page-head">
             <div>
               <h1>运营概览</h1>
-              <p>查看今日门诊、医生出诊和科室负载，快速判断排班压力。</p>
             </div>
-            <el-button :loading="pageLoading" @click="refreshAll">刷新数据</el-button>
+            <div class="page-actions">
+              <el-button :loading="pageLoading" @click="refreshAll">刷新数据</el-button>
+            </div>
           </div>
 
           <div class="stat-strip">
@@ -71,7 +72,6 @@
               <div class="card-head">
                 <div>
                   <h2>科室负载</h2>
-                  <p>按科室汇总当前挂号量。</p>
                 </div>
               </div>
               <el-table :data="overview?.departmentLoads ?? []" empty-text="暂无科室负载">
@@ -84,7 +84,6 @@
               <div class="card-head">
                 <div>
                   <h2>待处理事项</h2>
-                  <p>进入对应模块完成确认或维护。</p>
                 </div>
               </div>
               <div class="task-list">
@@ -109,16 +108,7 @@
           <div class="page-head">
             <div>
               <h1>AI 智能排班</h1>
-              <p>自动生成当前日期第 8 天到第 15 天的门诊重排建议，管理员确认后才更新正式排班。</p>
             </div>
-            <el-button
-              type="success"
-              :disabled="pendingSuggestions.length === 0"
-              :loading="publishLoading"
-              @click="publishPendingSuggestions"
-            >
-              批量确认发布
-            </el-button>
           </div>
 
           <div class="schedule-ai-layout">
@@ -126,7 +116,6 @@
               <div class="card-head">
                 <div>
                   <h2>需求参数</h2>
-                  <p>{{ aiCandidates.length }} 名候选医生，{{ aiDemands.length }} 条排班需求。</p>
                 </div>
               </div>
               <el-form label-position="top" class="compact-form ai-param-form">
@@ -160,27 +149,120 @@
               <p v-if="aiBackgroundSummary" class="ai-summary">{{ aiBackgroundSummary }}</p>
             </section>
 
+            <section class="work-card schedule-visual-card">
+              <div class="card-head">
+                <div>
+                  <h2>排班可视化</h2>
+                </div>
+                <div class="schedule-board-tools">
+                  <div class="schedule-legend">
+                    <span><i class="legend-dot legend-dot--published"></i>正式排班</span>
+                    <span><i class="legend-dot legend-dot--ai"></i>AI 新增</span>
+                    <span><i class="legend-dot legend-dot--surgery"></i>手术</span>
+                    <span><i class="legend-dot legend-dot--leave"></i>请假</span>
+                  </div>
+                  <div class="schedule-week-nav">
+                    <el-button size="small" @click="moveScheduleBoardWeek('ai', -1)">上一周</el-button>
+                    <span>{{ aiScheduleBoardRangeLabel }}</span>
+                    <el-button size="small" @click="resetScheduleBoardWeek('ai')">起始周</el-button>
+                    <el-button size="small" @click="moveScheduleBoardWeek('ai', 1)">下一周</el-button>
+                  </div>
+                </div>
+              </div>
+              <div class="schedule-board" :style="scheduleBoardStyle(aiScheduleBoardDays.length)">
+                <div class="schedule-board__corner">
+                  <span>人员</span>
+                  <strong>时间</strong>
+                </div>
+                <div
+                  v-for="day in aiScheduleBoardDays"
+                  :key="day.date"
+                  class="schedule-board__day"
+                  :class="{ 'schedule-board__day--weekend': day.weekend }"
+                >
+                  <strong>{{ day.weekday }}</strong>
+                  <span>{{ day.monthDay }}</span>
+                  <em>{{ day.weekend ? '休息日' : '工作日' }}</em>
+                  <div class="schedule-board__ticks">
+                    <span>08</span>
+                    <span>12</span>
+                    <span>16</span>
+                  </div>
+                </div>
+                <template v-for="row in aiScheduleBoardRows" :key="row.kind === 'group' ? row.id : row.doctorId">
+                  <div v-if="row.kind === 'group'" class="schedule-board__group">
+                    <button type="button" class="schedule-board__group-toggle" @click="toggleScheduleDepartment(row.departmentId)">
+                      <span>{{ isScheduleDepartmentCollapsed(row.departmentId) ? '+' : '-' }}</span>
+                      <strong>{{ row.departmentName }}</strong>
+                    </button>
+                    <span>{{ row.doctorCount }} 名医生</span>
+                  </div>
+                  <template v-else>
+                    <div class="schedule-board__person">
+                      <span class="doctor-avatar">{{ row.initials }}</span>
+                      <div>
+                        <strong>{{ row.doctorName }}</strong>
+                        <em>{{ row.subtitle }}</em>
+                      </div>
+                    </div>
+                    <div
+                      v-for="cell in row.cells"
+                      :key="`${row.doctorId}-${cell.date}`"
+                      class="schedule-board__cell"
+                      :class="{ 'schedule-board__cell--weekend': cell.weekend }"
+                    >
+                      <div v-for="period in SCHEDULE_BOARD_PERIODS" :key="period" class="schedule-board__period-slot">
+                        <div
+                          v-for="item in scheduleBoardSlotEntries(cell.entries, period)"
+                          :key="`${period}-${item.id}`"
+                          class="schedule-shift"
+                          :class="scheduleShiftClasses(item)"
+                        >
+                          <div class="schedule-shift__head">
+                            <strong>{{ item.period }}</strong>
+                            <span v-if="item.source === 'ai'">{{ item.published ? '已发布' : '新建议' }}</span>
+                          </div>
+                          <p>{{ item.timeRange }}</p>
+                          <em>{{ item.roomName || item.note || '未分配诊室' }}</em>
+                          <small v-if="item.source === 'event'">{{ item.eventType === 'SURGERY' ? '手术安排' : '请假安排' }}</small>
+                          <small v-else>号源 {{ item.capacity }}</small>
+                        </div>
+                      </div>
+                    </div>
+                  </template>
+                </template>
+              </div>
+              <div class="schedule-board-footer">
+                <el-button
+                  type="success"
+                  :disabled="pendingSuggestions.length === 0"
+                  :loading="publishLoading"
+                  @click="publishPendingSuggestions"
+                >
+                  批量确认发布
+                </el-button>
+              </div>
+            </section>
+
             <section class="work-card suggestions-card">
               <div class="card-head">
                 <div>
                   <h2>建议确认</h2>
-                  <p>确认后写入正式排班并同步号源。</p>
                 </div>
                 <el-tag v-if="aiSourceLabel" :type="aiResponse?.fallbackUsed ? 'warning' : 'success'" effect="plain">
                   {{ aiSourceLabel }}
                 </el-tag>
               </div>
-              <el-table :data="suggestions" empty-text="暂无 AI 建议">
-                <el-table-column prop="workDate" label="日期" width="112" />
-                <el-table-column prop="period" label="时段" width="86" />
-                <el-table-column prop="doctorName" label="医生" width="112" />
-                <el-table-column prop="roomName" label="诊室" width="130" />
-                <el-table-column label="科室" width="126">
+              <el-table :data="suggestions" empty-text="暂无 AI 建议" width="100%">
+                <el-table-column prop="workDate" label="日期" min-width="112" />
+                <el-table-column prop="period" label="时段" min-width="86" />
+                <el-table-column prop="doctorName" label="医生" min-width="112" />
+                <el-table-column prop="roomName" label="诊室" min-width="130" />
+                <el-table-column label="科室" min-width="126">
                   <template #default="{ row }">{{ departmentName(row.departmentId) }}</template>
                 </el-table-column>
-                <el-table-column prop="capacity" label="号源" width="78" />
-                <el-table-column prop="reason" label="AI 理由" min-width="220" show-overflow-tooltip />
-                <el-table-column label="状态" width="96">
+                <el-table-column prop="capacity" label="号源" min-width="78" />
+                <el-table-column label="状态" min-width="96">
                   <template #default="{ row }">
                     <el-tag v-if="isSuggestionPublished(row.suggestionId)" type="success">已发布</el-tag>
                     <el-tag v-else type="warning">待确认</el-tag>
@@ -207,13 +289,91 @@
           <div class="page-head">
             <div>
               <h1>排班信息</h1>
-              <p>查看、补录和停诊已发布排班。</p>
-            </div>
-            <div class="head-actions">
-              <el-button @click="loadSchedules">刷新排班</el-button>
-              <el-button type="primary" @click="openManualScheduleCreate">新增排班</el-button>
             </div>
           </div>
+
+          <section class="work-card schedule-visual-card">
+            <div class="card-head">
+              <div>
+                <h2>排班可视化</h2>
+              </div>
+              <div class="schedule-board-tools">
+                <div class="schedule-legend">
+                  <span><i class="legend-dot legend-dot--published"></i>正式排班</span>
+                  <span><i class="legend-dot legend-dot--surgery"></i>手术</span>
+                  <span><i class="legend-dot legend-dot--leave"></i>请假</span>
+                </div>
+                <div class="schedule-week-nav">
+                  <el-button size="small" @click="moveScheduleBoardWeek('manual', -1)">上一周</el-button>
+                  <span>{{ manualScheduleBoardRangeLabel }}</span>
+                  <el-button size="small" @click="resetScheduleBoardWeek('manual')">本周</el-button>
+                  <el-button size="small" @click="moveScheduleBoardWeek('manual', 1)">下一周</el-button>
+                </div>
+              </div>
+            </div>
+            <div class="schedule-board" :style="scheduleBoardStyle(manualScheduleBoardDays.length)">
+              <div class="schedule-board__corner">
+                <span>人员</span>
+                <strong>时间</strong>
+              </div>
+              <div
+                v-for="day in manualScheduleBoardDays"
+                :key="day.date"
+                class="schedule-board__day"
+                :class="{ 'schedule-board__day--weekend': day.weekend }"
+              >
+                <strong>{{ day.weekday }}</strong>
+                <span>{{ day.monthDay }}</span>
+                <em>{{ day.weekend ? '休息日' : '工作日' }}</em>
+                <div class="schedule-board__ticks">
+                  <span>08</span>
+                  <span>12</span>
+                  <span>16</span>
+                </div>
+              </div>
+              <template v-for="row in manualScheduleBoardRows" :key="row.kind === 'group' ? row.id : row.doctorId">
+                <div v-if="row.kind === 'group'" class="schedule-board__group">
+                  <button type="button" class="schedule-board__group-toggle" @click="toggleScheduleDepartment(row.departmentId)">
+                    <span>{{ isScheduleDepartmentCollapsed(row.departmentId) ? '+' : '-' }}</span>
+                    <strong>{{ row.departmentName }}</strong>
+                  </button>
+                  <span>{{ row.doctorCount }} 名医生</span>
+                </div>
+                <template v-else>
+                  <div class="schedule-board__person">
+                    <span class="doctor-avatar">{{ row.initials }}</span>
+                    <div>
+                      <strong>{{ row.doctorName }}</strong>
+                      <em>{{ row.subtitle }}</em>
+                    </div>
+                  </div>
+                  <div
+                    v-for="cell in row.cells"
+                    :key="`${row.doctorId}-${cell.date}`"
+                    class="schedule-board__cell"
+                    :class="{ 'schedule-board__cell--weekend': cell.weekend }"
+                  >
+                    <div v-for="period in SCHEDULE_BOARD_PERIODS" :key="period" class="schedule-board__period-slot">
+                      <div
+                        v-for="item in scheduleBoardSlotEntries(cell.entries, period)"
+                        :key="`${period}-${item.id}`"
+                        class="schedule-shift"
+                        :class="scheduleShiftClasses(item)"
+                      >
+                        <div class="schedule-shift__head">
+                          <strong>{{ item.period }}</strong>
+                        </div>
+                        <p>{{ item.timeRange }}</p>
+                        <em>{{ item.roomName || item.note || '未分配诊室' }}</em>
+                        <small v-if="item.source === 'event'">{{ item.eventType === 'SURGERY' ? '手术安排' : '请假安排' }}</small>
+                        <small v-else>号源 {{ item.capacity }} / 可约 {{ item.available }}</small>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+              </template>
+            </div>
+          </section>
 
           <div class="query-bar">
             <el-select v-model="scheduleFilter.departmentId" clearable placeholder="全部科室" filterable>
@@ -223,6 +383,8 @@
               <el-option v-for="doctor in filteredScheduleDoctors" :key="doctor.id" :label="doctor.name" :value="doctor.id" />
             </el-select>
             <el-button type="primary" @click="loadSchedules">查询</el-button>
+            <el-button @click="resetScheduleFilters">重置</el-button>
+            <el-button type="primary" @click="openManualScheduleCreate">新增排班</el-button>
           </div>
 
           <section class="work-card">
@@ -258,12 +420,14 @@
           <div class="page-head">
             <div>
               <h1>医生账号与档案</h1>
-              <p>账号信息优先展示，点击医生详情后维护职称、科室和专长。</p>
             </div>
-            <div class="head-actions">
-              <el-input v-model.trim="doctorKeyword" class="head-search" clearable placeholder="搜索姓名/工号/科室" />
-              <el-button type="primary" @click="openDoctorCreate">新增医生</el-button>
-            </div>
+          </div>
+
+          <div class="query-bar">
+            <el-input v-model.trim="doctorKeyword" class="head-search" clearable placeholder="搜索姓名/工号/科室" />
+            <el-button type="primary" @click="queryDoctors">查询</el-button>
+            <el-button @click="resetDoctorSearch">重置</el-button>
+            <el-button type="primary" @click="openDoctorCreate">新增医生</el-button>
           </div>
 
           <section class="work-card">
@@ -316,11 +480,6 @@
           <div class="page-head">
             <div>
               <h1>医生请假/手术</h1>
-              <p>仅显示当前日期之后的请假与手术安排，保存后用于后续排班参考。</p>
-            </div>
-            <div class="head-actions">
-              <el-button :loading="eventLoading" @click="loadDoctorEvents">刷新</el-button>
-              <el-button type="primary" @click="openDoctorEventCreate">新增安排</el-button>
             </div>
           </div>
 
@@ -330,6 +489,9 @@
               <el-option label="请假" value="LEAVE" />
               <el-option label="手术" value="SURGERY" />
             </el-select>
+            <el-button type="primary" :loading="eventLoading" @click="queryDoctorEvents">查询</el-button>
+            <el-button @click="resetDoctorEventsSearch">重置</el-button>
+            <el-button type="primary" @click="openDoctorEventCreate">新增安排</el-button>
           </div>
 
           <section class="work-card">
@@ -564,6 +726,50 @@ interface AvailabilitySettings {
   weeklyCapacity: number;
 }
 
+interface ScheduleBoardDay {
+  date: string;
+  weekday: string;
+  monthDay: string;
+  weekend: boolean;
+}
+
+interface ScheduleBoardEntry {
+  id: string;
+  source: 'published' | 'ai' | 'event';
+  period: string;
+  periodKey: 'morning' | 'afternoon' | 'full';
+  timeRange: string;
+  roomName: string;
+  capacity: number;
+  available: number;
+  published: boolean;
+  eventType?: DoctorEvent['eventType'];
+  note?: string;
+}
+
+interface ScheduleBoardRow {
+  kind: 'doctor';
+  doctorId: string;
+  doctorName: string;
+  subtitle: string;
+  initials: string;
+  cells: Array<{
+    date: string;
+    weekend: boolean;
+    entries: ScheduleBoardEntry[];
+  }>;
+}
+
+interface ScheduleBoardGroupRow {
+  kind: 'group';
+  id: string;
+  departmentId: string;
+  departmentName: string;
+  doctorCount: number;
+}
+
+type ScheduleBoardDisplayRow = ScheduleBoardRow | ScheduleBoardGroupRow;
+
 const router = useRouter();
 const auth = useAuthStore();
 
@@ -585,6 +791,9 @@ const staffAccounts = ref<StaffAccount[]>([]);
 const allStaffAccounts = ref<StaffAccount[]>([]);
 const aiResponse = ref<AiScheduleResponse | null>(null);
 const publishedSuggestionIds = ref<string[]>([]);
+const collapsedScheduleDepartments = ref<string[]>([]);
+const aiScheduleBoardWeekOffset = ref(0);
+const manualScheduleBoardWeekOffset = ref(0);
 const selectedDoctorId = ref('');
 const doctorKeyword = ref('');
 const eventKeyword = ref('');
@@ -600,6 +809,9 @@ const availability = reactive<Record<string, AvailabilitySettings>>({});
 const NON_REGISTRATION_DEPARTMENT_NAMES = ['影像检查科', '检验科', '处置科', '药房', '系统管理', '收费处'];
 const REPLAN_WINDOW_START_OFFSET = 7;
 const REPLAN_WINDOW_DAYS = 8;
+const SCHEDULE_BOARD_MANUAL_DAYS = 7;
+const SCHEDULE_WEEKDAY_LABELS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+const SCHEDULE_BOARD_PERIODS = ['上午', '下午'];
 const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
 const today = new Date().toLocaleDateString('zh-CN');
 const dayOfWeek = `星期${weekDays[new Date().getDay()]}`;
@@ -745,6 +957,15 @@ const pendingSuggestions = computed(() =>
   suggestions.value.filter((suggestion) => !isSuggestionPublished(suggestion.suggestionId))
 );
 
+const aiScheduleBoardStartDate = computed(() => addDays(aiForm.startDate, aiScheduleBoardWeekOffset.value * 7));
+const manualScheduleBoardStartDate = computed(() => addDays(todayIso(), manualScheduleBoardWeekOffset.value * 7));
+const aiScheduleBoardDays = computed(() => buildScheduleBoardDays(aiScheduleBoardStartDate.value, SCHEDULE_BOARD_MANUAL_DAYS));
+const manualScheduleBoardDays = computed(() => buildScheduleBoardDays(manualScheduleBoardStartDate.value, SCHEDULE_BOARD_MANUAL_DAYS));
+const aiScheduleBoardRows = computed(() => buildScheduleBoardRows(aiScheduleBoardDays.value, true));
+const manualScheduleBoardRows = computed(() => buildScheduleBoardRows(manualScheduleBoardDays.value, false));
+const aiScheduleBoardRangeLabel = computed(() => scheduleBoardRangeLabel(aiScheduleBoardDays.value));
+const manualScheduleBoardRangeLabel = computed(() => scheduleBoardRangeLabel(manualScheduleBoardDays.value));
+
 const aiCandidates = computed<AiDoctorCandidate[]>(() =>
   aiDoctors.value.map((doctor) => {
     const settings = ensureAvailability(doctor.id);
@@ -840,6 +1061,20 @@ async function loadSchedules() {
   });
 }
 
+async function resetScheduleFilters() {
+  scheduleFilter.departmentId = '';
+  scheduleFilter.doctorId = '';
+  await loadSchedules();
+}
+
+function queryDoctors() {
+  doctorKeyword.value = doctorKeyword.value.trim();
+}
+
+function resetDoctorSearch() {
+  doctorKeyword.value = '';
+}
+
 async function loadAccounts() {
   try {
     const [accountData, allAccountData] = await Promise.all([
@@ -863,6 +1098,16 @@ async function loadDoctorEvents() {
   } finally {
     eventLoading.value = false;
   }
+}
+
+async function queryDoctorEvents() {
+  eventKeyword.value = eventKeyword.value.trim();
+  await loadDoctorEvents();
+}
+
+function resetDoctorEventsSearch() {
+  eventKeyword.value = '';
+  eventTypeFilter.value = '';
 }
 
 async function loadAiReplanPreview(showFeedback = false, force = showFeedback) {
@@ -1178,6 +1423,8 @@ async function submitDoctorEvent() {
     ElMessage.warning('请补全医生、日期和午别');
     return;
   }
+  const eventDoctor = doctors.value.find((doctor) => doctor.id === eventForm.doctorId);
+  const replanDepartmentId = eventDoctor?.departmentId || '';
   eventSaving.value = true;
   try {
     const payload = {
@@ -1192,12 +1439,15 @@ async function submitDoctorEvent() {
       ElMessage.success('安排已更新');
     } else {
       await createDoctorEvent(payload);
-      ElMessage.success('安排已新增');
+      ElMessage.success('安排已更新');
     }
     eventDialogVisible.value = false;
     resetDoctorEventForm();
     await loadDoctorEvents();
     if (payload.dates.some((date) => isWithinReplanWindow(date))) {
+      aiForm.departmentId = replanDepartmentId;
+      aiScheduleBoardWeekOffset.value = 0;
+      publishedSuggestionIds.value = [];
       currentPage.value = 'aiSchedule';
       await loadAiReplanPreview(true);
     }
@@ -1218,7 +1468,7 @@ async function removeDoctorEvent(event: DoctorEvent) {
   }
   try {
     await deleteDoctorEvent(event.id);
-    ElMessage.success('安排已删除');
+    ElMessage.success('安排已更新');
     await loadDoctorEvents();
   } catch (error) {
     ElMessage.error(errorMessage(error));
@@ -1317,6 +1567,259 @@ function syncAvailabilityFromEvents() {
 
 function uniqueDates(dates: string[]) {
   return Array.from(new Set((dates ?? []).filter(Boolean))).sort();
+}
+
+function buildScheduleBoardDays(startDate: string, count: number): ScheduleBoardDay[] {
+  const start = startOfWeekMonday(startDate || todayIso());
+  return Array.from({ length: Math.max(1, count) }, (_, index) => {
+    const date = addDays(start, index);
+    const native = new Date(`${date}T00:00:00`);
+    const day = native.getDay();
+    return {
+      date,
+      weekday: SCHEDULE_WEEKDAY_LABELS[day],
+      monthDay: date.slice(5).replace('-', '/'),
+      weekend: day === 0 || day === 6
+    };
+  });
+}
+
+function startOfWeekMonday(isoDate: string) {
+  const date = new Date(`${isoDate}T00:00:00`);
+  const day = date.getDay();
+  const offset = day === 0 ? -6 : 1 - day;
+  return addDays(isoDate, offset);
+}
+
+function buildScheduleBoardRows(days: ScheduleBoardDay[], includeAiSuggestions: boolean): ScheduleBoardDisplayRow[] {
+  const dateSet = new Set(days.map((day) => day.date));
+  const doctorMap = new Map<string, { doctorId: string; doctorName: string; subtitle: string; departmentId: string; roomName: string }>();
+  const entries = new Map<string, ScheduleBoardEntry[]>();
+  const selectedDepartmentId = includeAiSuggestions ? aiForm.departmentId : scheduleFilter.departmentId;
+  const selectedDoctor = includeAiSuggestions ? '' : scheduleFilter.doctorId;
+
+  const ensureDoctor = (doctorId: string, doctorName: string, departmentId: string, roomName = '') => {
+    if (!doctorId || doctorMap.has(doctorId)) return;
+    const doctor = doctors.value.find((item) => item.id === doctorId);
+    doctorMap.set(doctorId, {
+      doctorId,
+      doctorName: doctor?.name || doctorName || doctorId,
+      departmentId: doctor?.departmentId || departmentId,
+      roomName: doctor?.roomName || roomName || '',
+      subtitle: doctor?.roomName || roomName || departmentName(doctor?.departmentId || departmentId)
+    });
+  };
+
+  const pushEntry = (doctorId: string, date: string, entry: ScheduleBoardEntry) => {
+    const key = `${doctorId}:${date}`;
+    const items = entries.get(key) ?? [];
+    items.push(entry);
+    entries.set(key, items);
+  };
+
+  schedules.value
+    .filter((schedule) => schedule.status === 'PUBLISHED')
+    .filter((schedule) => dateSet.has(schedule.workDate))
+    .filter((schedule) => !selectedDepartmentId || schedule.departmentId === selectedDepartmentId)
+    .filter((schedule) => !selectedDoctor || schedule.doctorId === selectedDoctor)
+    .forEach((schedule) => {
+      ensureDoctor(schedule.doctorId, schedule.doctorName, schedule.departmentId, schedule.roomName || '');
+      pushEntry(schedule.doctorId, schedule.workDate, {
+        id: schedule.id,
+        source: 'published',
+        period: schedule.period,
+        periodKey: schedulePeriodKey(schedule.period),
+        timeRange: scheduleTimeRange(schedule.period),
+        roomName: schedule.roomName || '',
+        capacity: schedule.capacity,
+        available: schedule.available,
+        published: true
+      });
+    });
+
+  doctorEvents.value.forEach((event) => {
+    const doctor = doctors.value.find((item) => item.id === event.doctorId);
+    const departmentId = doctor?.departmentId || '';
+    if (selectedDepartmentId && departmentId !== selectedDepartmentId) return;
+    if (selectedDoctor && event.doctorId !== selectedDoctor) return;
+    event.dates
+      .filter((date) => dateSet.has(date))
+      .forEach((date) => {
+        event.periods.forEach((period) => {
+          ensureDoctor(event.doctorId, event.doctorName, departmentId, doctor?.roomName || event.departmentName || '');
+          pushEntry(event.doctorId, date, {
+            id: `${event.id}-${date}-${period}`,
+            source: 'event',
+            period,
+            periodKey: schedulePeriodKey(period),
+            timeRange: scheduleTimeRange(period),
+            roomName: '',
+            capacity: 0,
+            available: 0,
+            published: true,
+            eventType: event.eventType,
+            note: event.note || event.departmentName
+          });
+        });
+      });
+  });
+
+  if (includeAiSuggestions) {
+    suggestions.value
+      .filter((suggestion) => dateSet.has(suggestion.workDate))
+      .filter((suggestion) => !selectedDepartmentId || suggestion.departmentId === selectedDepartmentId)
+      .forEach((suggestion) => {
+        ensureDoctor(suggestion.doctorId, suggestion.doctorName, suggestion.departmentId, suggestion.roomName || '');
+        pushEntry(suggestion.doctorId, suggestion.workDate, {
+          id: suggestion.suggestionId,
+          source: 'ai',
+          period: suggestion.period,
+          periodKey: schedulePeriodKey(suggestion.period),
+          timeRange: scheduleTimeRange(suggestion.period),
+          roomName: suggestion.roomName || '',
+          capacity: suggestion.capacity,
+          available: suggestion.capacity,
+          published: isSuggestionPublished(suggestion.suggestionId)
+        });
+      });
+
+    if (selectedDepartmentId) {
+      aiDoctors.value.forEach((doctor) => ensureDoctor(doctor.id, doctor.name, doctor.departmentId, doctor.roomName || ''));
+    }
+  } else if (selectedDepartmentId || selectedDoctor) {
+    filteredScheduleDoctors.value.forEach((doctor) => ensureDoctor(doctor.id, doctor.name, doctor.departmentId, doctor.roomName || ''));
+  }
+
+  const doctorRows = Array.from(doctorMap.values())
+    .sort(compareScheduleBoardDoctors)
+    .map((doctor) => ({
+      kind: 'doctor' as const,
+      doctorId: doctor.doctorId,
+      doctorName: doctor.doctorName,
+      subtitle: doctor.subtitle,
+      initials: doctorInitials(doctor.doctorName),
+      cells: days.map((day) => ({
+        date: day.date,
+        weekend: day.weekend,
+        entries: (entries.get(`${doctor.doctorId}:${day.date}`) ?? []).sort(compareScheduleEntries)
+      }))
+    }));
+  const groupedRows: ScheduleBoardDisplayRow[] = [];
+  let currentDepartmentId = '';
+  let currentGroup: ScheduleBoardGroupRow | null = null;
+  doctorRows.forEach((row, index) => {
+    const doctor = doctorMap.get(row.doctorId);
+    const departmentId = doctor?.departmentId || '';
+    if (departmentId !== currentDepartmentId) {
+      currentDepartmentId = departmentId;
+      currentGroup = {
+        kind: 'group',
+        id: `group-${departmentId || index}`,
+        departmentId,
+        departmentName: departmentName(departmentId),
+        doctorCount: 0
+      };
+      groupedRows.push(currentGroup);
+    }
+    if (currentGroup) currentGroup.doctorCount += 1;
+    if (!isScheduleDepartmentCollapsed(departmentId)) {
+      groupedRows.push(row);
+    }
+  });
+  return groupedRows;
+}
+
+function isScheduleDepartmentCollapsed(departmentId: string) {
+  return collapsedScheduleDepartments.value.includes(departmentId);
+}
+
+function toggleScheduleDepartment(departmentId: string) {
+  if (isScheduleDepartmentCollapsed(departmentId)) {
+    collapsedScheduleDepartments.value = collapsedScheduleDepartments.value.filter((id) => id !== departmentId);
+  } else {
+    collapsedScheduleDepartments.value = [...collapsedScheduleDepartments.value, departmentId];
+  }
+}
+
+function compareScheduleBoardDoctors(
+  left: { doctorName: string; departmentId: string; roomName: string },
+  right: { doctorName: string; departmentId: string; roomName: string }
+) {
+  return (
+    departmentName(left.departmentId).localeCompare(departmentName(right.departmentId)) ||
+    (left.roomName || '').localeCompare(right.roomName || '') ||
+    left.doctorName.localeCompare(right.doctorName)
+  );
+}
+
+function scheduleBoardSlotEntries(entries: ScheduleBoardEntry[], period: string) {
+  return entries.filter((entry) => entry.period === period || entry.period === '全天').sort(compareScheduleEntries);
+}
+
+function scheduleShiftClasses(item: ScheduleBoardEntry) {
+  return [
+    `schedule-shift--${item.periodKey}`,
+    item.source === 'ai' ? 'schedule-shift--ai' : '',
+    item.published && item.source === 'ai' ? 'schedule-shift--published-ai' : '',
+    item.source === 'event' ? 'schedule-shift--event' : '',
+    item.eventType === 'SURGERY' ? 'schedule-shift--surgery' : '',
+    item.eventType === 'LEAVE' ? 'schedule-shift--leave' : ''
+  ];
+}
+
+function compareScheduleEntries(left: ScheduleBoardEntry, right: ScheduleBoardEntry) {
+  return schedulePeriodOrder(left.period) - schedulePeriodOrder(right.period) || left.source.localeCompare(right.source);
+}
+
+function scheduleBoardStyle(dayCount: number) {
+  return {
+    gridTemplateColumns: `190px repeat(${dayCount}, minmax(150px, 1fr))`
+  };
+}
+
+function moveScheduleBoardWeek(board: 'ai' | 'manual', delta: number) {
+  if (board === 'ai') {
+    aiScheduleBoardWeekOffset.value += delta;
+  } else {
+    manualScheduleBoardWeekOffset.value += delta;
+  }
+}
+
+function resetScheduleBoardWeek(board: 'ai' | 'manual') {
+  if (board === 'ai') {
+    aiScheduleBoardWeekOffset.value = 0;
+  } else {
+    manualScheduleBoardWeekOffset.value = 0;
+  }
+}
+
+function scheduleBoardRangeLabel(days: ScheduleBoardDay[]) {
+  if (days.length === 0) return '';
+  return `${days[0].date} - ${days[days.length - 1].date}`;
+}
+
+function schedulePeriodKey(period: string): ScheduleBoardEntry['periodKey'] {
+  if (period === '下午') return 'afternoon';
+  if (period === '全天') return 'full';
+  return 'morning';
+}
+
+function schedulePeriodOrder(period: string) {
+  if (period === '上午') return 0;
+  if (period === '下午') return 1;
+  if (period === '全天') return 2;
+  return 9;
+}
+
+function scheduleTimeRange(period: string) {
+  if (period === '下午') return '14:00-17:00';
+  if (period === '全天') return '08:00-17:00';
+  return '08:00-12:00';
+}
+
+function doctorInitials(name: string) {
+  const clean = (name || '').trim();
+  return clean ? clean.slice(Math.max(0, clean.length - 2)) : '医生';
 }
 
 function isSuggestionPublished(suggestionId: string) {
@@ -1580,7 +2083,14 @@ onMounted(refreshAll);
   gap: 14px;
 }
 
-.page-head,
+.page-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .query-bar {
   display: flex;
   align-items: center;
@@ -1588,9 +2098,10 @@ onMounted(refreshAll);
   gap: 12px;
 }
 
-.head-actions {
+.page-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
 }
 
@@ -1757,6 +2268,388 @@ onMounted(refreshAll);
   line-height: 1.6;
 }
 
+.schedule-visual-card {
+  overflow: hidden;
+}
+
+.schedule-board-tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.schedule-legend {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: #64748b;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.schedule-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.schedule-week-nav {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.schedule-week-nav span {
+  min-width: 176px;
+  color: #334155;
+  font-size: 12px;
+  text-align: center;
+}
+
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  display: inline-block;
+}
+
+.legend-dot--published {
+  background: #9bdcf2;
+  border-left: 3px solid #2f91b4;
+}
+
+.legend-dot--ai {
+  background: #fff3c4;
+  border: 1px dashed #d97706;
+}
+
+.legend-dot--surgery {
+  background: #ffe4e6;
+  border: 1px solid #e11d48;
+}
+
+.legend-dot--leave {
+  background: #e5e7eb;
+  border: 1px solid #94a3b8;
+}
+
+.schedule-board {
+  display: grid;
+  max-height: 560px;
+  overflow: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.schedule-board-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 12px;
+}
+
+.schedule-board__corner,
+.schedule-board__day,
+.schedule-board__person,
+.schedule-board__cell {
+  min-width: 0;
+  border-right: 1px solid #e5e7eb;
+  border-bottom: 1px solid #e5e7eb;
+  background: #fff;
+}
+
+.schedule-board__corner {
+  position: sticky;
+  top: 0;
+  left: 0;
+  z-index: 5;
+  min-height: 82px;
+  padding: 12px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  background:
+    linear-gradient(27deg, transparent 49.2%, #e5e7eb 50%, transparent 50.8%),
+    #f8fafc;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.schedule-board__corner strong {
+  align-self: flex-start;
+  color: #334155;
+}
+
+.schedule-board__day {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  min-height: 82px;
+  padding: 10px 10px 8px;
+  text-align: center;
+  background: #f8fafc;
+}
+
+.schedule-board__day strong {
+  display: inline-block;
+  margin-right: 8px;
+  color: #111827;
+  font-size: 14px;
+}
+
+.schedule-board__day > span {
+  color: #334155;
+  font-weight: 700;
+}
+
+.schedule-board__day em {
+  display: block;
+  margin-top: 4px;
+  color: #0891b2;
+  font-size: 12px;
+  font-style: normal;
+}
+
+.schedule-board__day--weekend em {
+  color: #64748b;
+}
+
+.schedule-board__ticks {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  margin-top: 10px;
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+.schedule-board__person {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  min-height: 96px;
+  padding: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #fff;
+}
+
+.schedule-board__group {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  grid-column: 1 / -1;
+  min-height: 38px;
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-right: 1px solid #e5e7eb;
+  border-bottom: 1px solid #dbe4ee;
+  background: #eef6f8;
+}
+
+.schedule-board__group strong {
+  color: #0f766e;
+  font-size: 13px;
+}
+
+.schedule-board__group span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.schedule-board__group-toggle {
+  border: 0;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.schedule-board__group-toggle span {
+  width: 16px;
+  color: #0f766e;
+  font-size: 11px;
+}
+
+.schedule-board__group-toggle:hover strong {
+  color: #0d9488;
+}
+
+.doctor-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  background: linear-gradient(135deg, #dbeafe, #ccfbf1);
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.schedule-board__person strong {
+  display: block;
+  color: #111827;
+  font-size: 14px;
+}
+
+.schedule-board__person em {
+  display: block;
+  margin-top: 4px;
+  color: #94a3b8;
+  font-size: 12px;
+  font-style: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.schedule-board__cell {
+  position: relative;
+  min-height: 150px;
+  padding: 8px;
+  display: grid;
+  grid-template-rows: repeat(2, minmax(62px, 1fr));
+  gap: 6px;
+}
+
+.schedule-board__cell--weekend {
+  background:
+    repeating-linear-gradient(135deg, rgb(148 163 184 / 10%) 0 8px, transparent 8px 16px),
+    #fff;
+}
+
+.schedule-board__period-slot {
+  min-height: 62px;
+  border: 1px dashed #e2e8f0;
+  border-radius: 6px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: rgb(248 250 252 / 58%);
+}
+
+.schedule-board__empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #cbd5e1;
+  font-size: 22px;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.schedule-shift {
+  position: relative;
+  z-index: 1;
+  min-height: 72px;
+  border-radius: 6px;
+  padding: 8px 8px 7px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  overflow: hidden;
+  border-left: 4px solid #2f91b4;
+  background: #d9f1fb;
+  color: #0f172a;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 8%);
+}
+
+.schedule-shift--morning {
+  border-left-color: #4aa564;
+  background: #ddf7dc;
+}
+
+.schedule-shift--afternoon {
+  border-left-color: #2f91b4;
+  background: #d9f1fb;
+}
+
+.schedule-shift--full {
+  border-left-color: #14b8a6;
+  background: #ccfbf1;
+}
+
+.schedule-shift--ai {
+  border: 1px dashed #d97706;
+  border-left: 4px solid #f59e0b;
+  background: #fff3c4;
+}
+
+.schedule-shift--published-ai {
+  border-style: solid;
+  background: #ecfdf5;
+  border-color: #22c55e;
+}
+
+.schedule-shift--event {
+  box-shadow: none;
+}
+
+.schedule-shift--surgery {
+  border-left-color: #e11d48;
+  background: #ffe4e6;
+}
+
+.schedule-shift--leave {
+  border-left-color: #94a3b8;
+  background: #e5e7eb;
+}
+
+.schedule-shift__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.schedule-shift__head strong {
+  min-width: 0;
+  color: #111827;
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+.schedule-shift__head span {
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  background: #f59e0b;
+  color: #fff;
+  font-size: 11px;
+}
+
+.schedule-shift--published-ai .schedule-shift__head span {
+  background: #16a34a;
+}
+
+.schedule-shift p,
+.schedule-shift em,
+.schedule-shift small {
+  margin: 0;
+  color: #334155;
+  font-size: 12px;
+  line-height: 1.25;
+  font-style: normal;
+}
+
+.schedule-shift em,
+.schedule-shift small {
+  color: #64748b;
+}
+
 .task-list {
   display: flex;
   flex-direction: column;
@@ -1880,7 +2773,7 @@ onMounted(refreshAll);
     width: 100%;
   }
 
-  .head-actions {
+  .page-actions {
     align-items: stretch;
     flex-direction: column;
   }

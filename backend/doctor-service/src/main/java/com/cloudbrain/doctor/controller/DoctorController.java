@@ -25,11 +25,11 @@ public class DoctorController {
         return dto(repository.createDoctor(request.employeeNo().trim(),request.name(),request.title(),request.departmentId(),roleType,request.specialty()));
     }
     @GetMapping("/{id}")
-    public DoctorDto detail(@PathVariable String id) {
+    public DoctorDto detail(@PathVariable("id") String id) {
         return dto(repository.findDoctor(id));
     }
     @PutMapping("/{id}") @PreAuthorize("hasRole('ADMIN')")
-    public DoctorDto update(@PathVariable String id, @RequestBody UpdateDoctorRequest request) {
+    public DoctorDto update(@PathVariable("id") String id, @RequestBody UpdateDoctorRequest request) {
         return dto(repository.updateDoctor(id, request.name(), request.title(), request.departmentId(), request.specialty()));
     }
     @GetMapping("/events")
@@ -42,12 +42,12 @@ public class DoctorController {
                 request.doctorId(), request.eventType(), request.dates(), request.periods(), request.note()));
     }
     @PutMapping("/events/{id}") @PreAuthorize("hasRole('ADMIN')")
-    public DoctorEventDto updateEvent(@PathVariable String id, @RequestBody DoctorEventRequest request) {
+    public DoctorEventDto updateEvent(@PathVariable("id") String id, @RequestBody DoctorEventRequest request) {
         return eventDto(repository.updateDoctorEvent(
                 id, request.doctorId(), request.eventType(), request.dates(), request.periods(), request.note()));
     }
     @DeleteMapping("/events/{id}") @PreAuthorize("hasRole('ADMIN')")
-    public void deleteEvent(@PathVariable String id) {
+    public void deleteEvent(@PathVariable("id") String id) {
         repository.deleteDoctorEvent(id);
     }
     private DoctorDto dto(DoctorCatalogRepository.Doctor d) {

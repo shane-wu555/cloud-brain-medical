@@ -13,6 +13,7 @@ class AiSettings:
     rag_database_url: str | None
     rag_schema: str
     rag_embedding_dim: int
+    rag_connect_timeout_seconds: float
 
     @property
     def llm_enabled(self) -> bool:
@@ -30,4 +31,5 @@ def settings() -> AiSettings:
         rag_database_url=os.getenv("AI_RAG_DATABASE_URL") or os.getenv("DATABASE_URL") or None,
         rag_schema=os.getenv("AI_RAG_SCHEMA", "ai"),
         rag_embedding_dim=int(os.getenv("AI_RAG_EMBEDDING_DIM", "64")),
+        rag_connect_timeout_seconds=float(os.getenv("AI_RAG_CONNECT_TIMEOUT_SECONDS", "3")),
     )

@@ -27,7 +27,7 @@ export async function request<T>(options: UniApp.RequestOptions): Promise<T> {
     uni.request({
       ...options,
       url,
-      timeout: REQUEST_TIMEOUT_MS,
+      timeout: options.timeout ?? REQUEST_TIMEOUT_MS,
       header: {
         ...(options.header ?? {}),
         ...(token ? { Authorization: `Bearer ${token}` } : {})
