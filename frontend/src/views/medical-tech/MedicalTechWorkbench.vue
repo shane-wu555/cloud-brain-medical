@@ -336,11 +336,18 @@
                 <div class="lab-grid">
                   <div class="lab-field">
                     <label>样本类型</label>
-                    <el-input v-model="lab.specimenType" size="small" />
+                    <el-select v-model="lab.specimenType" size="small" clearable placeholder="请选择样本类型">
+                      <el-option
+                        v-for="item in specimenTypeOptions"
+                        :key="item"
+                        :label="item"
+                        :value="item"
+                      />
+                    </el-select>
                   </div>
-                  <div class="lab-field">
+                  <div class="lab-field lab-field--barcode">
                     <label>条码号</label>
-                    <el-input v-model="lab.barcode" size="small" />
+                    <el-input v-model="lab.barcode" size="small" readonly placeholder="缴费并分配诊室后自动生成" />
                   </div>
                   <div class="lab-qr-card lab-barcode-card">
                     <svg ref="labBarcodeSvg" class="lab-barcode" aria-label="样本条形码"></svg>
@@ -356,15 +363,15 @@
                   <div class="pathology-form">
                     <label>
                       <span>送检材料</span>
-                      <el-input v-model="pathology.material" size="small" placeholder="例：枕顶部头皮皮肤肿物(1)" />
+                      <el-input v-model="pathology.material" size="small" />
                     </label>
                     <label>
                       <span>肉眼所见</span>
-                      <el-input v-model="pathology.gross" type="textarea" :rows="3" placeholder="记录标本大小、颜色、质地、切面等肉眼所见" />
+                      <el-input v-model="pathology.gross" type="textarea" :rows="3" />
                     </label>
                     <label>
                       <span>病理诊断</span>
-                      <el-input v-model="pathology.diagnosis" type="textarea" :rows="3" placeholder="填写病理诊断" />
+                      <el-input v-model="pathology.diagnosis" type="textarea" :rows="3" />
                     </label>
                   </div>
                   <div class="pathology-upload-row">
@@ -378,9 +385,8 @@
                   </div>
                   <div v-if="pathologySlides.length" class="pathology-slide-grid">
                     <div v-for="slide in pathologySlides" :key="slide.id" class="pathology-slide-card">
-                      <img v-if="slide.previewUrl" :src="slide.previewUrl" :alt="slide.label" />
+                      <img v-if="slide.previewUrl" :src="slide.previewUrl" alt="光镜照片" />
                       <div v-else class="pathology-slide-card__empty">光镜照片</div>
-                      <el-input v-model="slide.label" size="small" />
                     </div>
                   </div>
                 </template>
@@ -480,8 +486,7 @@
                   <b>光镜所见：</b>
                   <div v-if="pathologySlides.length" class="pathology-report-images">
                     <figure v-for="slide in pathologySlides" :key="slide.id">
-                      <img v-if="slide.previewUrl" :src="slide.previewUrl" :alt="slide.label" />
-                      <figcaption>{{ slide.label || '光镜照片' }}</figcaption>
+                      <img v-if="slide.previewUrl" :src="slide.previewUrl" alt="光镜照片" />
                     </figure>
                   </div>
                   <p v-else class="pathology-report-empty">未上传光镜照片</p>
@@ -988,7 +993,7 @@ function setWindow(preset: 'brain' | 'standard' | 'subdural' | 'bone' | 'soft') 
 // Lab state (LAB_DOCTOR)
 type LabResultRow = Pick<LaboratoryResultItem, 'itemCode' | 'itemName' | 'resultValue' | 'unit' | 'referenceRange' | 'abnormalFlag'>;
 
-const lab = reactive({ specimenType: '全血', barcode: `LAB-${Date.now()}` });
+const lab = reactive({ specimenType: '', barcode: '' });
 const specimenId = ref('');
 const labBarcodeSvg = ref<SVGSVGElement>();
 const specimensByOrder = ref<Record<string, Specimen[]>>({});
@@ -996,25 +1001,47 @@ const labResultRows = ref<LabResultRow[]>([]);
 const labResultsSaved = ref(false);
 const labSaving = ref(false);
 const samplingSubmitting = ref(false);
+const specimenTypeOptions = [
+  '全血',
+  '血清',
+  '血浆',
+  '尿液',
+  '粪便',
+  '脑脊液',
+  '咽拭子',
+  '分泌物',
+  '穿刺液',
+  '组织',
+  '其他',
+];
 const pathology = reactive({ material: '', gross: '', diagnosis: '' });
 const pathologySlides = ref<Array<{ id: string; label: string; previewUrl: string; attachment?: MedicalAttachment }>>([]);
 const pathologyUploading = ref(false);
 const pathologySaving = ref(false);
 const pathologySaved = ref(false);
+let syncingPathologyForm = false;
 const isPathologyOrder = computed(() => current.value ? isPathologyItem(current.value) : false);
 const pathologyNo = computed(() => current.value ? `P${current.value.id.replace(/-/g, '').slice(0, 8).toUpperCase()}` : '');
 const currentSpecimens = computed(() => current.value ? (specimensByOrder.value[current.value.id] ?? []) : []);
 const isCurrentSamplingDone = computed(() => currentSpecimens.value.some(item => ['COLLECTED', 'RECEIVED', 'ANALYZING', 'COMPLETED'].includes(item.status)));
 
-function makeLabBarcode(order?: MedicalOrder) {
-  const suffix = order?.id ? order.id.replace(/-/g, '').slice(0, 8).toUpperCase() : String(Date.now()).slice(-8);
-  return `LAB-${suffix}`;
+function buildSpecimenBarcode(order: MedicalOrder) {
+  if (order.paymentStatus !== 'PAID' || !order.roomId || order.queueNumber == null) return '';
+  const roomCode = (order.roomId || order.roomName || 'LAB').replace(/[^a-zA-Z0-9]/g, '').toUpperCase() || 'LAB';
+  const dateCode = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const queueCode = String(Math.abs(order.queueNumber)).padStart(3, '0');
+  const orderCode = order.id.replace(/-/g, '').slice(0, 6).toUpperCase();
+  return `${roomCode}-${dateCode}-${queueCode}-${orderCode}`;
 }
 
 async function renderLabBarcode() {
   await nextTick();
   if (!labBarcodeSvg.value) return;
-  JsBarcode(labBarcodeSvg.value, lab.barcode || 'LAB', {
+  if (!lab.barcode.trim()) {
+    labBarcodeSvg.value.innerHTML = '';
+    return;
+  }
+  JsBarcode(labBarcodeSvg.value, lab.barcode, {
     format: 'CODE128',
     width: 1.6,
     height: 46,
@@ -1143,12 +1170,40 @@ function formatReportDate(value?: string) {
 async function loadExistingReport(orderId: string) {
   const reports = await getReports();
   const existing = reports.find(item => (item.medicalOrderId ?? item.orderId) === orderId);
-  if (!existing) return;
+  if (!existing) return undefined;
   report.findings = existing.findings || '';
   report.conclusion = existing.conclusion || '';
   report.advice = existing.advice || '';
   published.value = existing.status === 'CONFIRMED';
   confirmedAt.value = existing.confirmedAt ? formatReportDate(existing.confirmedAt) : '';
+  return existing;
+}
+
+function cleanPathologyReportValue(value: string) {
+  const text = value.trim();
+  return text === '—' ? '' : text;
+}
+
+function fieldFromReportFindings(findings: string, label: string) {
+  const line = findings.split('\n').find(item => item.trim().startsWith(`${label}：`));
+  if (!line) return '';
+  return cleanPathologyReportValue(line.slice(label.length + 1));
+}
+
+function syncPathologyFormFromReport() {
+  syncingPathologyForm = true;
+  pathology.material = fieldFromReportFindings(report.findings, '送检材料');
+  pathology.gross = fieldFromReportFindings(report.findings, '肉眼所见');
+  pathology.diagnosis = cleanPathologyReportValue(report.conclusion || pathology.diagnosis);
+  nextTick(() => {
+    syncingPathologyForm = false;
+  });
+}
+
+function isLegacyPathologySpecimen(order: MedicalOrder, specimen?: Specimen) {
+  return isPathologyItem(order)
+    && specimen?.specimenType === '全血'
+    && /^LAB-[0-9A-F]{8}$/i.test(specimen.barcode);
 }
 
 async function select(row: MedicalOrder) {
@@ -1174,11 +1229,16 @@ async function select(row: MedicalOrder) {
   });
   pathologySlides.value = [];
   pathologySaved.value = false;
-  lab.barcode = makeLabBarcode(row);
+  lab.specimenType = '';
+  lab.barcode = '';
   if (row.orderType === 'LAB') {
     const specimens = await getSpecimens(row.id);
     specimensByOrder.value = { ...specimensByOrder.value, [row.id]: specimens };
-    specimenId.value = specimens[0]?.id ?? '';
+    const existingSpecimen = specimens[0];
+    const displaySpecimen = isLegacyPathologySpecimen(row, existingSpecimen) ? undefined : existingSpecimen;
+    specimenId.value = displaySpecimen?.id ?? '';
+    lab.specimenType = displaySpecimen?.specimenType ?? '';
+    lab.barcode = displaySpecimen?.barcode ?? buildSpecimenBarcode(row);
     labResultRows.value = (await getLabResults(row.id)).map(item => ({
       itemCode: item.itemCode,
       itemName: item.itemName,
@@ -1189,11 +1249,10 @@ async function select(row: MedicalOrder) {
     }));
     labResultsSaved.value = labResultRows.value.length > 0;
     if (isPathologyItem(row)) {
-      pathology.material = row.bodyPart || '';
       const attachments = await getAttachments(row.id);
       pathologySlides.value = await Promise.all(attachments
         .filter(item => item.contentType?.startsWith('image/'))
-        .map(async (item, index) => {
+        .map(async (item) => {
           let previewUrl = '';
           try {
             previewUrl = URL.createObjectURL(await downloadAttachment(row.id, item.id));
@@ -1202,7 +1261,7 @@ async function select(row: MedicalOrder) {
           }
           return {
             id: item.id,
-            label: item.originalName || `病理切片图 ${index + 1}`,
+            label: '',
             previewUrl,
             attachment: item,
           };
@@ -1210,7 +1269,11 @@ async function select(row: MedicalOrder) {
     }
   }
   await renderLabBarcode();
-  await loadExistingReport(row.id);
+  const existingReport = await loadExistingReport(row.id);
+  if (isPathologyItem(row) && existingReport) {
+    syncPathologyFormFromReport();
+    pathologySaved.value = true;
+  }
   mainTab.value = isPathologyItem(row) ? 'report' : 'work';
 }
 
@@ -1351,10 +1414,19 @@ async function pollAi() {
 async function prepareSpecimen() {
   if (!current.value) return;
   if (isCurrentSamplingDone.value) return;
+  if (!lab.specimenType.trim()) {
+    ElMessage.warning('请填写样本类型');
+    return;
+  }
+  if (!lab.barcode.trim()) lab.barcode = buildSpecimenBarcode(current.value);
+  if (!lab.barcode.trim()) {
+    ElMessage.warning('医嘱缴费并分配诊室后才会生成条码号');
+    return;
+  }
   samplingSubmitting.value = true;
   try {
-  const specimen = await createSpecimen(current.value.id, lab.specimenType, lab.barcode);
-  specimenId.value = specimen.id;
+    const specimen = await createSpecimen(current.value.id, lab.specimenType.trim(), lab.barcode.trim());
+    specimenId.value = specimen.id;
     await transitionSpecimen(specimen.id, 'COLLECTED');
     specimensByOrder.value = { ...specimensByOrder.value, [current.value.id]: [{ ...specimen, status: 'COLLECTED' }] };
     ElMessage.success('采样已完成，样本已送检');
@@ -1387,7 +1459,9 @@ async function importLabExcel(event: Event) {
 
 function updateLabReportDraft() {
   if (!labResultRows.value.length) return;
-  report.findings = `${lab.specimenType}样本，条码号：${lab.barcode}，共导入 ${labResultRows.value.length} 项检验指标。`;
+  const specimenText = lab.specimenType.trim() || '未填写类型';
+  const barcodeText = lab.barcode.trim() || '未填写';
+  report.findings = `${specimenText}样本，条码号：${barcodeText}，共导入 ${labResultRows.value.length} 项检验指标。`;
   const abnormal = labResultRows.value.filter(row => labFlagLabel(row.abnormalFlag) !== '正常');
   report.conclusion = abnormal.length
     ? `异常指标：${abnormal.map(row => `${row.itemName}${labFlagLabel(row.abnormalFlag)}`).join('、')}。`
@@ -1403,6 +1477,17 @@ function labResultContext() {
   return rows.join('\n');
 }
 
+function mapSavedLabResult(item: LaboratoryResultItem): LabResultRow {
+  return {
+    itemCode: item.itemCode,
+    itemName: item.itemName,
+    resultValue: item.resultValue,
+    unit: item.unit,
+    referenceRange: item.referenceRange,
+    abnormalFlag: item.abnormalFlag,
+  };
+}
+
 function reportAiContext() {
   const base = [
     `患者姓名：${current.value?.patientName || ''}`,
@@ -1416,7 +1501,7 @@ function reportAiContext() {
       `送检材料：${pathology.material || '未填写'}`,
       `肉眼所见：${pathology.gross || '未填写'}`,
       `病理诊断：${pathology.diagnosis || '未填写'}`,
-      `光镜照片：${pathologySlides.value.map(slide => slide.label || slide.attachment?.originalName).filter(Boolean).join('、') || '未上传'}`
+      `光镜照片：${pathologySlides.value.length ? `已上传 ${pathologySlides.value.length} 张` : '未上传'}`
     );
   } else if (role.value === 'LAB_DOCTOR') {
     base.push(`检验明细：\n${labResultContext()}`);
@@ -1481,7 +1566,7 @@ async function uploadPathologySlides(event: Event) {
         const attachment = await uploadAttachment(current.value.id, file);
         pathologySlides.value.push({
           id: attachment.id,
-          label: file.name.replace(/\.[^.]+$/, '') || `光镜照片 ${pathologySlides.value.length + 1}`,
+          label: '',
           previewUrl,
           attachment,
         });
@@ -1509,11 +1594,10 @@ function updatePathologyReportDraft() {
     `送检材料：${pathology.material || '—'}`,
     `肉眼所见：${pathology.gross || '—'}`,
     pathologySlides.value.length
-      ? `光镜照片：${pathologySlides.value.map(slide => slide.label || slide.attachment?.originalName || '光镜照片').join('、')}`
+      ? `光镜照片：已上传 ${pathologySlides.value.length} 张`
       : '光镜照片：未上传',
   ].join('\n');
   report.conclusion = pathology.diagnosis;
-  report.advice = '';
 }
 
 async function savePathology() {
@@ -1536,11 +1620,27 @@ async function savePathology() {
 
 async function generateAiDraft() {
   if (!current.value) return;
-  if (role.value === 'LAB_DOCTOR' && isPathologyOrder.value) updatePathologyReportDraft();
-  else if (role.value === 'LAB_DOCTOR' && labResultRows.value.length) updateLabReportDraft();
-  if (role.value === 'LAB_DOCTOR' && !isPathologyOrder.value && !labResultRows.value.length) {
-    ElMessage.warning('请先导入真实检验结果后再生成 AI 建议');
-    return;
+  if (role.value === 'LAB_DOCTOR' && isPathologyOrder.value) {
+    if (!pathologySaved.value) {
+      ElMessage.warning('请先保存病理结果，再生成 AI 后续建议');
+      return;
+    }
+    await loadExistingReport(current.value.id);
+    syncPathologyFormFromReport();
+  } else if (role.value === 'LAB_DOCTOR') {
+    if (!labResultsSaved.value) {
+      ElMessage.warning('请先登记并保存真实检验结果后再生成 AI 建议');
+      return;
+    }
+    const savedResults = await getLabResults(current.value.id);
+    if (!savedResults.length) {
+      labResultsSaved.value = false;
+      labResultRows.value = [];
+      ElMessage.warning('后端尚未保存检验结果，请先保存后再生成 AI 建议');
+      return;
+    }
+    labResultRows.value = savedResults.map(mapSavedLabResult);
+    updateLabReportDraft();
   }
   const draft = await createAiReportDraft({
     orderId: current.value.id,
@@ -1567,7 +1667,7 @@ async function generateAiDraft() {
     ].filter(m => m.content);
   }
   await saveReportDraft(current.value.id, report);
-  ElMessage.success(role.value === 'LAB_DOCTOR' ? 'AI 后续建议已基于当前报告数据生成' : 'AI 报告草稿已生成并保存');
+  ElMessage.success(role.value === 'LAB_DOCTOR' ? 'AI 后续建议已基于已保存的真实数据生成' : 'AI 报告草稿已生成并保存');
   mainTab.value = 'report';
 }
 
@@ -1633,6 +1733,7 @@ watch(() => lab.barcode, () => {
 });
 
 watch(() => [pathology.material, pathology.gross, pathology.diagnosis], () => {
+  if (syncingPathologyForm) return;
   if (isPathologyOrder.value) pathologySaved.value = false;
 });
 
@@ -2198,9 +2299,11 @@ onMounted(async () => {
   margin-bottom: 8px;
 }
 .lab-field { display: flex; flex-direction: column; gap: 4px; min-width: 140px; }
+.lab-field :deep(.el-select) { width: 100%; }
+.lab-field--barcode { min-width: 260px; }
 .lab-field label { font-size: 12px; color: #6b7280; }
 .lab-qr-card {
-  width: 190px;
+  width: 280px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2222,7 +2325,7 @@ onMounted(async () => {
   display: block;
 }
 .lab-qr-card img { width: 112px; height: 112px; display: block; }
-.lab-qr-card span { font-size: 11px; color: #64748b; word-break: break-all; text-align: center; }
+.lab-qr-card span { font-size: 11px; color: #64748b; overflow-wrap: anywhere; text-align: center; line-height: 1.25; }
 .lab-qr-card__empty {
   width: 112px;
   height: 112px;

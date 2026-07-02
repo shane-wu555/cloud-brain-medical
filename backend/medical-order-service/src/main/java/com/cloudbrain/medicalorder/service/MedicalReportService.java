@@ -140,7 +140,6 @@ public class MedicalReportService {
         }
         String finalPatientId = scopedPatientId;
         return reports.reports().stream().filter(r -> {
-            if ("DISPOSAL".equals(r.reportType())) return false;
             MedicalOrder o = order(r.medicalOrderId());
             if ("PATIENT".equals(role)) return "CONFIRMED".equals(r.status()) && o.patientId().equals(finalPatientId);
             if ("OUTPATIENT_DOCTOR".equals(role)) return "CONFIRMED".equals(r.status()) && o.orderingDoctorId().equals(actor);

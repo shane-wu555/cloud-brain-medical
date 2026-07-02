@@ -13,6 +13,7 @@ from typing import Any
 from .preprocessing import download_and_load, volume_to_slices
 from .classifier    import classify_volume
 from .detector      import detect_volume, top_abnormal_slices
+from .metal_classifier import classify_metal_artifact
 
 log = logging.getLogger(__name__)
 
@@ -69,6 +70,24 @@ def _bbox_to_location(detections: list[dict]) -> tuple[str, str]:
     return f"{h_pos}{v_pos}", size
 
 
+def _metal_report_text(metal_result: dict) -> tuple[str, str]:
+    if not metal_result.get("enabled"):
+        return "", ""
+
+    label = metal_result.get("label", "unknown")
+    label_cn = metal_result.get("labelCn", "金属伪影评估未知")
+    confidence = float(metal_result.get("confidence", 0.0))
+    finding = f"金属伪影评估：{label_cn}（AI置信度 {confidence:.0%}）。"
+
+    if label in {"moderate_metal", "severe_metal"}:
+        advice = "图像存在较明显金属伪影，相关区域诊断可信度可能下降，建议结合原始薄层图像或必要时复查。"
+    elif label == "small_metal":
+        advice = "图像存在轻度金属伪影，建议阅片时关注邻近高密度区域。"
+    else:
+        advice = "未见明显影响诊断的金属伪影。"
+    return finding, advice
+
+
 def run(object_key: str, order_id: str, clinical_context: str = "") -> dict[str, Any]:
     """
     完整推理流程入口。
@@ -90,6 +109,7 @@ def run(object_key: str, order_id: str, clinical_context: str = "") -> dict[str,
     label       = clf_result["label"]
     confidence  = clf_result["confidence"]
     slice_probs = clf_result["slice_probs"]
+    metal_result = classify_metal_artifact(slices)
     log.info(f"[CT推理] 分类结果: {label} ({confidence:.2%})")
 
     # ── 3. 检测（仅异常时）────────────────────────────────
@@ -110,6 +130,11 @@ def run(object_key: str, order_id: str, clinical_context: str = "") -> dict[str,
     )
     conclusion = CONCLUSION_TEMPLATE[label].format(confidence=confidence)
     risk_advice = RISK_ADVICE[label]
+    metal_finding, metal_advice = _metal_report_text(metal_result)
+    if metal_finding:
+        findings = f"{findings} {metal_finding}"
+    if metal_advice:
+        risk_advice = f"{risk_advice} {metal_advice}"
 
     if clinical_context:
         risk_advice += f"  临床背景：{clinical_context}"
@@ -120,6 +145,7 @@ def run(object_key: str, order_id: str, clinical_context: str = "") -> dict[str,
         "riskAdvice":     risk_advice,
         "confidence":     confidence,
         "label":          label,
+        "metalArtifact":  metal_result,
         "abnormalRegions": detections,
         "modelVersion":   model_version,
     }

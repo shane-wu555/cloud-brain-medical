@@ -24,6 +24,11 @@ export interface MedicalOrder {
   triageReasons?: string;
   missedCount: number;
   resultSummary?: string;
+  resultConfirmedBy?: string;
+  resultConfirmedAt?: string;
+  createdAt?: string;
+  startedAt?: string;
+  completedAt?: string;
 }
 
 export interface MedicalReport {

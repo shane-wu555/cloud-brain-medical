@@ -170,7 +170,7 @@ public class MedicalRecordRepository {
                     visit_date, ai_triage_summary, status, updated_at)
                 values (?, ?::uuid, ?::uuid, ?,
                         ?, ?, ?,
-                        ?, ?, 'DRAFT', now())
+                        ?::date, ?, 'DRAFT', now())
                 on conflict (appointment_id) do nothing
                 """,
                 record.getId(), record.getAppointmentId(), record.getPatientId(), record.getPatientName(),
