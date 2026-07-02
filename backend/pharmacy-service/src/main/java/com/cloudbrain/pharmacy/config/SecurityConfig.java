@@ -2,7 +2,6 @@ package com.cloudbrain.pharmacy.config;
 
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
-import java.util.ArrayList;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -34,12 +33,7 @@ public class SecurityConfig {
         JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
         converter.setJwtGrantedAuthoritiesConverter(jwt -> {
             String role = jwt.getClaimAsString("role");
-            List<GrantedAuthority> authorities = new ArrayList<>();
-            authorities.add(new SimpleGrantedAuthority("ROLE_" + role));
-            if ("PHARMACY_STAFF".equals(role)) {
-                authorities.add(new SimpleGrantedAuthority("ROLE_PHARMACY_DOCTOR"));
-            }
-            return authorities;
+            return List.<GrantedAuthority>of(new SimpleGrantedAuthority("ROLE_" + role));
         });
         return converter;
     }

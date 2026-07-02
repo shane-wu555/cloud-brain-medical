@@ -8,7 +8,6 @@ export type Role =
   | 'LAB_DOCTOR'
   | 'DISPOSAL_DOCTOR'
   | 'PHARMACY_STAFF'
-  | 'PHARMACY_DOCTOR'
   | 'ADMIN';
 
 export interface CurrentUser {
@@ -32,7 +31,7 @@ export const useAuthStore = defineStore('auth', {
       if (state.user?.role === 'CHECK_DOCTOR') return '/doctor/check';
       if (state.user?.role === 'LAB_DOCTOR') return '/doctor/lab';
       if (state.user?.role === 'DISPOSAL_DOCTOR') return '/doctor/disposal';
-      if (state.user?.role === 'PHARMACY_STAFF' || state.user?.role === 'PHARMACY_DOCTOR') return '/doctor/pharmacy';
+      if (state.user?.role === 'PHARMACY_STAFF') return '/doctor/pharmacy';
       if (state.user?.role === 'CASHIER') return '/cashier';
       if (state.user?.role === 'ADMIN') return '/admin';
       return '/login';

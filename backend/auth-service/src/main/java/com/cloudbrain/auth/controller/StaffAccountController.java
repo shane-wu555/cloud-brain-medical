@@ -99,9 +99,6 @@ public class StaffAccountController {
 
     private String normalizeRole(String role) {
         String normalized = role == null ? "OUTPATIENT_DOCTOR" : role.trim().toUpperCase();
-        if ("PHARMACY_DOCTOR".equals(normalized)) {
-            normalized = "PHARMACY_STAFF";
-        }
         if (!MANAGED_ROLES.contains(normalized)) {
             throw new IllegalArgumentException("不支持管理该员工角色");
         }

@@ -820,8 +820,7 @@ const roleLabels: Record<string, string> = {
   CHECK_DOCTOR: '检查医生',
   LAB_DOCTOR: '检验医生',
   DISPOSAL_DOCTOR: '处置医生',
-  PHARMACY_STAFF: '药房工作人员',
-  PHARMACY_DOCTOR: '药房医生'
+  PHARMACY_STAFF: '药房工作人员'
 };
 
 const accountRoleOptions = [
