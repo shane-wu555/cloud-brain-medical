@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -60,6 +61,14 @@ class AppointmentServiceTest {
         assertThatThrownBy(() -> service.lockOnline(request())).isInstanceOf(IllegalStateException.class);
         when(slots.bookOffline("schedule-slot-0800")).thenReturn(false);
         assertThatThrownBy(() -> service.createOffline(request())).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test void offlineRegistrationRecordsRequestedRegistrationFee() {
+        when(slots.bookOffline("schedule-slot-0800")).thenReturn(true);
+
+        service.createOffline(request(new BigDecimal("40.00")));
+
+        verify(events).enqueuePayment(any(Appointment.class), eq(new BigDecimal("40.00")), eq("cashier"));
     }
 
     @Test void samePatientCannotBookSameStartTimeTwice() {
@@ -122,8 +131,12 @@ class AppointmentServiceTest {
     }
 
     private AppointmentController.CreateAppointmentRequest request() {
+        return request(null);
+    }
+
+    private AppointmentController.CreateAppointmentRequest request(BigDecimal registrationFee) {
         return new AppointmentController.CreateAppointmentRequest("schedule-slot-0800", "patient", "Patient",
                 "doctor", "Doctor", "dept", "Department", LocalDate.now().plusDays(1).toString(),
-                "上午", "08:00", null, "LOW", null);
+                "上午", "08:00", null, "LOW", null, registrationFee);
     }
 }

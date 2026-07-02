@@ -1,137 +1,586 @@
 <template>
-  <main class="page">
-    <div class="workspace">
-      <header class="topbar">
-        <div>
-          <p class="eyebrow">药房医生工作台</p>
-          <h1>处方发药与库存</h1>
-          <p class="muted">仅已缴费处方进入待发药队列，发药和退药都会生成库存流水。</p>
+  <div class="pharmacy-wks">
+    <header class="pharmacy-nav">
+      <div class="pharmacy-nav__brand">
+        <span class="pharmacy-nav__logo">+</span>
+        <span class="pharmacy-nav__title">药房工作台</span>
+      </div>
+      <div class="pharmacy-nav__right">
+        <span>{{ auth.user?.name }} 药房人员</span>
+        <span>{{ today }} {{ dayOfWeek }}</span>
+        <el-button size="small" text class="nav-logout" @click="logout">退出</el-button>
+      </div>
+    </header>
+
+    <div class="pharmacy-body">
+      <aside class="pharmacy-sidebar">
+        <div class="sidebar-hdr">
+          <span>功能导航</span>
         </div>
-        <el-button @click="logout">退出</el-button>
-      </header>
+        <button
+          v-for="item in navItems"
+          :key="item.key"
+          :class="['nav-item', currentPage === item.key && 'nav-item--active']"
+          @click="currentPage = item.key"
+        >
+          <span>{{ item.label }}</span>
+          <em v-if="item.badge">{{ item.badge }}</em>
+        </button>
+        <div class="sidebar-footer">
+          <span>待发药 {{ waitingPrescriptions.length }}</span>
+          <span>已发药 {{ dispensedPrescriptions.length }}</span>
+        </div>
+      </aside>
 
-      <section class="grid">
-        <el-card class="span-8" shadow="never">
-          <template #header>
-            <div class="card-header">
-              <span>待处理处方</span>
-              <el-segmented v-model="status" :options="statusOptions" @change="loadPrescriptions" />
+      <main class="pharmacy-main">
+        <section v-show="currentPage === 'dispense'" class="work-page">
+          <div class="page-head">
+            <div>
+              <h1>处方发药</h1>
             </div>
-          </template>
-          <el-table :data="prescriptions" highlight-current-row @current-change="selected = $event">
-            <el-table-column prop="prescriptionNo" label="处方号" width="150" />
-            <el-table-column prop="patientName" label="患者" width="100" />
-            <el-table-column prop="diagnosis" label="诊断" />
-            <el-table-column prop="totalAmount" label="金额" width="90" />
-            <el-table-column prop="status" label="状态" width="130" />
-            <el-table-column label="操作" width="170">
-              <template #default="{ row }">
-                <el-button v-if="row.status === 'WAITING_DISPENSE'" type="primary" link @click.stop="dispense(row.id)">发药</el-button>
-                <el-button v-if="row.status === 'DISPENSED'" type="warning" link @click.stop="openReturn(row)">退药</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-        </el-card>
-
-        <el-card class="span-4" shadow="never">
-          <template #header>处方明细</template>
-          <el-empty v-if="!selected" description="请选择一张处方" :image-size="72" />
-          <div v-else class="detail">
-            <h3>{{ selected.patientName }} · {{ selected.prescriptionNo }}</h3>
-            <p class="muted">{{ selected.diagnosis }}</p>
-            <el-table :data="selected.items">
-              <el-table-column prop="drugName" label="药品" />
-              <el-table-column prop="quantity" label="数量" width="70" />
-              <el-table-column prop="usage" label="用法" width="90" />
-              <el-table-column prop="frequency" label="频次" width="100" />
-            </el-table>
+            <el-button :loading="loadingPrescriptions" @click="loadPrescriptions">刷新</el-button>
           </div>
-        </el-card>
 
-        <el-card class="span-12" shadow="never">
-          <template #header>
-            <div class="card-header">
-              <span>药品库存</span>
-              <el-input v-model="drugKeyword" clearable placeholder="搜索药品" style="width:260px" @change="loadDrugs" />
+          <div class="query-bar">
+            <el-input
+              v-model="prescriptionSearch.patientName"
+              clearable
+              placeholder="患者姓名"
+              @keyup.enter="applyPrescriptionSearch"
+            />
+            <el-input
+              v-model="prescriptionSearch.prescriptionNo"
+              clearable
+              placeholder="处方号"
+              @keyup.enter="applyPrescriptionSearch"
+            />
+            <el-button type="primary" @click="applyPrescriptionSearch">搜索</el-button>
+            <el-button @click="resetPrescriptionSearch">重置</el-button>
+          </div>
+
+          <div class="dispense-layout">
+            <div class="prescription-lists">
+              <section class="work-card">
+                <div class="card-head">
+                  <div>
+                    <h2>待发药处方</h2>
+                    <p>共 {{ filteredWaitingPrescriptions.length }} 张</p>
+                  </div>
+                </div>
+                <el-table
+                  v-loading="loadingPrescriptions"
+                  :data="filteredWaitingPrescriptions"
+                  row-key="id"
+                  highlight-current-row
+                  empty-text="暂无待发药处方"
+                >
+                  <el-table-column prop="prescriptionNo" label="处方号" min-width="150" />
+                  <el-table-column prop="patientName" label="患者" min-width="110" />
+                  <el-table-column prop="diagnosis" label="诊断" min-width="180" show-overflow-tooltip />
+                  <el-table-column label="开方时间" min-width="160">
+                    <template #default="{ row }">{{ formatDateTime(row.createdAt) }}</template>
+                  </el-table-column>
+                  <el-table-column label="金额" width="100" align="right">
+                    <template #default="{ row }">¥{{ amountText(row.totalAmount) }}</template>
+                  </el-table-column>
+                  <el-table-column label="操作" width="170" fixed="right">
+                    <template #default="{ row }">
+                      <el-button type="primary" link @click="showDetail(row)">处方明细</el-button>
+                      <el-button type="success" link :loading="dispensingId === row.id" @click="dispense(row.id)">发药</el-button>
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </section>
+
+              <section class="work-card">
+                <div class="card-head">
+                  <div>
+                    <h2>已发药处方</h2>
+                    <p>共 {{ filteredDispensedPrescriptions.length }} 张</p>
+                  </div>
+                </div>
+                <el-table
+                  v-loading="loadingPrescriptions"
+                  :data="filteredDispensedPrescriptions"
+                  row-key="id"
+                  highlight-current-row
+                  empty-text="暂无已发药处方"
+                >
+                  <el-table-column prop="prescriptionNo" label="处方号" min-width="150" />
+                  <el-table-column prop="patientName" label="患者" min-width="110" />
+                  <el-table-column prop="diagnosis" label="诊断" min-width="180" show-overflow-tooltip />
+                  <el-table-column label="发药时间" min-width="160">
+                    <template #default="{ row }">{{ formatDateTime(row.dispensedAt) }}</template>
+                  </el-table-column>
+                  <el-table-column label="金额" width="100" align="right">
+                    <template #default="{ row }">¥{{ amountText(row.totalAmount) }}</template>
+                  </el-table-column>
+                  <el-table-column label="操作" width="110" fixed="right">
+                    <template #default="{ row }">
+                      <el-button type="primary" link @click="showDetail(row)">处方明细</el-button>
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </section>
             </div>
-          </template>
-          <el-table :data="drugs">
-            <el-table-column prop="drugCode" label="编码" width="120" />
-            <el-table-column prop="drugName" label="药品" />
-            <el-table-column prop="specification" label="规格" width="140" />
-            <el-table-column prop="unitPrice" label="单价" width="90" />
-            <el-table-column prop="quantity" label="库存" width="90" />
-            <el-table-column label="预警" width="90">
-              <template #default="{ row }">
-                <el-tag :type="row.quantity <= row.warningThreshold ? 'danger' : 'success'" effect="plain">
-                  {{ row.quantity <= row.warningThreshold ? '偏低' : '正常' }}
-                </el-tag>
-              </template>
-            </el-table-column>
-          </el-table>
-        </el-card>
-      </section>
-    </div>
 
-    <el-dialog v-model="returnVisible" title="退药" width="420px">
-      <el-input v-model="returnReason" type="textarea" :rows="3" placeholder="退药原因" />
-      <template #footer>
-        <el-button @click="returnVisible = false">取消</el-button>
-        <el-button type="primary" @click="submitReturn">确认退药</el-button>
-      </template>
-    </el-dialog>
-  </main>
+            <aside class="detail-panel">
+              <div class="detail-panel__head">
+                <h2>处方明细</h2>
+                <el-tag v-if="selected" :type="prescriptionTagType(selected.status)" effect="plain">
+                  {{ prescriptionStatusLabel(selected.status) }}
+                </el-tag>
+              </div>
+              <el-empty v-if="!selected" description="点击处方明细查看药品" :image-size="86" />
+              <template v-else>
+                <div class="rx-summary">
+                  <strong>{{ selected.patientName || '-' }}</strong>
+                  <span>{{ selected.prescriptionNo }}</span>
+                  <em>{{ selected.diagnosis || '未填写诊断' }}</em>
+                </div>
+                <div class="detail-meta">
+                  <span>开方时间</span><strong>{{ formatDateTime(selected.createdAt) }}</strong>
+                  <span>发药时间</span><strong>{{ formatDateTime(selected.dispensedAt) }}</strong>
+                  <span>总金额</span><strong>¥{{ amountText(selected.totalAmount) }}</strong>
+                </div>
+                <el-table :data="selected.items" size="small" empty-text="暂无药品明细">
+                  <el-table-column prop="drugName" label="药品" min-width="130" show-overflow-tooltip />
+                  <el-table-column prop="quantity" label="数量" width="70" />
+                  <el-table-column label="单价" width="90" align="right">
+                    <template #default="{ row }">¥{{ amountText(row.unitPrice) }}</template>
+                  </el-table-column>
+                </el-table>
+              </template>
+            </aside>
+          </div>
+        </section>
+
+        <section v-show="currentPage === 'returns'" class="work-page">
+          <div class="page-head">
+            <div>
+              <h1>退药管理</h1>
+            </div>
+            <el-button :loading="loadingReturns" @click="loadReturns">刷新</el-button>
+          </div>
+
+          <div class="query-bar">
+            <el-input
+              v-model="returnSearch.patientName"
+              clearable
+              placeholder="患者姓名"
+              @keyup.enter="applyReturnSearch"
+            />
+            <el-input
+              v-model="returnSearch.prescriptionNo"
+              clearable
+              placeholder="处方号"
+              @keyup.enter="applyReturnSearch"
+            />
+            <el-input
+              v-model="returnSearch.returnNo"
+              clearable
+              placeholder="退药单号"
+              @keyup.enter="applyReturnSearch"
+            />
+            <el-button type="primary" @click="applyReturnSearch">搜索</el-button>
+            <el-button @click="resetReturnSearch">重置</el-button>
+            <el-segmented v-model="returnStatus" :options="returnStatusOptions" @change="loadReturns" />
+          </div>
+
+          <div class="return-layout">
+            <section class="work-card">
+              <el-table v-loading="loadingReturns" :data="filteredDrugReturns" row-key="id" empty-text="暂无退药单">
+                <el-table-column prop="returnNo" label="退药单号" min-width="150" />
+                <el-table-column prop="prescriptionNo" label="处方号" min-width="150" />
+                <el-table-column prop="patientName" label="患者" min-width="110" />
+                <el-table-column label="金额" width="110" align="right">
+                  <template #default="{ row }">¥{{ amountText(row.totalAmount) }}</template>
+                </el-table-column>
+                <el-table-column label="状态" width="130">
+                  <template #default="{ row }">
+                    <el-tag :type="returnStatusType(row.status)" effect="plain">{{ returnStatusLabel(row.status) }}</el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column label="操作" width="180" fixed="right">
+                  <template #default="{ row }">
+                    <el-button type="primary" link @click="showReturnPrescriptionDetail(row)">处方明细</el-button>
+                    <el-button type="warning" link @click="showReturnDetail(row)">退药明细</el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </section>
+
+            <aside class="detail-panel">
+              <div class="detail-panel__head">
+                <h2>{{ returnDetailTitle }}</h2>
+                <el-tag v-if="selectedReturn" :type="returnStatusType(selectedReturn.status)" effect="plain">
+                  {{ returnStatusLabel(selectedReturn.status) }}
+                </el-tag>
+              </div>
+              <el-empty v-if="!selectedReturn" description="点击明细按钮查看详情" :image-size="86" />
+              <template v-else-if="returnDetailMode === 'prescription'">
+                <div class="rx-summary">
+                  <strong>{{ selectedReturn.patientName || '-' }}</strong>
+                  <span>{{ selectedReturn.prescriptionNo }}</span>
+                  <em>退药单 {{ selectedReturn.returnNo }}</em>
+                </div>
+                <div class="detail-meta">
+                  <span>退药状态</span><strong>{{ returnStatusLabel(selectedReturn.status) }}</strong>
+                  <span>退药金额</span><strong>¥{{ amountText(selectedReturn.totalAmount) }}</strong>
+                  <span>申请时间</span><strong>{{ formatDateTime(selectedReturn.createdAt) }}</strong>
+                </div>
+                <el-table :data="selectedReturn.items" size="small" empty-text="暂无处方药品明细">
+                  <el-table-column prop="drugName" label="药品" min-width="130" show-overflow-tooltip />
+                  <el-table-column prop="quantity" label="数量" width="70" />
+                  <el-table-column label="单价" width="90" align="right">
+                    <template #default="{ row }">¥{{ amountText(row.unitPrice) }}</template>
+                  </el-table-column>
+                  <el-table-column label="金额" width="90" align="right">
+                    <template #default="{ row }">¥{{ amountText(row.amount) }}</template>
+                  </el-table-column>
+                </el-table>
+              </template>
+              <template v-else>
+                <div class="rx-summary">
+                  <strong>{{ selectedReturn.patientName || '-' }}</strong>
+                  <span>{{ selectedReturn.returnNo }}</span>
+                  <em>{{ selectedReturn.prescriptionNo }}</em>
+                </div>
+                <div class="detail-meta">
+                  <span>意见类型</span><strong>{{ selectedReturn.opinionTemplate || '-' }}</strong>
+                  <span>申请时间</span><strong>{{ formatDateTime(selectedReturn.createdAt) }}</strong>
+                  <template v-if="selectedReturn.status === 'RETURN_REFUNDED'">
+                    <span>退费收银员</span><strong>{{ selectedReturn.cashierId || '-' }}</strong>
+                    <span>退费时间</span><strong>{{ formatDateTime(selectedReturn.completedAt) }}</strong>
+                  </template>
+                </div>
+                <div class="opinion-block">
+                  <span>医生退药意见</span>
+                  <p>{{ selectedReturn.doctorOpinion || '-' }}</p>
+                </div>
+                <div v-if="selectedReturn.pharmacistOpinion" class="opinion-block">
+                  <span>药房意见</span>
+                  <p>{{ selectedReturn.pharmacistOpinion }}</p>
+                </div>
+              </template>
+            </aside>
+          </div>
+        </section>
+
+        <section v-show="currentPage === 'inventory'" class="work-page">
+          <div class="page-head">
+            <div>
+              <h1>药品库存管理</h1>
+            </div>
+            <el-button :loading="loadingDrugs" @click="loadDrugs">刷新</el-button>
+          </div>
+
+          <div class="query-bar">
+            <el-input v-model="drugKeyword" clearable placeholder="药品名称或编码" @keyup.enter="loadDrugs" @clear="loadDrugs" />
+            <el-button type="primary" :loading="loadingDrugs" @click="loadDrugs">搜索</el-button>
+            <el-button @click="resetDrugSearch">重置</el-button>
+          </div>
+
+          <section class="work-card">
+            <el-table v-loading="loadingDrugs" :data="drugs" row-key="id" empty-text="暂无药品">
+              <el-table-column prop="drugCode" label="编码" min-width="120" />
+              <el-table-column prop="drugName" label="药品" min-width="180" />
+              <el-table-column prop="specification" label="规格" min-width="140" />
+              <el-table-column prop="unit" label="单位" width="90" />
+              <el-table-column label="单价" width="100" align="right">
+                <template #default="{ row }">¥{{ amountText(row.unitPrice) }}</template>
+              </el-table-column>
+              <el-table-column prop="quantity" label="库存" width="90" />
+              <el-table-column prop="warningThreshold" label="预警阈值" width="100" />
+              <el-table-column label="预警" width="100">
+                <template #default="{ row }">
+                  <el-tag :type="row.quantity <= row.warningThreshold ? 'danger' : 'success'" effect="plain">
+                    {{ row.quantity <= row.warningThreshold ? '偏低' : '正常' }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+            </el-table>
+          </section>
+        </section>
+      </main>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { useAuthStore } from '../../store/auth';
-import { dispensePrescription, getDrugs, getPrescriptions, returnPrescription, type Drug, type Prescription } from '../../api/pharmacy';
+import {
+  dispensePrescription,
+  getDrugReturns,
+  getDrugs,
+  getPrescriptions,
+  type Drug,
+  type DrugReturnOrder,
+  type Prescription
+} from '../../api/pharmacy';
+
+type PageKey = 'dispense' | 'returns' | 'inventory';
 
 const router = useRouter();
 const auth = useAuthStore();
-const statusOptions = [
-  { label: '待发药', value: 'WAITING_DISPENSE' },
-  { label: '已发药', value: 'DISPENSED' },
-  { label: '已退药', value: 'RETURNED' }
-];
-const status = ref('WAITING_DISPENSE');
-const prescriptions = ref<Prescription[]>([]);
+
+const currentPage = ref<PageKey>('dispense');
+const waitingPrescriptions = ref<Prescription[]>([]);
+const dispensedPrescriptions = ref<Prescription[]>([]);
 const selected = ref<Prescription>();
+const selectedReturn = ref<DrugReturnOrder>();
+const returnDetailMode = ref<'prescription' | 'return'>('prescription');
+const drugReturns = ref<DrugReturnOrder[]>([]);
 const drugs = ref<Drug[]>([]);
+const returnStatus = ref('RETURN_PENDING_REFUND');
 const drugKeyword = ref('');
-const returnVisible = ref(false);
-const returnReason = ref('患者退药');
-const returning = ref<Prescription>();
+const loadingPrescriptions = ref(false);
+const loadingReturns = ref(false);
+const loadingDrugs = ref(false);
+const dispensingId = ref('');
+const authRedirecting = ref(false);
+
+const prescriptionSearch = reactive({
+  patientName: '',
+  prescriptionNo: ''
+});
+const activePrescriptionSearch = reactive({
+  patientName: '',
+  prescriptionNo: ''
+});
+const returnSearch = reactive({
+  patientName: '',
+  prescriptionNo: '',
+  returnNo: ''
+});
+const activeReturnSearch = reactive({
+  patientName: '',
+  prescriptionNo: '',
+  returnNo: ''
+});
+
+const returnStatusOptions = [
+  { label: '未缴费（已退药）', value: 'RETURNED' },
+  { label: '未退费（已退药）', value: 'RETURN_PENDING_REFUND' },
+  { label: '已退费（已退药）', value: 'RETURN_REFUNDED' }
+];
+
+const navItems = computed(() => [
+  { key: 'dispense' as const, label: '处方发药', badge: waitingPrescriptions.value.length || '' },
+  { key: 'returns' as const, label: '退药管理', badge: drugReturns.value.length || '' },
+  { key: 'inventory' as const, label: '药品库存管理', badge: lowStockCount.value || '' }
+]);
+
+const lowStockCount = computed(() => drugs.value.filter((item) => item.quantity <= item.warningThreshold).length);
+
+const filteredWaitingPrescriptions = computed(() => filterPrescriptions(waitingPrescriptions.value));
+const filteredDispensedPrescriptions = computed(() => filterPrescriptions(dispensedPrescriptions.value));
+const filteredDrugReturns = computed(() => filterReturns(drugReturns.value));
+const returnDetailTitle = computed(() => (returnDetailMode.value === 'prescription' ? '处方明细' : '退药明细'));
+
+const today = computed(() => new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }));
+const dayOfWeek = computed(() => ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][new Date().getDay()]);
 
 async function loadPrescriptions() {
-  prescriptions.value = await getPrescriptions({ status: status.value });
+  loadingPrescriptions.value = true;
+  try {
+    const all = await getPrescriptions();
+    const waiting = all.filter((item) => item.status === 'WAITING_DISPENSE');
+    const dispensed = all.filter((item) => item.status === 'DISPENSED' || Boolean(item.dispensedAt));
+    waitingPrescriptions.value = [...waiting].sort((left, right) => timeValue(left.createdAt) - timeValue(right.createdAt));
+    dispensedPrescriptions.value = [...dispensed].sort((left, right) => timeValue(right.dispensedAt || right.createdAt) - timeValue(left.dispensedAt || left.createdAt));
+    if (selected.value) {
+      selected.value = [...waitingPrescriptions.value, ...dispensedPrescriptions.value].find((item) => item.id === selected.value?.id);
+    }
+  } catch (error) {
+    handleRequestFailure(error, '处方加载失败');
+  } finally {
+    loadingPrescriptions.value = false;
+  }
+}
+
+async function loadReturns() {
+  loadingReturns.value = true;
+  try {
+    drugReturns.value = await getDrugReturns({ status: returnStatus.value });
+  } catch (error) {
+    handleRequestFailure(error, '退药记录加载失败');
+  } finally {
+    loadingReturns.value = false;
+  }
 }
 
 async function loadDrugs() {
-  drugs.value = await getDrugs(drugKeyword.value);
+  loadingDrugs.value = true;
+  try {
+    drugs.value = await getDrugs(drugKeyword.value.trim());
+  } catch (error) {
+    handleRequestFailure(error, '药品库存加载失败');
+  } finally {
+    loadingDrugs.value = false;
+  }
 }
 
 async function dispense(id: string) {
-  selected.value = await dispensePrescription(id);
-  ElMessage.success('发药完成，库存已扣减');
-  await Promise.all([loadPrescriptions(), loadDrugs()]);
+  dispensingId.value = id;
+  try {
+    selected.value = await dispensePrescription(id);
+    ElMessage.success('发药完成，库存已扣减');
+    await Promise.all([loadPrescriptions(), loadDrugs()]);
+  } catch (error) {
+    handleRequestFailure(error, '发药失败');
+  } finally {
+    dispensingId.value = '';
+  }
 }
 
-function openReturn(row: Prescription) {
-  returning.value = row;
-  returnReason.value = '患者退药';
-  returnVisible.value = true;
+function showDetail(row: Prescription) {
+  selected.value = row;
 }
 
-async function submitReturn() {
-  if (!returning.value) return;
-  selected.value = await returnPrescription(returning.value.id, returnReason.value);
-  returnVisible.value = false;
-  ElMessage.success('退药完成，库存已回补');
-  await Promise.all([loadPrescriptions(), loadDrugs()]);
+function showReturnPrescriptionDetail(row: DrugReturnOrder) {
+  selectedReturn.value = row;
+  returnDetailMode.value = 'prescription';
+}
+
+function showReturnDetail(row: DrugReturnOrder) {
+  selectedReturn.value = row;
+  returnDetailMode.value = 'return';
+}
+
+function applyPrescriptionSearch() {
+  activePrescriptionSearch.patientName = prescriptionSearch.patientName.trim();
+  activePrescriptionSearch.prescriptionNo = prescriptionSearch.prescriptionNo.trim();
+}
+
+function resetPrescriptionSearch() {
+  prescriptionSearch.patientName = '';
+  prescriptionSearch.prescriptionNo = '';
+  activePrescriptionSearch.patientName = '';
+  activePrescriptionSearch.prescriptionNo = '';
+}
+
+function applyReturnSearch() {
+  activeReturnSearch.patientName = returnSearch.patientName.trim();
+  activeReturnSearch.prescriptionNo = returnSearch.prescriptionNo.trim();
+  activeReturnSearch.returnNo = returnSearch.returnNo.trim();
+}
+
+function resetReturnSearch() {
+  returnSearch.patientName = '';
+  returnSearch.prescriptionNo = '';
+  returnSearch.returnNo = '';
+  activeReturnSearch.patientName = '';
+  activeReturnSearch.prescriptionNo = '';
+  activeReturnSearch.returnNo = '';
+}
+
+function resetDrugSearch() {
+  drugKeyword.value = '';
+  loadDrugs();
+}
+
+function filterPrescriptions(items: Prescription[]) {
+  const patientName = activePrescriptionSearch.patientName.toLowerCase();
+  const prescriptionNo = activePrescriptionSearch.prescriptionNo.toLowerCase();
+  return items.filter((item) => {
+    const matchesPatient = !patientName || (item.patientName ?? '').toLowerCase().includes(patientName);
+    const matchesNo = !prescriptionNo || item.prescriptionNo.toLowerCase().includes(prescriptionNo);
+    return matchesPatient && matchesNo;
+  });
+}
+
+function filterReturns(items: DrugReturnOrder[]) {
+  const patientName = activeReturnSearch.patientName.toLowerCase();
+  const prescriptionNo = activeReturnSearch.prescriptionNo.toLowerCase();
+  const returnNo = activeReturnSearch.returnNo.toLowerCase();
+  return items.filter((item) => {
+    const matchesPatient = !patientName || item.patientName.toLowerCase().includes(patientName);
+    const matchesPrescriptionNo = !prescriptionNo || item.prescriptionNo.toLowerCase().includes(prescriptionNo);
+    const matchesReturnNo = !returnNo || item.returnNo.toLowerCase().includes(returnNo);
+    return matchesPatient && matchesPrescriptionNo && matchesReturnNo;
+  });
+}
+
+function prescriptionStatusLabel(value: string) {
+  return {
+    WAITING_DISPENSE: '待发药',
+    DISPENSED: '已发药',
+    RETURNED: '未缴费（已退药）',
+    RETURN_PENDING_REFUND: '未退费（已退药）',
+    RETURN_REFUNDED: '已退费（已退药）'
+  }[value] ?? value;
+}
+
+function prescriptionTagType(value: string): '' | 'primary' | 'success' | 'info' | 'warning' | 'danger' {
+  if (value === 'WAITING_DISPENSE') return 'warning';
+  if (value === 'DISPENSED') return 'success';
+  if (value === 'RETURNED' || value === 'RETURN_REFUNDED') return 'info';
+  return '';
+}
+
+function returnStatusLabel(value: string) {
+  return {
+    RETURNED: '未缴费（已退药）',
+    RETURN_PENDING_REFUND: '未退费（已退药）',
+    RETURN_REFUNDED: '已退费（已退药）'
+  }[value] ?? value;
+}
+
+function returnStatusType(value: string): '' | 'primary' | 'success' | 'info' | 'warning' | 'danger' {
+  if (value === 'RETURN_PENDING_REFUND') return 'warning';
+  if (value === 'RETURN_REFUNDED') return 'success';
+  if (value === 'RETURNED') return 'info';
+  return '';
+}
+
+function amountText(value: number) {
+  return Number(value ?? 0).toFixed(2);
+}
+
+function formatDateTime(value?: string) {
+  return value ? String(value).replace('T', ' ').slice(0, 19) : '-';
+}
+
+function timeValue(value?: string) {
+  if (!value) return 0;
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+
+function errorMessage(error: unknown, fallback: string) {
+  const candidate = error as {
+    response?: { data?: { message?: string; error?: string } | string };
+    message?: string;
+  };
+  const data = candidate.response?.data;
+  if (typeof data === 'string' && data) return data;
+  if (typeof data === 'object' && data?.message) return data.message;
+  if (typeof data === 'object' && data?.error) return data.error;
+  return candidate.message || fallback;
+}
+
+function isUnauthorized(error: unknown) {
+  return (error as { response?: { status?: number } })?.response?.status === 401;
+}
+
+function handleRequestFailure(error: unknown, fallback: string) {
+  if (isUnauthorized(error)) {
+    redirectToLogin();
+    return;
+  }
+  ElMessage.error(errorMessage(error, fallback));
+}
+
+function redirectToLogin() {
+  if (authRedirecting.value) return;
+  authRedirecting.value = true;
+  auth.signOut();
+  ElMessage.error('登录已过期，请重新登录');
+  router.replace('/login');
 }
 
 function logout() {
@@ -140,20 +589,365 @@ function logout() {
 }
 
 onMounted(async () => {
-  await Promise.all([loadPrescriptions(), loadDrugs()]);
+  await Promise.all([loadPrescriptions(), loadReturns(), loadDrugs()]);
 });
 </script>
 
 <style scoped>
-.card-header {
+.pharmacy-wks {
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: #f0f2f5;
+  font-family: Inter, "Microsoft YaHei", system-ui, sans-serif;
+}
+
+.pharmacy-nav {
+  height: 52px;
+  padding: 0 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  background: linear-gradient(135deg, #0cbdcc 0%, #0899a5 100%);
+  color: #fff;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 18%);
+  z-index: 10;
+}
+
+.pharmacy-nav__brand,
+.pharmacy-nav__right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pharmacy-nav__logo {
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  background: #fff;
+  color: #0899a5;
+  font-size: 20px;
+  font-weight: 900;
+}
+
+.pharmacy-nav__title {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.pharmacy-nav__right {
+  gap: 20px;
+  font-size: 13px;
+}
+
+.nav-logout {
+  color: rgb(255 255 255 / 88%);
+}
+
+.pharmacy-body {
+  height: calc(100vh - 52px);
+  display: flex;
+  overflow: hidden;
+}
+
+.pharmacy-main {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.pharmacy-sidebar {
+  width: 190px;
+  flex-shrink: 0;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border-right: 1px solid #e5e7eb;
+}
+
+.sidebar-hdr {
+  height: 34px;
+  padding: 0 4px 8px;
+  display: flex;
+  align-items: center;
+  color: #1f2937;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.nav-item {
+  width: 100%;
+  height: 40px;
+  border: none;
+  border-radius: 6px;
+  margin-bottom: 6px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: transparent;
+  color: #374151;
+  cursor: pointer;
+  font-size: 14px;
+  text-align: left;
+}
+
+.nav-item:hover {
+  background: #f8fafc;
+}
+
+.nav-item--active {
+  background: #e6f9fa;
+  color: #0899a5;
+  font-weight: 700;
+}
+
+.nav-item em {
+  min-width: 22px;
+  height: 20px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  background: #0cbdcc;
+  color: #fff;
+  font-size: 12px;
+  font-style: normal;
+}
+
+.sidebar-footer {
+  margin-top: auto;
+  padding: 10px 4px 0;
+  border-top: 1px solid #e5e7eb;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: #9ca3af;
+  font-size: 12px;
+}
+
+.work-page {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.page-head,
+.query-bar,
+.card-head,
+.detail-panel__head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
 
-.detail h3 {
-  margin: 0 0 6px;
+.page-head h1 {
+  margin: 0 0 4px;
+  color: #111827;
+  font-size: 22px;
+  letter-spacing: 0;
+}
+
+.page-head p,
+.card-head p {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.query-bar {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.query-bar .el-input {
+  width: 240px;
+}
+
+.dispense-layout,
+.return-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 16px;
+  align-items: start;
+}
+
+.prescription-lists {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.work-card,
+.detail-panel {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.card-head {
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+
+.card-head h2,
+.detail-panel h2 {
+  margin: 0 0 4px;
+  color: #111827;
   font-size: 16px;
+  letter-spacing: 0;
+}
+
+.detail-panel {
+  position: sticky;
+  top: 0;
+}
+
+.rx-summary {
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid #a8e8ec;
+  border-radius: 8px;
+  background: #f0f9fa;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rx-summary strong {
+  color: #111827;
+  font-size: 18px;
+}
+
+.rx-summary span {
+  color: #0899a5;
+  font-weight: 700;
+}
+
+.rx-summary em {
+  color: #64748b;
+  font-size: 13px;
+  font-style: normal;
+}
+
+.detail-meta {
+  margin-bottom: 12px;
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 8px 10px;
+  font-size: 13px;
+}
+
+.detail-meta span {
+  color: #64748b;
+}
+
+.detail-meta strong {
+  min-width: 0;
+  color: #1f2937;
+  font-weight: 600;
+}
+
+.opinion-block {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.opinion-block span {
+  display: block;
+  margin-bottom: 8px;
+  color: #64748b;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.opinion-block p {
+  margin: 0;
+  color: #1f2937;
+  font-size: 16px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 1200px) {
+  .dispense-layout,
+  .return-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-panel {
+    position: static;
+  }
+}
+
+@media (max-width: 900px) {
+  .pharmacy-body {
+    height: auto;
+    min-height: calc(100vh - 52px);
+    flex-direction: column;
+    overflow: visible;
+  }
+
+  .pharmacy-main {
+    overflow: visible;
+  }
+
+  .pharmacy-sidebar {
+    width: 100%;
+    flex-direction: row;
+    overflow-x: auto;
+    border-right: none;
+    border-bottom: 1px solid #e5e7eb;
+  }
+
+  .sidebar-hdr,
+  .sidebar-footer {
+    display: none;
+  }
+
+  .nav-item {
+    width: auto;
+    min-width: 126px;
+    margin-right: 6px;
+    margin-bottom: 0;
+  }
+}
+
+@media (max-width: 760px) {
+  .pharmacy-nav {
+    height: auto;
+    min-height: 52px;
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 10px 14px;
+  }
+
+  .page-head,
+  .query-bar,
+  .card-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .query-bar .el-input {
+    width: 100%;
+  }
 }
 </style>

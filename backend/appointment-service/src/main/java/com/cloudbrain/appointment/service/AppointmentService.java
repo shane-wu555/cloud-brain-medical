@@ -9,6 +9,7 @@ import com.cloudbrain.appointment.entity.SlotInventory;
 import com.cloudbrain.appointment.repository.AppointmentRepository;
 import com.cloudbrain.appointment.repository.MedicalRecordEventRepository;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import com.cloudbrain.appointment.repository.SlotInventoryRepository;
 import java.time.LocalDate;
 import java.time.LocalTime;
@@ -94,7 +95,7 @@ public class AppointmentService {
         Appointment appointment = buildAppointment(request, AppointmentSource.OFFLINE, AppointmentStatus.WAITING, PaymentStatus.PAID, startTime);
         appointment.markPaid("OFFLINE_WINDOW");
         saveNewAppointment(appointment);
-        integrationEventRepository.enqueuePayment(appointment, new BigDecimal("0.01"), "cashier");
+        integrationEventRepository.enqueuePayment(appointment, registrationFee(request), "cashier");
         integrationEventRepository.enqueueMedicalRecord(appointment);
         return appointment;
     }
@@ -304,6 +305,14 @@ public class AppointmentService {
             case "下午", "AFTERNOON" -> LocalTime.of(14, 0);
             default -> LocalTime.of(8, 0);
         };
+    }
+
+    private BigDecimal registrationFee(AppointmentController.CreateAppointmentRequest request) {
+        BigDecimal fee = request.registrationFee();
+        if (fee == null || fee.signum() <= 0) {
+            return new BigDecimal("15.00");
+        }
+        return fee.setScale(2, RoundingMode.HALF_UP);
     }
 
     private void validateNoRepeatedAppointment(AppointmentController.CreateAppointmentRequest request, LocalTime startTime) {

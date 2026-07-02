@@ -8,5 +8,7 @@ public enum PrescriptionStatus {
     WAITING_DISPENSE,
     DISPENSED,
     RETURNED,
+    RETURN_PENDING_REFUND,
+    RETURN_REFUNDED,
     CANCELLED
 }

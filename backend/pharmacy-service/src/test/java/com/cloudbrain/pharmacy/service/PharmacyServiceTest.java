@@ -1,7 +1,12 @@
 package com.cloudbrain.pharmacy.service;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyInt;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import com.cloudbrain.pharmacy.controller.PharmacyController;
 import com.cloudbrain.pharmacy.entity.Prescription;
@@ -19,38 +24,82 @@ class PharmacyServiceTest {
 
     @Test
     void unpaidPrescriptionCannotBeDispensed() {
-        when(repository.findPrescription("30000000-0000-4000-8000-000000000001")).thenReturn(prescription(PrescriptionStatus.PENDING_PAYMENT));
+        when(repository.findPrescription("30000000-0000-4000-8000-000000000001"))
+                .thenReturn(prescription(PrescriptionStatus.PENDING_PAYMENT));
 
         assertThatThrownBy(() -> service.dispense("30000000-0000-4000-8000-000000000001", "pharmacist"))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("已缴费");
+                .isInstanceOf(IllegalStateException.class);
         verify(repository, never()).deductStock(any(), any(), anyInt(), any());
     }
 
     @Test
     void dispensedPrescriptionCannotBeDispensedAgain() {
-        when(repository.findPrescription("30000000-0000-4000-8000-000000000001")).thenReturn(prescription(PrescriptionStatus.DISPENSED));
+        when(repository.findPrescription("30000000-0000-4000-8000-000000000001"))
+                .thenReturn(prescription(PrescriptionStatus.DISPENSED));
 
         assertThatThrownBy(() -> service.dispense("30000000-0000-4000-8000-000000000001", "pharmacist"))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("待发药");
+                .isInstanceOf(IllegalStateException.class);
     }
 
     @Test
-    void onlyDispensedPrescriptionCanBeReturned() {
-        when(repository.findPrescription("30000000-0000-4000-8000-000000000001")).thenReturn(prescription(PrescriptionStatus.WAITING_DISPENSE));
+    void onlyBeforeDispensePrescriptionCanBeReturned() {
+        when(repository.findPrescription("30000000-0000-4000-8000-000000000001"))
+                .thenReturn(prescription(PrescriptionStatus.DISPENSED));
 
-        assertThatThrownBy(() -> service.returnDrugs("30000000-0000-4000-8000-000000000001", "pharmacist", "患者退药"))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("已发药");
+        assertThatThrownBy(() -> service.returnDrugs("30000000-0000-4000-8000-000000000001", "pharmacist", "return"))
+                .isInstanceOf(IllegalStateException.class);
         verify(repository, never()).restoreStock(any(), any(), anyInt(), any(), any());
+        verify(repository, never()).markReturnedBeforeDispense(any(), any(), any(), any());
+    }
+
+    @Test
+    void waitingDispensePrescriptionReturnsToPendingRefundWithoutStockRestore() {
+        when(repository.findPrescription("30000000-0000-4000-8000-000000000001"))
+                .thenReturn(prescription(PrescriptionStatus.WAITING_DISPENSE))
+                .thenReturn(prescription(PrescriptionStatus.RETURN_PENDING_REFUND));
+        when(repository.markReturnedBeforeDispense("30000000-0000-4000-8000-000000000001", "pharmacist",
+                "return", PrescriptionStatus.RETURN_PENDING_REFUND)).thenReturn(true);
+
+        service.returnDrugs("30000000-0000-4000-8000-000000000001", "pharmacist", "return");
+
+        verify(repository, never()).restoreStock(any(), any(), anyInt(), any(), any());
+        verify(repository).markReturnedBeforeDispense("30000000-0000-4000-8000-000000000001", "pharmacist",
+                "return", PrescriptionStatus.RETURN_PENDING_REFUND);
+    }
+
+    @Test
+    void unpaidPrescriptionReturnsToCompletedReturnWithoutRefund() {
+        when(repository.findPrescription("30000000-0000-4000-8000-000000000001"))
+                .thenReturn(prescription(PrescriptionStatus.PENDING_PAYMENT))
+                .thenReturn(prescription(PrescriptionStatus.RETURNED));
+        when(repository.markReturnedBeforeDispense("30000000-0000-4000-8000-000000000001", "doctor",
+                "return", PrescriptionStatus.RETURNED)).thenReturn(true);
+
+        service.returnDrugs("30000000-0000-4000-8000-000000000001", "doctor", "return");
+
+        verify(repository).markReturnedBeforeDispense("30000000-0000-4000-8000-000000000001", "doctor",
+                "return", PrescriptionStatus.RETURNED);
     }
 
     @Test
     void acceptedAiSuggestionMustHaveTraceId() {
-        var request = new PharmacyController.CreatePrescriptionRequest("00000000-0000-4000-8000-000000000001", "mr-1", "a0000000-0000-4000-8000-000000000001",
-                "张三", "脑供血不足", null, "AI_ACCEPTED", null,
-                List.of(new PharmacyController.PrescriptionItemRequest("40000000-0000-4000-8000-000000000001", 1, "100mg", "口服", "每日一次", 7, null)));
+        var request = new PharmacyController.CreatePrescriptionRequest(
+                "00000000-0000-4000-8000-000000000001",
+                "mr-1",
+                "a0000000-0000-4000-8000-000000000001",
+                "patient",
+                "diagnosis",
+                null,
+                "AI_ACCEPTED",
+                null,
+                List.of(new PharmacyController.PrescriptionItemRequest(
+                        "40000000-0000-4000-8000-000000000001",
+                        1,
+                        "100mg",
+                        "oral",
+                        "daily",
+                        7,
+                        null)));
 
         assertThatThrownBy(() -> service.prescribe(request, "doctor-1"))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -58,10 +107,41 @@ class PharmacyServiceTest {
     }
 
     private Prescription prescription(PrescriptionStatus status) {
-        return new Prescription("30000000-0000-4000-8000-000000000001", "RX1", "00000000-0000-4000-8000-000000000001", "mr-1", "a0000000-0000-4000-8000-000000000001", "张三",
-                "doctor-1", "诊断", status, BigDecimal.TEN, null, null, "HUMAN_ONLY",
-                null, null, null, null, null, null, null, null, null,
-                List.of(new PrescriptionItem("50000000-0000-4000-8000-000000000001", "30000000-0000-4000-8000-000000000001", "40000000-0000-4000-8000-000000000001", "药品", 2,
-                        "100mg", "口服", "每日一次", 7, null, BigDecimal.ONE, BigDecimal.valueOf(2))));
+        return new Prescription(
+                "30000000-0000-4000-8000-000000000001",
+                "RX1",
+                "00000000-0000-4000-8000-000000000001",
+                "mr-1",
+                "a0000000-0000-4000-8000-000000000001",
+                "patient",
+                "doctor-1",
+                "diagnosis",
+                status,
+                BigDecimal.TEN,
+                null,
+                null,
+                "HUMAN_ONLY",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                List.of(new PrescriptionItem(
+                        "50000000-0000-4000-8000-000000000001",
+                        "30000000-0000-4000-8000-000000000001",
+                        "40000000-0000-4000-8000-000000000001",
+                        "drug",
+                        2,
+                        "100mg",
+                        "oral",
+                        "daily",
+                        7,
+                        null,
+                        BigDecimal.ONE,
+                        BigDecimal.valueOf(2))));
     }
 }

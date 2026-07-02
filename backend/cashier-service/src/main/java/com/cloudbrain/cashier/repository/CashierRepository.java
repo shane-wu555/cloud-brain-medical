@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -39,7 +40,7 @@ public class CashierRepository {
         return findByBusiness(type,businessId);
     }
 
-    public void recordRefund(
+    public Refund recordRefund(
             String type, String businessId, String patientId,
             BigDecimal amount, String reason, String operatorId) {
         BigDecimal refundAmount=amount;
@@ -48,11 +49,21 @@ public class CashierRepository {
                     (rs,row)->rs.getBigDecimal(1),type,businessId).stream().findFirst().orElse(BigDecimal.ZERO);
         }
         Payment payment = findByBusiness(type, businessId);
+        if ("REFUNDED".equals(payment.status())) {
+            return refunds(patientId, businessId).stream().findFirst()
+                    .orElseThrow(() -> new IllegalStateException("支付单已退款但缺少退款记录"));
+        }
+        String refundId = UUID.randomUUID().toString();
         jdbc.update("""
                 insert into refund
                     (id, payment_id, amount, reason, status, operator_id, refunded_at)
                 values (?::uuid, ?::uuid, ?, ?, 'REFUNDED', ?, now())
-                """, UUID.randomUUID().toString(), payment.id(), refundAmount, reason, operatorId);
+                """, refundId, payment.id(), refundAmount, reason, operatorId);
+        jdbc.update("update payment set status = 'REFUNDED' where id = ?::uuid and status = 'PAID'", payment.id());
+        return refunds(patientId, businessId).stream()
+                .filter(refund -> refund.id().equals(refundId))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("退款记录生成失败"));
     }
 
     @Transactional
@@ -80,6 +91,11 @@ public class CashierRepository {
         return jdbc.query("select * from payment where business_type=? and business_id=?",
                 (rs,row)->payment(rs),type,businessId).stream().findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("支付单不存在"));
+    }
+
+    public Optional<Payment> findOptionalByBusiness(String type, String businessId) {
+        return jdbc.query("select * from payment where business_type=? and business_id=?",
+                (rs,row)->payment(rs),type,businessId).stream().findFirst();
     }
 
     @Transactional

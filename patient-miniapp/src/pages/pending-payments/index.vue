@@ -1,25 +1,25 @@
 <template>
-  <patient-nav-bar :title="mode === 'record' ? '缴费记录' : '待缴费项目'" />
+  <patient-nav-bar :title="mode === 'record' ? '缴费退费记录' : '待缴费项目'" />
   <view class="page">
     <view v-if="mode === 'record'">
       <view
-        v-for="item in sortedPaymentRecords"
-        :key="item.id"
-        :class="['card', 'item-row', 'payment-record', { payable: isPendingPaymentRecord(item) }]"
+        v-for="item in sortedFinancialRecords"
+        :key="`${item.kind}-${item.id}`"
+        :class="['card', 'item-row', 'payment-record', { payable: isPendingFinancialRecord(item), refund: item.kind === 'refund' }]"
         @click="openPendingPayment(item)"
       >
         <view class="item-main">
           <view class="item-title">{{ paymentRecordTitle(item) }}</view>
           <view class="item-desc">{{ paymentRecordDescription(item) }}</view>
           <view v-if="paymentRecordNote(item)" class="muted">{{ paymentRecordNote(item) }}</view>
-          <view class="muted">{{ item.paidAt ? `支付时间：${formatDateTime(item.paidAt)}` : `当前状态：${paymentStatusLabel(item.status)}` }}</view>
+          <view class="muted">{{ financialRecordTimeText(item) }}</view>
         </view>
         <view class="item-actions">
-          <view class="amount">¥{{ amountText(item.amount) }}</view>
+          <view :class="['amount', { 'refund-amount': item.kind === 'refund' }]">{{ item.kind === 'refund' ? '退' : '' }}¥{{ amountText(item.amount) }}</view>
           <view :class="['record-status', item.status.toLowerCase()]">{{ paymentStatusLabel(item.status) }}</view>
         </view>
       </view>
-      <view v-if="!sortedPaymentRecords.length" class="card muted">暂无缴费记录</view>
+      <view v-if="!sortedFinancialRecords.length" class="card muted">暂无缴费退费记录</view>
     </view>
 
     <view v-else>
@@ -177,6 +177,22 @@ interface PaymentOrder {
   paidAt?: string;
 }
 
+interface RefundOrder {
+  id: string;
+  businessType: string;
+  businessId: string;
+  patientId: string;
+  amount: number;
+  reason?: string;
+  status: string;
+  operatorId?: string;
+  refundedAt?: string;
+}
+
+type FinancialRecord =
+  | (PaymentOrder & { kind: 'payment' })
+  | (RefundOrder & { kind: 'refund' });
+
 interface MedicalOrder {
   id: string;
   orderType: 'CHECK' | 'LAB' | 'DISPOSAL';
@@ -202,7 +218,7 @@ interface Prescription {
   prescriptionNo: string;
   diagnosis: string;
   totalAmount: number;
-  status: 'DRAFT' | 'CONFIRMED' | 'PENDING_PAYMENT' | 'PAID' | 'WAITING_DISPENSE' | 'DISPENSED' | 'RETURNED' | 'CANCELLED';
+  status: 'DRAFT' | 'CONFIRMED' | 'PENDING_PAYMENT' | 'PAID' | 'WAITING_DISPENSE' | 'DISPENSED' | 'RETURNED' | 'RETURN_PENDING_REFUND' | 'RETURN_REFUNDED' | 'CANCELLED';
   items?: PrescriptionItem[];
   confirmedAt?: string;
   createdAt?: string;
@@ -224,6 +240,7 @@ const registrationItems = ref<PendingItem[]>([]);
 const medicalOrderItems = ref<PendingItem[]>([]);
 const prescriptionItems = ref<PendingItem[]>([]);
 const paymentRecords = ref<PaymentOrder[]>([]);
+const refundRecords = ref<RefundOrder[]>([]);
 const recordAppointments = ref<Appointment[]>([]);
 const recordMedicalOrders = ref<MedicalOrder[]>([]);
 const recordPrescriptions = ref<Prescription[]>([]);
@@ -244,8 +261,11 @@ const totalAmount = computed(() =>
 );
 const totalCount = computed(() => registrationItems.value.length + medicalOrderItems.value.length + prescriptionItems.value.length);
 
-const sortedPaymentRecords = computed(() =>
-  [...paymentRecords.value].sort((left, right) => {
+const sortedFinancialRecords = computed(() =>
+  [
+    ...paymentRecords.value.map((item) => ({ ...item, kind: 'payment' as const })),
+    ...refundRecords.value.map((item) => ({ ...item, kind: 'refund' as const }))
+  ].sort((left, right) => {
     const statusDiff = paymentRecordStatusRank(left) - paymentRecordStatusRank(right);
     if (statusDiff !== 0) {
       return statusDiff;
@@ -283,7 +303,10 @@ function businessTypeLabel(type: string) {
   }[type] ?? type;
 }
 
-function paymentRecordTitle(item: PaymentOrder) {
+function paymentRecordTitle(item: FinancialRecord) {
+  if (item.kind === 'refund') {
+    return `${businessTypeLabel(item.businessType)}退费`;
+  }
   if (item.businessType === 'APPOINTMENT') {
     const appointment = recordAppointmentMap.value.get(item.businessId);
     return appointment ? `${appointment.departmentName} · ${appointment.doctorName}` : businessTypeLabel(item.businessType);
@@ -299,7 +322,15 @@ function paymentRecordTitle(item: PaymentOrder) {
   return businessTypeLabel(item.businessType);
 }
 
-function paymentRecordDescription(item: PaymentOrder) {
+function paymentRecordDescription(item: FinancialRecord) {
+  if (item.kind === 'refund') {
+    const base = paymentRecordBusinessDescription(item);
+    return item.reason ? `${base} · ${item.reason}` : base;
+  }
+  return paymentRecordBusinessDescription(item);
+}
+
+function paymentRecordBusinessDescription(item: FinancialRecord) {
   if (item.businessType === 'APPOINTMENT') {
     const appointment = recordAppointmentMap.value.get(item.businessId);
     if (appointment) {
@@ -326,7 +357,10 @@ function paymentRecordDescription(item: PaymentOrder) {
   return '业务详情加载中';
 }
 
-function paymentRecordNote(item: PaymentOrder) {
+function paymentRecordNote(item: FinancialRecord) {
+  if (item.kind === 'refund') {
+    return item.operatorId ? `退费操作员：${item.operatorId}` : '';
+  }
   if (item.businessType === 'APPOINTMENT') {
     const appointment = recordAppointmentMap.value.get(item.businessId);
     return appointment ? `挂号状态：${appointmentStatusLabel(appointment)}` : '';
@@ -354,16 +388,23 @@ function paymentStatusLabel(status: string) {
   }[status] ?? status;
 }
 
-function paymentRecordSortTime(item: PaymentOrder) {
-  return item.paidAt || item.createdAt || '';
+function paymentRecordSortTime(item: FinancialRecord) {
+  return item.kind === 'refund' ? item.refundedAt || '' : item.paidAt || item.createdAt || '';
 }
 
-function isPendingPaymentRecord(item: PaymentOrder) {
-  return ['PENDING', 'PENDING_PAYMENT', 'UNPAID'].includes(item.status);
+function financialRecordTimeText(item: FinancialRecord) {
+  if (item.kind === 'refund') {
+    return item.refundedAt ? `退费时间：${formatDateTime(item.refundedAt)}` : `当前状态：${paymentStatusLabel(item.status)}`;
+  }
+  return item.paidAt ? `支付时间：${formatDateTime(item.paidAt)}` : `当前状态：${paymentStatusLabel(item.status)}`;
 }
 
-function paymentRecordStatusRank(item: PaymentOrder) {
-  return isPendingPaymentRecord(item) ? 0 : 1;
+function isPendingFinancialRecord(item: FinancialRecord) {
+  return item.kind === 'payment' && ['PENDING', 'PENDING_PAYMENT', 'UNPAID'].includes(item.status);
+}
+
+function paymentRecordStatusRank(item: FinancialRecord) {
+  return isPendingFinancialRecord(item) ? 0 : 1;
 }
 
 function pendingAppointmentSortTime(item: Appointment) {
@@ -389,14 +430,14 @@ function normalizeStartTime(value: Appointment['startTime']) {
   return '';
 }
 
-function openPendingPayment(item: PaymentOrder) {
-  if (!isPendingPaymentRecord(item)) return;
+function openPendingPayment(item: FinancialRecord) {
+  if (!isPendingFinancialRecord(item)) return;
   uni.navigateTo({ url: '/pages/pending-payments/index' });
 }
 
 onLoad((options) => {
   mode.value = options?.mode === 'record' ? 'record' : 'pending';
-  uni.setNavigationBarTitle({ title: mode.value === 'record' ? '缴费记录' : '待缴费项目' });
+  uni.setNavigationBarTitle({ title: mode.value === 'record' ? '缴费退费记录' : '待缴费项目' });
 });
 
 function appointmentStatusLabel(item: Appointment) {
@@ -445,7 +486,9 @@ function prescriptionStatusLabel(status: Prescription['status']) {
     PAID: '已缴费',
     WAITING_DISPENSE: '待发药',
     DISPENSED: '已发药',
-    RETURNED: '已退药',
+    RETURNED: '未缴费（已退药）',
+    RETURN_PENDING_REFUND: '未退费（已退药）',
+    RETURN_REFUNDED: '已退费（已退药）',
     CANCELLED: '已取消'
   }[status] ?? status;
 }
@@ -463,20 +506,23 @@ async function load() {
   loadWarning.value = '';
   const patientQuery = `patientId=${encodeURIComponent(patient.id)}`;
   if (mode.value === 'record') {
-    const [paymentsResult, appointmentsResult, medicalOrdersResult, prescriptionsResult] = await Promise.allSettled([
+    const [paymentsResult, refundsResult, appointmentsResult, medicalOrdersResult, prescriptionsResult] = await Promise.allSettled([
       request<PaymentOrder[]>({ url: `/payments?${patientQuery}`, method: 'GET' }),
+      request<RefundOrder[]>({ url: `/refunds?${patientQuery}`, method: 'GET' }),
       request<Appointment[]>({ url: `/appointments?${patientQuery}`, method: 'GET' }),
       request<MedicalOrder[]>({ url: `/medical-orders?${patientQuery}`, method: 'GET' }),
       request<Prescription[]>({ url: `/prescriptions?${patientQuery}`, method: 'GET' })
     ]);
 
     paymentRecords.value = paymentsResult.status === 'fulfilled' ? paymentsResult.value : [];
+    refundRecords.value = refundsResult.status === 'fulfilled' ? refundsResult.value : [];
     recordAppointments.value = appointmentsResult.status === 'fulfilled' ? appointmentsResult.value : [];
     recordMedicalOrders.value = medicalOrdersResult.status === 'fulfilled' ? medicalOrdersResult.value : [];
     recordPrescriptions.value = prescriptionsResult.status === 'fulfilled' ? prescriptionsResult.value : [];
 
     const failedLabels = [
       paymentsResult.status === 'rejected' ? '缴费记录' : '',
+      refundsResult.status === 'rejected' ? '退费记录' : '',
       appointmentsResult.status === 'rejected' ? '挂号详情' : '',
       medicalOrdersResult.status === 'rejected' ? '检查检验处置详情' : '',
       prescriptionsResult.status === 'rejected' ? '处方详情' : ''
@@ -718,6 +764,10 @@ onShow(load);
   color: #b45309;
   font-size: 30rpx;
   font-weight: 700;
+}
+
+.refund-amount {
+  color: #0f766e;
 }
 
 .mini-pay {

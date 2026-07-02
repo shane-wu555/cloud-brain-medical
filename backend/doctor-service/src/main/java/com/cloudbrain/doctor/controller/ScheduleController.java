@@ -7,7 +7,6 @@ import java.time.LocalDate;
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpStatus;
@@ -296,7 +295,7 @@ public class ScheduleController {
         String value=period==null?"":period.trim().toUpperCase();
         if("MORNING".equals(value)||"上午".equals(period)) return "上午";
         if("AFTERNOON".equals(value)||"下午".equals(period)) return "下午";
-        return "全天";
+        return period;
     }
     private Map<String,Object> aiSchedulePayload(AiScheduleRequest request) {
         Map<String,Object> payload=new LinkedHashMap<>();
@@ -443,18 +442,17 @@ public class ScheduleController {
     }
     private boolean coversPeriod(List<DoctorCatalogRepository.Schedule> schedules,LocalDate date,String period) {
         return schedules.stream().anyMatch(schedule -> date.equals(schedule.workDate())
-                && (period.equals(schedule.period())||"全天".equals(schedule.period())));
+                && period.equals(schedule.period()));
     }
     private boolean coversRoomPeriod(List<DoctorCatalogRepository.Schedule> schedules,String roomId,LocalDate date,String period) {
         return schedules.stream().anyMatch(schedule -> roomId.equals(schedule.roomId()) && date.equals(schedule.workDate())
-                && (period.equals(schedule.period())||"全天".equals(schedule.period())));
+                && period.equals(schedule.period()));
     }
     private boolean hasEventConflict(List<DoctorCatalogRepository.Schedule> schedules,List<DoctorCatalogRepository.DoctorEvent> events) {
         return schedules.stream().anyMatch(schedule -> events.stream()
                 .filter(event -> event.doctorId().equals(schedule.doctorId()))
                 .filter(event -> event.dates().contains(schedule.workDate()))
-                .anyMatch(event -> event.periods().stream().anyMatch(period ->
-                        period.equals(schedule.period())||"全天".equals(schedule.period())||"全天".equals(period))));
+                .anyMatch(event -> event.periods().contains(schedule.period())));
     }
     private AiScheduleRequest normalizeAiScheduleRequest(AiScheduleRequest request) {
         if(request==null) return new AiScheduleRequest(List.of(),List.of(),insightBackground(scheduleInsightService.current()));
@@ -471,7 +469,7 @@ public class ScheduleController {
                 .toList();
         List<AiScheduleDemand> demands=Optional.ofNullable(request.demands()).orElse(List.of()).stream()
                 .filter(Objects::nonNull)
-                .filter(demand -> List.of("上午","下午","全天").contains(demand.period()))
+                .filter(demand -> List.of("上午","下午").contains(demand.period()))
                 .map(demand -> new AiScheduleDemand(
                         demand.departmentId(),
                         demand.roomId()==null?"":demand.roomId(),
@@ -533,14 +531,11 @@ public class ScheduleController {
     private boolean hasUnavailableSlot(AiDoctorCandidate candidate,String workDate,String period) {
         return Optional.ofNullable(candidate.unavailableSlots()).orElse(List.of()).stream()
                 .anyMatch(slot -> workDate.equals(slot.date())
-                        && (period.equals(slot.period())||"全天".equals(slot.period())||"全天".equals(period)));
+                        && period.equals(slot.period()));
     }
     private boolean hasSlotConflict(Set<String> slots,String ownerId,String workDate,String period) {
         if(ownerId==null||ownerId.isBlank()) return false;
-        if("全天".equals(period)) {
-            return Stream.of("上午","下午","全天").anyMatch(item -> slots.contains(slotKey(ownerId,workDate,item)));
-        }
-        return slots.contains(slotKey(ownerId,workDate,period))||slots.contains(slotKey(ownerId,workDate,"全天"));
+        return slots.contains(slotKey(ownerId,workDate,period));
     }
     private void reserveSlot(Set<String> slots,String ownerId,String workDate,String period) {
         if(ownerId!=null&&!ownerId.isBlank()) slots.add(slotKey(ownerId,workDate,period));

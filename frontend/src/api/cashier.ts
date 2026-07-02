@@ -53,6 +53,16 @@ export async function createPaymentOrder(payload: {
   return (await http.post<PaymentOrder>('/payments/orders', payload)).data;
 }
 
+export async function refundDrugReturn(payload: {
+  returnId: string;
+  prescriptionId: string;
+  patientId: string;
+  amount: number;
+  reason?: string;
+}) {
+  return (await http.post<RefundOrder>('/refunds/drug-return', payload)).data;
+}
+
 export async function confirmTestPayment(payload: {
   businessType: BusinessType;
   businessId: string;

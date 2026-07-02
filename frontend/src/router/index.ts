@@ -10,7 +10,7 @@ export const router = createRouter({
     { path: '/doctor/check', component: () => import('../views/medical-tech/MedicalTechWorkbench.vue'), meta: { roles: ['CHECK_DOCTOR'] } },
     { path: '/doctor/lab', component: () => import('../views/medical-tech/MedicalTechWorkbench.vue'), meta: { roles: ['LAB_DOCTOR'] } },
     { path: '/doctor/disposal', component: () => import('../views/disposal/DisposalWorkbench.vue'), meta: { roles: ['DISPOSAL_DOCTOR'] } },
-    { path: '/doctor/pharmacy', component: () => import('../views/pharmacy/PharmacyWorkbench.vue'), meta: { roles: ['PHARMACY_DOCTOR'] } },
+    { path: '/doctor/pharmacy', component: () => import('../views/pharmacy/PharmacyWorkbench.vue'), meta: { roles: ['PHARMACY_STAFF'] } },
     { path: '/cashier', component: () => import('../views/cashier/CashierWorkbench.vue'), meta: { roles: ['CASHIER'] } },
     { path: '/admin', component: () => import('../views/admin/AdminDashboard.vue'), meta: { roles: ['ADMIN'] } }
   ]

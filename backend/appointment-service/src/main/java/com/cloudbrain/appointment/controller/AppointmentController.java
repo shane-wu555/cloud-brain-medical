@@ -158,7 +158,8 @@ public class AppointmentController {
             String startTime,
             String triageSummary,
             String riskLevel,
-            String recommendedDepartmentId) {
+            String recommendedDepartmentId,
+            BigDecimal registrationFee) {
     }
 
     public record SyncSlotRequest(String scheduleId, int capacity) {
