@@ -40,10 +40,56 @@ export interface Prescription {
   aiAssistanceId?: string;
   aiAdoptionStatus?: string;
   aiRevisionNote?: string;
+  createdAt?: string;
+  confirmedAt?: string;
+  paidAt?: string;
+  dispensedAt?: string;
+  returnedAt?: string;
   dispensedBy?: string;
   returnedBy?: string;
   returnReason?: string;
   items: PrescriptionItem[];
+}
+
+export type DrugReturnStatus = 'RETURNED' | 'RETURN_PENDING_REFUND' | 'RETURN_REFUNDED' | string;
+
+export interface DrugReturnItem {
+  id: string;
+  returnId: string;
+  prescriptionItemId: string;
+  drugId: string;
+  drugName: string;
+  quantity: number;
+  unitPrice: number;
+  amount: number;
+  batchNo?: string;
+  batchNoMatched?: boolean;
+  coldChainOrOpenedRejectType?: boolean;
+  packageIntact?: boolean;
+  sealBroken?: boolean;
+  pharmacistNote?: string;
+}
+
+export interface DrugReturnOrder {
+  id: string;
+  returnNo: string;
+  prescriptionId: string;
+  prescriptionNo: string;
+  patientId: string;
+  patientName: string;
+  doctorId: string;
+  doctorOpinion: string;
+  opinionTemplate?: string;
+  status: DrugReturnStatus;
+  totalAmount: number;
+  pharmacistId?: string;
+  pharmacistOpinion?: string;
+  cashierId?: string;
+  refundOrderId?: string;
+  createdAt?: string;
+  verifiedAt?: string;
+  completedAt?: string;
+  items: DrugReturnItem[];
 }
 
 export async function getDrugs(keyword?: string) {
@@ -86,5 +132,18 @@ export async function dispensePrescription(id: string) {
 
 export async function returnPrescription(id: string, reason: string) {
   const { data } = await http.post<Prescription>(`/prescriptions/${id}/return`, { reason });
+  return data;
+}
+
+export async function createDrugReturn(prescriptionId: string, payload: {
+  doctorOpinion: string;
+  opinionTemplate?: string;
+}) {
+  const { data } = await http.post<DrugReturnOrder>(`/prescriptions/${prescriptionId}/drug-returns`, payload);
+  return data;
+}
+
+export async function getDrugReturns(params: { patientId?: string; status?: string } = {}) {
+  const { data } = await http.get<DrugReturnOrder[]>('/drug-returns', { params });
   return data;
 }

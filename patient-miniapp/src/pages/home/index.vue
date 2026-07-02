@@ -105,9 +105,9 @@ const serviceGroups = [
     items: [
       { name: '检查检验报告', icon: 'microscope', iconBg: 'linear-gradient(135deg, #ffc928 0%, #ff9f1c 100%)', url: '/pages/medical-orders/index?mode=report' },
       { name: '电子病历', icon: 'clipboard-list', iconBg: 'linear-gradient(135deg, #5bbcff 0%, #2f80ed 100%)', url: '/pages/medical-records/index' },
-      { name: '缴费记录', icon: 'wallet-cards', iconBg: 'linear-gradient(135deg, #2dd4bf 0%, #0ea5e9 100%)', url: '/pages/pending-payments/index?mode=record' },
+      { name: '缴费退费记录', icon: 'wallet-cards', iconBg: 'linear-gradient(135deg, #2dd4bf 0%, #0ea5e9 100%)', url: '/pages/pending-payments/index?mode=record' },
       { name: '处置记录', icon: 'syringe', iconBg: 'linear-gradient(135deg, #ff9b7a 0%, #ff5c35 100%)', url: '/pages/disposals/index?mode=record' },
-      { name: '取药记录', icon: 'pill-bottle', iconBg: 'linear-gradient(135deg, #34d399 0%, #10b981 100%)', url: '/pages/prescriptions/index?mode=record' }
+      { name: '取药退药记录', icon: 'pill-bottle', iconBg: 'linear-gradient(135deg, #34d399 0%, #10b981 100%)', url: '/pages/prescriptions/index?mode=record' }
     ]
   }
 ];

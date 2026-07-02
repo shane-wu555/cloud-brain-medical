@@ -1,6 +1,8 @@
 package com.cloudbrain.pharmacy.service;
 
 import com.cloudbrain.pharmacy.controller.PharmacyController;
+import com.cloudbrain.pharmacy.entity.DrugReturnOrder;
+import com.cloudbrain.pharmacy.entity.DrugReturnStatus;
 import com.cloudbrain.pharmacy.entity.Prescription;
 import com.cloudbrain.pharmacy.entity.PrescriptionItem;
 import com.cloudbrain.pharmacy.entity.PrescriptionStatus;
@@ -74,6 +76,58 @@ public class PharmacyService {
     }
 
     @Transactional
+    public DrugReturnOrder createDrugReturn(String prescriptionId, PharmacyController.CreateDrugReturnRequest request,
+            String doctorId) {
+        Prescription prescription = repository.findPrescription(prescriptionId);
+        if (!canReturnBeforeDispense(prescription.status())) {
+            throw new IllegalStateException("只有未缴费或已缴费未取药处方可以申请退药");
+        }
+        if (blank(request.doctorOpinion())) {
+            throw new IllegalArgumentException("医生意见不能为空");
+        }
+        PrescriptionStatus targetStatus = returnStatusFor(prescription.status());
+        DrugReturnStatus returnStatus = targetStatus == PrescriptionStatus.RETURN_PENDING_REFUND
+                ? DrugReturnStatus.RETURN_PENDING_REFUND
+                : DrugReturnStatus.RETURNED;
+        DrugReturnOrder order = repository.createDrugReturn(prescription, doctorId, request.doctorOpinion(), request.opinionTemplate(), returnStatus);
+        if (!repository.markReturnedBeforeDispense(prescription.id(), doctorId, "未取药退药 " + order.returnNo(), targetStatus)) {
+            throw new IllegalStateException("处方状态已变化，不能创建未取药退药单");
+        }
+        return repository.findDrugReturn(order.id());
+    }
+
+    public List<DrugReturnOrder> drugReturns(String patientId, String status, String requesterId, String role) {
+        String scopedPatientId = patientId;
+        if ("PATIENT".equals(role)) {
+            if (scopedPatientId == null || scopedPatientId.isBlank()) scopedPatientId = patientAccessClient.boundPatientId(requesterId);
+            if (scopedPatientId == null || scopedPatientId.isBlank()) {
+                throw new org.springframework.security.access.AccessDeniedException("请先添加并绑定就诊人");
+            }
+            if (!patientAccessClient.owns(requesterId, scopedPatientId)) {
+                throw new org.springframework.security.access.AccessDeniedException("患者只能查看自己账号名下就诊人的退药单");
+            }
+        }
+        return repository.listDrugReturns(scopedPatientId, status);
+    }
+
+    @Transactional
+    public DrugReturnOrder completeDrugReturn(String id, String cashierId, String refundOrderId) {
+        if (!repository.completeDrugReturn(id, cashierId, refundOrderId)) {
+            DrugReturnOrder order = repository.findDrugReturn(id);
+            if (order.status() == DrugReturnStatus.RETURN_REFUNDED) return order;
+            throw new IllegalStateException("退药记录不在待退费状态，不能完成退费");
+        }
+        DrugReturnOrder order = repository.findDrugReturn(id);
+        if (!repository.markReturnRefunded(order.prescriptionId())) {
+            Prescription prescription = repository.findPrescription(order.prescriptionId());
+            if (prescription.status() != PrescriptionStatus.RETURN_REFUNDED) {
+                throw new IllegalStateException("处方不在待退费状态，不能完成退费");
+            }
+        }
+        return repository.findDrugReturn(id);
+    }
+
+    @Transactional
     public Prescription confirmPayment(String id, String patientId, String paymentOrderId) {
         boolean updated = repository.markPaid(id, patientId, paymentOrderId);
         if (!updated) {
@@ -105,14 +159,11 @@ public class PharmacyService {
     @Transactional
     public Prescription returnDrugs(String id, String operatorId, String reason) {
         Prescription prescription = repository.findPrescription(id);
-        if (prescription.status() != PrescriptionStatus.DISPENSED) {
-            throw new IllegalStateException("只有已发药处方可以退药");
+        if (!canReturnBeforeDispense(prescription.status())) {
+            throw new IllegalStateException("只有未缴费或已缴费未取药处方可以退药");
         }
-        String returnReason = blank(reason) ? "药房退药" : reason;
-        for (PrescriptionItem item : prescription.items()) {
-            repository.restoreStock(item.drugId(), id, item.quantity(), operatorId, returnReason);
-        }
-        if (!repository.markReturned(id, operatorId, returnReason)) {
+        String returnReason = blank(reason) ? "未取药退药" : reason;
+        if (!repository.markReturnedBeforeDispense(id, operatorId, returnReason, returnStatusFor(prescription.status()))) {
             throw new IllegalStateException("处方已被其他窗口处理，请刷新后重试");
         }
         return repository.findPrescription(id);
@@ -144,5 +195,22 @@ public class PharmacyService {
 
     private static boolean blank(String value) {
         return value == null || value.isBlank();
+    }
+
+    private static boolean canReturnBeforeDispense(PrescriptionStatus status) {
+        return status == PrescriptionStatus.PENDING_PAYMENT
+                || status == PrescriptionStatus.CONFIRMED
+                || status == PrescriptionStatus.PAID
+                || status == PrescriptionStatus.WAITING_DISPENSE;
+    }
+
+    private static PrescriptionStatus returnStatusFor(PrescriptionStatus status) {
+        if (status == PrescriptionStatus.PENDING_PAYMENT || status == PrescriptionStatus.CONFIRMED) {
+            return PrescriptionStatus.RETURNED;
+        }
+        if (status == PrescriptionStatus.PAID || status == PrescriptionStatus.WAITING_DISPENSE) {
+            return PrescriptionStatus.RETURN_PENDING_REFUND;
+        }
+        throw new IllegalStateException("只有未缴费或已缴费未取药处方可以退药");
     }
 }

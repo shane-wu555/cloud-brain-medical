@@ -64,7 +64,7 @@
           @tap="selectSlot(selectedSchedule, slot)"
         >
           <view class="time-value">{{ slot.startTime }}</view>
-          <view class="slot-price">¥0.01</view>
+          <view class="slot-price">¥{{ registrationFeeText(selectedSchedule.doctorId) }}</view>
           <view class="slot-button">
             <text>{{ slot.available > 0 ? '可约' : '满号' }}</text>
             <text class="slot-left">余号{{ slot.available }}</text>
@@ -82,7 +82,7 @@
             <text class="doctor-title">{{ doctorInfo(schedule.doctorId) }}</text>
           </view>
           <view class="dept-line">{{ selectedDepartment?.name || '门诊科室' }}</view>
-          <view class="price-line">¥0.01</view>
+          <view class="price-line">¥{{ registrationFeeText(schedule.doctorId) }}</view>
           <view class="muted">擅长：{{ doctorInfo(schedule.doctorId) }}</view>
         </view>
         <view :class="['status-badge', schedule.available > 0 ? 'available' : 'full']">
@@ -114,11 +114,11 @@
           </view>
           <view class="confirm-row">
             <text class="confirm-label">预约时间：</text>
-            <text>{{ formatDate(pendingBooking.schedule.workDate) }} {{ pendingBooking.schedule.period }} {{ pendingBooking.slot.startTime }}</text>
+            <text>{{ formatDate(pendingBooking.schedule.workDate) }} {{ pendingBooking.slot.period || pendingBooking.schedule.period }} {{ pendingBooking.slot.startTime }}</text>
           </view>
           <view class="confirm-row">
             <text class="confirm-label">挂号费：</text>
-            <text class="slot-price">¥0.01</text>
+            <text class="slot-price">¥{{ registrationFeeText(pendingBooking.schedule.doctorId) }}</text>
           </view>
         </view>
         <view class="dialog-actions">
@@ -172,6 +172,7 @@ interface Schedule {
 
 interface TimeSlot {
   id: string;
+  period?: string;
   startTime: string;
   capacity: number;
   booked: number;
@@ -244,8 +245,9 @@ const visibleSchedules = computed(() =>
 );
 const availableDates = computed(() => Array.from(new Set(visibleSchedules.value.map((item) => item.workDate))).sort());
 const doctorMap = computed(() => new Map(doctors.value.map((item) => [item.id, item])));
+const displaySchedules = computed(() => aggregateSchedules(visibleSchedules.value));
 const filteredSchedules = computed(() =>
-  visibleSchedules.value
+  displaySchedules.value
     .filter((item) => !selectedDate.value || item.workDate === selectedDate.value)
     .sort((a, b) => {
       const ar = isRecommendedDoctor(a.doctorId) ? 0 : 1;
@@ -267,6 +269,19 @@ function doctorInfo(doctorId: string) {
   }
   const extra = [doctor.title, doctor.specialty].filter(Boolean).join(' · ');
   return extra || '门诊医生';
+}
+
+function isSeniorDoctorTitle(title: string) {
+  return /主任|高级|专家/.test(title);
+}
+
+function registrationFee(doctorId: string) {
+  const doctor = doctorMap.value.get(doctorId);
+  return isSeniorDoctorTitle(doctor?.title || '') ? 40 : 15;
+}
+
+function registrationFeeText(doctorId: string) {
+  return registrationFee(doctorId).toFixed(2);
 }
 
 function isRecommendedDoctor(doctorId: string) {
@@ -345,12 +360,54 @@ function toSchedule(item: Record<string, unknown>): Schedule {
 function toTimeSlot(item: Record<string, unknown>): TimeSlot {
   return {
     id: normalizeText(item.id),
+    period: normalizeText(item.period),
     startTime: normalizeText(item.startTime).slice(0, 5),
     capacity: Number(item.capacity ?? 0),
     booked: Number(item.booked ?? 0),
     locked: Number(item.locked ?? 0),
     available: Number(item.available ?? 0)
   };
+}
+
+function withSlotPeriod(schedule: Schedule): Schedule {
+  return {
+    ...schedule,
+    timeSlots: schedule.timeSlots.map((slot) => ({ ...slot, period: slot.period || schedule.period }))
+  };
+}
+
+function aggregateSchedules(items: Schedule[]) {
+  const groups = new Map<string, Schedule[]>();
+  items.forEach((item) => {
+    const key = `${item.doctorId}|${item.departmentId}|${item.workDate}`;
+    groups.set(key, [...(groups.get(key) || []), item]);
+  });
+
+  return Array.from(groups.values()).flatMap((group) => {
+    const morning = group.find((item) => item.period === '上午');
+    const afternoon = group.find((item) => item.period === '下午');
+    const others = group.filter((item) => item.period !== '上午' && item.period !== '下午').map(withSlotPeriod);
+    if (!morning || !afternoon) {
+      return [...group.filter((item) => item.period === '上午' || item.period === '下午').map(withSlotPeriod), ...others];
+    }
+    const timeSlots = [...morning.timeSlots, ...afternoon.timeSlots]
+      .map((slot) => ({
+        ...slot,
+        period: slot.period || (slot.startTime >= '12:00' ? '下午' : '上午')
+      }))
+      .sort((a, b) => a.startTime.localeCompare(b.startTime));
+    const combined: Schedule = {
+      ...morning,
+      id: `${morning.id}__${afternoon.id}`,
+      period: '全天',
+      capacity: morning.capacity + afternoon.capacity,
+      booked: morning.booked + afternoon.booked,
+      locked: morning.locked + afternoon.locked,
+      available: morning.available + afternoon.available,
+      timeSlots
+    };
+    return [combined, ...others];
+  });
 }
 
 function optionIndexById(options: Array<{ id: string }>, value: string) {
@@ -429,7 +486,7 @@ function openFocusedDoctorScheduleForDate() {
     return;
   }
 
-  selectedSchedule.value = visibleSchedules.value.find((item) => item.workDate === selectedDate.value) ?? null;
+  selectedSchedule.value = displaySchedules.value.find((item) => item.workDate === selectedDate.value) ?? null;
 }
 
 function openInitialDoctorSchedule() {
@@ -440,7 +497,7 @@ function openInitialDoctorSchedule() {
   focusedDoctorId.value = initialDoctorId.value;
   syncSelectedDate();
 
-  const matched = visibleSchedules.value.find((item) => item.workDate === selectedDate.value) ?? visibleSchedules.value[0];
+  const matched = displaySchedules.value.find((item) => item.workDate === selectedDate.value) ?? displaySchedules.value[0];
   if (!matched) {
     uni.showToast({ title: '该医生暂无可约排班', icon: 'none' });
     return;
@@ -517,6 +574,7 @@ async function confirmBooking() {
   }
 
   try {
+    const appointmentPeriod = slot.period || schedule.period;
     const appointment = await request<Appointment>({
       url: '/appointments',
       method: 'POST',
@@ -529,12 +587,13 @@ async function confirmBooking() {
         departmentId: schedule.departmentId,
         departmentName: selectedDepartment.value?.name,
         visitDate: schedule.workDate,
-        period: schedule.period,
+        period: appointmentPeriod,
         startTime: slot.startTime,
         source: 'AI',
         triageSummary: aiConsultation.value?.recordDraft || aiConsultation.value?.summary || '',
         riskLevel: aiConsultation.value?.riskLevel || 'LOW',
-        recommendedDepartmentId: aiConsultation.value?.recommendedDepartmentId || selectedDepartmentId.value
+        recommendedDepartmentId: aiConsultation.value?.recommendedDepartmentId || selectedDepartmentId.value,
+        registrationFee: registrationFee(schedule.doctorId)
       }
     });
 
@@ -545,7 +604,7 @@ async function confirmBooking() {
         businessType: 'APPOINTMENT',
         businessId: appointment.id,
         patientId: patient.id,
-        amount: 0.01,
+        amount: registrationFee(schedule.doctorId),
         paymentMethod: 'WECHAT_TEST'
       }
     });

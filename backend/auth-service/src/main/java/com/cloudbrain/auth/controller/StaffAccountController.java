@@ -25,7 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
 @PreAuthorize("hasRole('ADMIN')")
 public class StaffAccountController {
     private static final Set<String> MANAGED_ROLES = Set.of(
-            "OUTPATIENT_DOCTOR", "CHECK_DOCTOR", "LAB_DOCTOR", "DISPOSAL_DOCTOR", "PHARMACY_DOCTOR");
+            "OUTPATIENT_DOCTOR", "CHECK_DOCTOR", "LAB_DOCTOR", "DISPOSAL_DOCTOR", "PHARMACY_STAFF");
 
     private final UserAccountRepository accounts;
     private final PasswordEncoder passwordEncoder;
@@ -99,6 +99,9 @@ public class StaffAccountController {
 
     private String normalizeRole(String role) {
         String normalized = role == null ? "OUTPATIENT_DOCTOR" : role.trim().toUpperCase();
+        if ("PHARMACY_DOCTOR".equals(normalized)) {
+            normalized = "PHARMACY_STAFF";
+        }
         if (!MANAGED_ROLES.contains(normalized)) {
             throw new IllegalArgumentException("不支持管理该员工角色");
         }
@@ -127,7 +130,7 @@ public class StaffAccountController {
         return switch (role) {
             case "OUTPATIENT_DOCTOR" -> List.of("appointment:read", "medical-record:write", "medical-order:create");
             case "CHECK_DOCTOR", "LAB_DOCTOR", "DISPOSAL_DOCTOR" -> List.of("medical-order:read", "report:write");
-            case "PHARMACY_DOCTOR" -> List.of("prescription:dispense");
+            case "PHARMACY_STAFF" -> List.of("prescription:dispense");
             default -> List.of();
         };
     }

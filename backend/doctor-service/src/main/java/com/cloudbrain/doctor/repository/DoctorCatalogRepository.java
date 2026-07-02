@@ -373,10 +373,7 @@ public class DoctorCatalogRepository {
                 LocalTime.of(10,0), LocalTime.of(10,30), LocalTime.of(11,0), LocalTime.of(11,30));
         if ("下午".equals(period)) return List.of(LocalTime.of(14,0), LocalTime.of(14,30), LocalTime.of(15,0), LocalTime.of(15,30),
                 LocalTime.of(16,0), LocalTime.of(16,30));
-        return List.of(LocalTime.of(8,0), LocalTime.of(8,30), LocalTime.of(9,0), LocalTime.of(9,30),
-                       LocalTime.of(10,0), LocalTime.of(10,30), LocalTime.of(11,0), LocalTime.of(11,30),
-                       LocalTime.of(14,0), LocalTime.of(14,30), LocalTime.of(15,0), LocalTime.of(15,30),
-                       LocalTime.of(16,0), LocalTime.of(16,30));
+        return List.of();
     }
 
     public void deleteSchedulesForDepartmentWindow(String departmentId, LocalDate startInclusive, LocalDate endInclusive) {
@@ -411,8 +408,8 @@ public class DoctorCatalogRepository {
     }
 
     private void validateSchedulePeriod(String period) {
-        if (!List.of("上午", "下午", "全天").contains(period)) {
-            throw new IllegalArgumentException("排班时段只能是上午、下午或全天");
+        if (!List.of("上午", "下午").contains(period)) {
+            throw new IllegalArgumentException("排班时段只能是上午或下午");
         }
     }
 
@@ -420,9 +417,9 @@ public class DoctorCatalogRepository {
         StringBuilder sql = new StringBuilder("""
                 select count(*) from schedule
                 where staff_id = ? and work_date = ? and status <> 'SUSPENDED'
-                  and (period = ? or period = '全天' or ? = '全天')
+                  and period = ?
                 """);
-        List<Object> args = new ArrayList<>(List.of(doctorId, date, period, period));
+        List<Object> args = new ArrayList<>(List.of(doctorId, date, period));
         if (ignoredScheduleId != null && !ignoredScheduleId.isBlank()) {
             sql.append(" and id <> ?");
             args.add(ignoredScheduleId);
@@ -440,9 +437,9 @@ public class DoctorCatalogRepository {
                 from schedule s
                 join outpatient_doctor od on od.staff_id = s.staff_id
                 where od.room_id = ? and s.work_date = ? and s.status <> 'SUSPENDED'
-                  and (s.period = ? or s.period = '全天' or ? = '全天')
+                  and s.period = ?
                 """);
-        List<Object> args = new ArrayList<>(List.of(room.id(), date, period, period));
+        List<Object> args = new ArrayList<>(List.of(room.id(), date, period));
         if (ignoredScheduleId != null && !ignoredScheduleId.isBlank()) {
             sql.append(" and s.id <> ?");
             args.add(ignoredScheduleId);

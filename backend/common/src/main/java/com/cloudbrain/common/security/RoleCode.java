@@ -7,6 +7,7 @@ public enum RoleCode {
     CHECK_DOCTOR,
     LAB_DOCTOR,
     DISPOSAL_DOCTOR,
+    PHARMACY_STAFF,
     PHARMACY_DOCTOR,
     ADMIN
 }

@@ -169,7 +169,7 @@
               <div class="registration-footer">
                 <div>
                   <span>挂号费</span>
-                  <strong>￥0.01</strong>
+                  <strong>￥{{ selectedRegistrationFeeText }}</strong>
                 </div>
                 <el-button type="primary" :loading="registering" :disabled="!canRegister" @click="register">
                   挂号并收费
@@ -301,6 +301,33 @@
             </el-table-column>
           </el-table>
         </section>
+
+        <section v-show="currentPage === 'drugReturnRefunds'" class="work-page">
+          <div class="page-head">
+            <div>
+              <h1>退药退费</h1>
+              <p>处理已缴费但未取药的退药记录，退费完成后处方同步为已退药退费。</p>
+            </div>
+            <el-button :loading="loadingAll" @click="loadAllData">刷新</el-button>
+          </div>
+
+          <el-table v-loading="loadingAll" :data="drugReturns" empty-text="暂无待退费退药单">
+            <el-table-column prop="returnNo" label="退药单号" width="150" />
+            <el-table-column prop="prescriptionNo" label="处方号" width="150" />
+            <el-table-column prop="patientName" label="患者" width="110" />
+            <el-table-column prop="doctorOpinion" label="医生意见" min-width="220" show-overflow-tooltip />
+            <el-table-column label="金额" width="120" align="right">
+              <template #default="{ row }">
+                <strong class="amount">¥{{ amountText(row.totalAmount) }}</strong>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="120" fixed="right">
+              <template #default="{ row }">
+                <el-button type="primary" link :loading="refundingReturnId === row.id" @click="refundDrug(row)">退费完成</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </section>
       </main>
     </div>
 
@@ -365,13 +392,14 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { useRouter } from 'vue-router';
 import { useAuthStore } from '../../store/auth';
 import { cancelAppointment, createOfflineAppointment, getAppointments, type Appointment } from '../../api/appointment';
-import { getDepartments, getSchedules, type Department, type Schedule } from '../../api/doctor';
+import { getDepartments, getDoctors, getSchedules, type Department, type Doctor, type Schedule } from '../../api/doctor';
 import { getMedicalOrders, type MedicalOrder } from '../../api/medical-order';
-import { getPrescriptions, type Prescription } from '../../api/pharmacy';
+import { getDrugReturns, getPrescriptions, type DrugReturnOrder, type Prescription } from '../../api/pharmacy';
 import {
   confirmTestPayment,
   createPaymentOrder,
   getPayments,
+  refundDrugReturn,
   type BusinessType,
   type PaymentChannel,
   type PaymentOrder
@@ -386,7 +414,7 @@ import {
 } from '../../api/patient';
 import { appointmentStatusLabel, paymentStatusLabel } from '../../utils/status';
 
-type PageKey = 'payments' | 'registration' | 'appointmentRecords' | 'paymentRecords';
+type PageKey = 'payments' | 'registration' | 'appointmentRecords' | 'paymentRecords' | 'drugReturnRefunds';
 type FeeType = 'REGISTRATION' | 'DRUG' | 'CHECK' | 'LAB' | 'DISPOSAL';
 type FeeFilter = 'ALL' | FeeType;
 
@@ -424,10 +452,13 @@ const searchingAppointmentRecords = ref(false);
 const searchingPaymentRecords = ref(false);
 
 const departments = ref<Department[]>([]);
+const doctors = ref<Doctor[]>([]);
 const schedules = ref<Schedule[]>([]);
 const appointments = ref<Appointment[]>([]);
 const medicalOrders = ref<MedicalOrder[]>([]);
 const prescriptions = ref<Prescription[]>([]);
+const drugReturns = ref<DrugReturnOrder[]>([]);
+const refundingReturnId = ref('');
 const paymentRecords = ref<PaymentOrder[]>([]);
 
 const selectedDepartmentId = ref('');
@@ -488,6 +519,7 @@ const navItems = computed(() => [
   { key: 'payments' as const, label: '缴费', badge: pendingItems.value.length || '' },
   { key: 'registration' as const, label: '线下挂号', badge: '' },
   { key: 'appointmentRecords' as const, label: '挂号记录', badge: '' },
+  { key: 'drugReturnRefunds' as const, label: '退药退费', badge: drugReturns.value.length || '' },
   { key: 'paymentRecords' as const, label: '缴费记录', badge: '' }
 ]);
 
@@ -518,6 +550,9 @@ const scheduleOptions = computed<ScheduleOption[]>(() => {
     .sort((left, right) => `${left.schedule.workDate} ${left.slot.startTime}`.localeCompare(`${right.schedule.workDate} ${right.slot.startTime}`));
 });
 const selectedScheduleOption = computed(() => scheduleOptions.value.find(item => item.slot.id === selectedSlotId.value));
+const doctorMap = computed(() => new Map(doctors.value.map(item => [item.id, item])));
+const selectedRegistrationFee = computed(() => selectedScheduleOption.value ? registrationFee(selectedScheduleOption.value.schedule.doctorId) : 15);
+const selectedRegistrationFeeText = computed(() => amountText(selectedRegistrationFee.value));
 const canRegister = computed(() => Boolean(canConfirmPatient.value && selectedScheduleOption.value && selectedScheduleOption.value.slot.available > 0));
 
 const appointmentMap = computed(() => new Map(appointments.value.map(item => [item.id, item])));
@@ -543,7 +578,7 @@ const pendingItems = computed<PendingFeeItem[]>(() => {
       feeType: 'REGISTRATION' as const,
       title: `${item.departmentName} · ${item.doctorName}`,
       description: `${item.visitDate} ${normalizeStartTime(item.startTime) || item.period} · ${item.businessNo}`,
-      amount: Number(pendingPaymentMap.value.get(`APPOINTMENT:${item.id}`)?.amount ?? 0.01),
+      amount: Number(pendingPaymentMap.value.get(`APPOINTMENT:${item.id}`)?.amount ?? registrationFee(item.doctorId)),
       sortTime: `${item.visitDate} ${normalizeStartTime(item.startTime) || '00:00'}`
     }));
 
@@ -654,16 +689,20 @@ function switchPage(page: PageKey) {
 async function loadAllData() {
   loadingAll.value = true;
   try {
-    const [appointmentsResult, prescriptionsResult, medicalOrdersResult, paymentsResult] = await Promise.allSettled([
+    const [appointmentsResult, prescriptionsResult, medicalOrdersResult, paymentsResult, drugReturnsResult, doctorsResult] = await Promise.allSettled([
       getAppointments(),
       getPrescriptions(),
       getMedicalOrders(),
-      getPayments()
+      getPayments(),
+      getDrugReturns({ status: 'RETURN_PENDING_REFUND' }),
+      getDoctors()
     ]);
     appointments.value = unwrap(appointmentsResult, [], '挂号记录');
     prescriptions.value = unwrap(prescriptionsResult, [], '处方');
     medicalOrders.value = unwrap(medicalOrdersResult, [], '检查检验处置医嘱');
     paymentRecords.value = unwrap(paymentsResult, [], '缴费记录');
+    drugReturns.value = unwrap(drugReturnsResult, [], '退药单');
+    doctors.value = unwrap(doctorsResult, doctors.value, '医生列表');
   } finally {
     loadingAll.value = false;
   }
@@ -700,8 +739,16 @@ async function loadDepartments() {
   }
 }
 
+async function loadDoctors() {
+  try {
+    doctors.value = await getDoctors();
+  } catch (error) {
+    handleRequestFailure(error, '医生加载失败');
+  }
+}
+
 async function loadRegistrationData() {
-  await Promise.all([loadDepartments(), loadSchedules()]);
+  await Promise.all([loadDepartments(), loadDoctors(), loadSchedules()]);
 }
 
 async function resolvePatientIds(keyword: string) {
@@ -1029,7 +1076,8 @@ async function register() {
       period: option.schedule.period,
       startTime: option.slot.startTime.slice(0, 5),
       riskLevel: 'LOW',
-      triageSummary: '窗口线下挂号'
+      triageSummary: '窗口线下挂号',
+      registrationFee: registrationFee(option.schedule.doctorId)
     });
     ElMessage.success('挂号并收款成功');
     await Promise.all([loadSchedules(), loadAllData()]);
@@ -1048,6 +1096,26 @@ async function refund(row: Appointment) {
     await Promise.all([loadSchedules(), loadAllData()]);
   } catch (error) {
     if (error !== 'cancel') ElMessage.error(errorMessage(error, '退号失败'));
+  }
+}
+
+async function refundDrug(row: DrugReturnOrder) {
+  refundingReturnId.value = row.id;
+  try {
+    await ElMessageBox.confirm(`确认完成退药退费？${row.returnNo}`, '退药退费确认', { type: 'warning' });
+    await refundDrugReturn({
+      returnId: row.id,
+      prescriptionId: row.prescriptionId,
+      patientId: row.patientId,
+      amount: row.totalAmount,
+      reason: `退药单 ${row.returnNo}`
+    });
+    ElMessage.success('退费完成，退药状态已同步');
+    await loadAllData();
+  } catch (error) {
+    if (error !== 'cancel') ElMessage.error(errorMessage(error, '退药退费失败'));
+  } finally {
+    refundingReturnId.value = '';
   }
 }
 
@@ -1073,7 +1141,20 @@ function summarize(key: FeeType, label: string) {
 
 function scheduleLabel(item: ScheduleOption) {
   const dept = departments.value.find(department => department.id === item.schedule.departmentId)?.name ?? '';
-  return `${dept} · ${item.schedule.doctorName} · ${item.schedule.workDate} ${item.schedule.period} ${item.slot.startTime.slice(0, 5)} · 剩余 ${item.slot.available}`;
+  return `${dept} · ${item.schedule.doctorName} · ${item.schedule.workDate} ${item.schedule.period} ${item.slot.startTime.slice(0, 5)} · ￥${registrationFeeText(item.schedule.doctorId)} · 剩余 ${item.slot.available}`;
+}
+
+function isSeniorDoctorTitle(title: string) {
+  return /主任|高级|专家/.test(title);
+}
+
+function registrationFee(doctorId: string) {
+  const doctor = doctorMap.value.get(doctorId);
+  return isSeniorDoctorTitle(doctor?.title || '') ? 40 : 15;
+}
+
+function registrationFeeText(doctorId: string) {
+  return amountText(registrationFee(doctorId));
 }
 
 function normalizeStartTime(value: Appointment['startTime']) {

@@ -25,4 +25,13 @@ public class PrescriptionPaymentClient {
                 .retrieve()
                 .toBodilessEntity();
     }
+
+    public void completeDrugReturn(String id, String cashierId, String refundOrderId) {
+        client.post()
+                .uri("/api/internal/drug-returns/{id}/refund-completion", id)
+                .header("X-Internal-Api-Key", key)
+                .body(Map.of("cashierId", cashierId, "refundOrderId", refundOrderId))
+                .retrieve()
+                .toBodilessEntity();
+    }
 }

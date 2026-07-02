@@ -71,6 +71,25 @@ public class CashierController {
         return repository.refunds(restrict(patientId, auth), businessId);
     }
 
+    @PostMapping("/refunds/drug-return")
+    @PreAuthorize("hasRole('CASHIER')")
+    @Transactional
+    public Object refundDrugReturn(@RequestBody DrugReturnRefundRequest request,
+            JwtAuthenticationToken auth) {
+        if (request.returnId() == null || request.returnId().isBlank()) throw new IllegalArgumentException("returnId 不能为空");
+        if (request.prescriptionId() == null || request.prescriptionId().isBlank()) throw new IllegalArgumentException("prescriptionId 不能为空");
+        String patientId = restrict(request.patientId(), auth);
+        var payment = repository.findOptionalByBusiness("PRESCRIPTION", request.prescriptionId());
+        if (payment.isEmpty() || (!"PAID".equals(payment.get().status()) && !"REFUNDED".equals(payment.get().status()))) {
+            throw new IllegalStateException("处方没有可退费的已支付记录");
+        }
+        CashierRepository.Refund refund = repository.recordRefund("PRESCRIPTION", request.prescriptionId(), patientId,
+                request.amount(), request.reason() == null || request.reason().isBlank() ? "退药退费" : request.reason(),
+                auth.getToken().getSubject());
+        prescriptionClient.completeDrugReturn(request.returnId(), auth.getToken().getSubject(), refund.id());
+        return refund;
+    }
+
     @PostMapping("/payments/test-callback")
     @PreAuthorize("hasAnyRole('PATIENT','CASHIER','ADMIN')")
     @Transactional
@@ -119,5 +138,9 @@ public class CashierController {
 
     public record CreatePaymentRequest(String businessType, String businessId, String patientId,
             BigDecimal amount, String paymentMethod) {
+    }
+
+    public record DrugReturnRefundRequest(String returnId, String prescriptionId, String patientId,
+            BigDecimal amount, String reason) {
     }
 }

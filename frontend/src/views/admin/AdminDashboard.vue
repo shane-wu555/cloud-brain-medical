@@ -588,7 +588,6 @@
                 <el-select v-model="manualScheduleForm.period" class="full">
                   <el-option label="上午" value="上午" />
                   <el-option label="下午" value="下午" />
-                  <el-option label="全天" value="全天" />
                 </el-select>
               </el-form-item>
             </div>
@@ -821,6 +820,7 @@ const roleLabels: Record<string, string> = {
   CHECK_DOCTOR: '检查医生',
   LAB_DOCTOR: '检验医生',
   DISPOSAL_DOCTOR: '处置医生',
+  PHARMACY_STAFF: '药房工作人员',
   PHARMACY_DOCTOR: '药房医生'
 };
 
@@ -828,7 +828,8 @@ const accountRoleOptions = [
   { label: '门诊医生', value: 'OUTPATIENT_DOCTOR' },
   { label: '检查医生', value: 'CHECK_DOCTOR' },
   { label: '检验医生', value: 'LAB_DOCTOR' },
-  { label: '处置医生', value: 'DISPOSAL_DOCTOR' }
+  { label: '处置医生', value: 'DISPOSAL_DOCTOR' },
+  { label: '药房工作人员', value: 'PHARMACY_STAFF' }
 ];
 
 const aiForm = reactive({
@@ -1753,7 +1754,7 @@ function compareScheduleBoardDoctors(
 }
 
 function scheduleBoardSlotEntries(entries: ScheduleBoardEntry[], period: string) {
-  return entries.filter((entry) => entry.period === period || entry.period === '全天').sort(compareScheduleEntries);
+  return entries.filter((entry) => entry.period === period).sort(compareScheduleEntries);
 }
 
 function scheduleShiftClasses(item: ScheduleBoardEntry) {
@@ -1800,20 +1801,17 @@ function scheduleBoardRangeLabel(days: ScheduleBoardDay[]) {
 
 function schedulePeriodKey(period: string): ScheduleBoardEntry['periodKey'] {
   if (period === '下午') return 'afternoon';
-  if (period === '全天') return 'full';
   return 'morning';
 }
 
 function schedulePeriodOrder(period: string) {
   if (period === '上午') return 0;
   if (period === '下午') return 1;
-  if (period === '全天') return 2;
   return 9;
 }
 
 function scheduleTimeRange(period: string) {
   if (period === '下午') return '14:00-17:00';
-  if (period === '全天') return '08:00-17:00';
   return '08:00-12:00';
 }
 
@@ -1905,7 +1903,7 @@ function needsAutomaticReplan() {
 }
 
 function coversSchedulePeriod(items: Schedule[], workDate: string, period: string) {
-  return items.some((schedule) => schedule.workDate === workDate && (schedule.period === period || schedule.period === '全天'));
+  return items.some((schedule) => schedule.workDate === workDate && schedule.period === period);
 }
 
 function hasDoctorEventConflict(schedule: Schedule, start: string, end: string) {
@@ -1913,7 +1911,7 @@ function hasDoctorEventConflict(schedule: Schedule, start: string, end: string) 
     (event) =>
       event.doctorId === schedule.doctorId &&
       event.dates.some((date) => date >= start && date <= end && date === schedule.workDate) &&
-      event.periods.some((period) => period === schedule.period || period === '全天' || schedule.period === '全天')
+      event.periods.some((period) => period === schedule.period)
   );
 }
 

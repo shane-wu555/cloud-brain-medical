@@ -70,7 +70,7 @@ interface Prescription {
   patientName: string;
   doctorId: string;
   diagnosis: string;
-  status: 'DRAFT' | 'CONFIRMED' | 'PENDING_PAYMENT' | 'PAID' | 'WAITING_DISPENSE' | 'DISPENSED' | 'RETURNED' | 'CANCELLED';
+  status: 'DRAFT' | 'CONFIRMED' | 'PENDING_PAYMENT' | 'PAID' | 'WAITING_DISPENSE' | 'DISPENSED' | 'RETURNED' | 'RETURN_PENDING_REFUND' | 'RETURN_REFUNDED' | 'CANCELLED';
   totalAmount: number;
   paymentOrderId: string;
   createdAt: string;
@@ -92,11 +92,11 @@ const visiblePrescriptions = computed(() =>
     .filter((item) =>
       mode.value === 'arrangement'
         ? ['CONFIRMED', 'PENDING_PAYMENT', 'PAID', 'WAITING_DISPENSE'].includes(item.status)
-        : ['DISPENSED', 'RETURNED', 'CANCELLED'].includes(item.status)
+        : ['DISPENSED', 'RETURNED', 'RETURN_PENDING_REFUND', 'RETURN_REFUNDED', 'CANCELLED'].includes(item.status)
     )
     .sort((a, b) => prescriptionSortTime(b).localeCompare(prescriptionSortTime(a)))
 );
-const pageTitle = computed(() => (mode.value === 'arrangement' ? '待取药安排' : '取药记录'));
+const pageTitle = computed(() => (mode.value === 'arrangement' ? '待取药安排' : '取药退药记录'));
 const emptyText = computed(() => (mode.value === 'arrangement' ? '暂无待取药安排' : '暂无取药记录'));
 
 onLoad((options) => {
@@ -124,7 +124,9 @@ function statusLabel(status: Prescription['status']) {
     PAID: '已缴费',
     WAITING_DISPENSE: '待发药',
     DISPENSED: '已发药',
-    RETURNED: '已退药',
+    RETURNED: '未缴费（已退药）',
+    RETURN_PENDING_REFUND: '未退费（已退药）',
+    RETURN_REFUNDED: '已退费（已退药）',
     CANCELLED: '已取消'
   }[status] ?? status;
 }
@@ -138,6 +140,8 @@ function statusClass(status: Prescription['status']) {
     WAITING_DISPENSE: 'waiting',
     DISPENSED: 'done',
     RETURNED: 'returned',
+    RETURN_PENDING_REFUND: 'returned',
+    RETURN_REFUNDED: 'returned',
     CANCELLED: 'cancelled'
   }[status] ?? 'draft';
 }
@@ -242,8 +246,8 @@ onShow(load);
 }
 
 .returned {
-  background: #fee2e2;
-  color: #b91c1c;
+  background: #eff6ff;
+  color: #1d4ed8;
 }
 
 .cancelled {

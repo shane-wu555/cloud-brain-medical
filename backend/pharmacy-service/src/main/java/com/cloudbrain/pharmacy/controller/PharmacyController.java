@@ -1,5 +1,6 @@
 package com.cloudbrain.pharmacy.controller;
 
+import com.cloudbrain.pharmacy.entity.DrugReturnOrder;
 import com.cloudbrain.pharmacy.entity.Prescription;
 import com.cloudbrain.pharmacy.repository.PharmacyRepository;
 import com.cloudbrain.pharmacy.service.PharmacyService;
@@ -23,7 +24,7 @@ public class PharmacyController {
     }
 
     @GetMapping("/drugs")
-    @PreAuthorize("hasAnyRole('OUTPATIENT_DOCTOR','PHARMACY_DOCTOR','ADMIN')")
+    @PreAuthorize("hasAnyRole('OUTPATIENT_DOCTOR','PHARMACY_STAFF','PHARMACY_DOCTOR','ADMIN')")
     public List<PharmacyRepository.Drug> drugs(@RequestParam(name = "keyword", required = false) String keyword) {
         return service.drugs(keyword);
     }
@@ -35,7 +36,7 @@ public class PharmacyController {
     }
 
     @GetMapping("/prescriptions")
-    @PreAuthorize("hasAnyRole('PATIENT','OUTPATIENT_DOCTOR','PHARMACY_DOCTOR','CASHIER','ADMIN')")
+    @PreAuthorize("hasAnyRole('PATIENT','OUTPATIENT_DOCTOR','PHARMACY_STAFF','PHARMACY_DOCTOR','CASHIER','ADMIN')")
     public List<Prescription> prescriptions(@RequestParam(name = "patientId", required = false) String patientId,
                                             @RequestParam(name = "status", required = false) String status,
                                             JwtAuthenticationToken auth) {
@@ -43,21 +44,37 @@ public class PharmacyController {
     }
 
     @GetMapping("/prescriptions/{id}")
-    @PreAuthorize("hasAnyRole('PATIENT','OUTPATIENT_DOCTOR','PHARMACY_DOCTOR','CASHIER','ADMIN')")
+    @PreAuthorize("hasAnyRole('PATIENT','OUTPATIENT_DOCTOR','PHARMACY_STAFF','PHARMACY_DOCTOR','CASHIER','ADMIN')")
     public Prescription prescription(@PathVariable("id") String id, JwtAuthenticationToken auth) {
         return service.find(id, auth.getToken().getSubject(), auth.getToken().getClaimAsString("role"));
     }
 
     @PostMapping("/prescriptions/{id}/dispense")
-    @PreAuthorize("hasRole('PHARMACY_DOCTOR')")
+    @PreAuthorize("hasAnyRole('PHARMACY_STAFF','PHARMACY_DOCTOR')")
     public Prescription dispense(@PathVariable("id") String id, JwtAuthenticationToken auth) {
         return service.dispense(id, auth.getToken().getSubject());
     }
 
     @PostMapping("/prescriptions/{id}/return")
-    @PreAuthorize("hasRole('PHARMACY_DOCTOR')")
+    @PreAuthorize("hasAnyRole('PHARMACY_STAFF','PHARMACY_DOCTOR')")
     public Prescription returnDrugs(@PathVariable("id") String id, @RequestBody ReturnRequest request, JwtAuthenticationToken auth) {
         return service.returnDrugs(id, auth.getToken().getSubject(), request.reason());
+    }
+
+    @PostMapping("/prescriptions/{id}/drug-returns")
+    @PreAuthorize("hasRole('OUTPATIENT_DOCTOR')")
+    public DrugReturnOrder createDrugReturn(@PathVariable("id") String id,
+                                            @RequestBody CreateDrugReturnRequest request,
+                                            JwtAuthenticationToken auth) {
+        return service.createDrugReturn(id, request, auth.getToken().getSubject());
+    }
+
+    @GetMapping("/drug-returns")
+    @PreAuthorize("hasAnyRole('PATIENT','OUTPATIENT_DOCTOR','PHARMACY_STAFF','PHARMACY_DOCTOR','CASHIER','ADMIN')")
+    public List<DrugReturnOrder> drugReturns(@RequestParam(name = "patientId", required = false) String patientId,
+                                             @RequestParam(name = "status", required = false) String status,
+                                             JwtAuthenticationToken auth) {
+        return service.drugReturns(patientId, status, auth.getToken().getSubject(), auth.getToken().getClaimAsString("role"));
     }
 
     @PostMapping("/internal/prescriptions/{id}/payment-confirmation")
@@ -66,6 +83,14 @@ public class PharmacyController {
                                             @RequestHeader(name = "X-Internal-Api-Key", required = false) String key) {
         checkKey(key);
         return service.confirmPayment(id, request.patientId(), request.paymentOrderId());
+    }
+
+    @PostMapping("/internal/drug-returns/{id}/refund-completion")
+    public DrugReturnOrder refundCompletion(@PathVariable("id") String id,
+                                            @RequestBody RefundCompletion request,
+                                            @RequestHeader(name = "X-Internal-Api-Key", required = false) String key) {
+        checkKey(key);
+        return service.completeDrugReturn(id, request.cashierId(), request.refundOrderId());
     }
 
     private void checkKey(String key) {
@@ -97,6 +122,12 @@ public class PharmacyController {
     public record ReturnRequest(String reason) {
     }
 
+    public record CreateDrugReturnRequest(String doctorOpinion, String opinionTemplate) {
+    }
+
     public record PaymentConfirmation(String patientId, String paymentOrderId) {
+    }
+
+    public record RefundCompletion(String cashierId, String refundOrderId) {
     }
 }

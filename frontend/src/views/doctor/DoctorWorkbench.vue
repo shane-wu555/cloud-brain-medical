@@ -224,6 +224,7 @@
                 <span class="rx-card__no">{{ rx.prescriptionNo }}</span>
                 <el-tag :type="rxStatusType(rx.status)" size="small" effect="light">{{ rxStatusLabel(rx.status) }}</el-tag>
                 <span class="rx-card__amount">¥{{ rx.totalAmount?.toFixed(2) }}</span>
+                <el-button v-if="canCreateDrugReturn(rx)" size="small" type="warning" link @click="openDrugReturn(rx)">申请退药</el-button>
               </div>
               <div class="rx-card__body">
                 <div v-for="item in rx.items" :key="item.id" class="rx-card__item">
@@ -461,6 +462,22 @@
         </el-card>
       </aside>
     </div>
+    <el-dialog v-model="drugReturnDialog.visible" title="退药记录" width="520px">
+      <el-form label-position="top">
+        <el-form-item label="意见模板">
+          <el-select v-model="drugReturnDialog.template" class="full" @change="applyReturnTemplate">
+            <el-option v-for="item in drugReturnTemplates" :key="item.name" :label="item.name" :value="item.name" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="医生意见">
+          <el-input v-model="drugReturnDialog.opinion" type="textarea" :rows="4" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="drugReturnDialog.visible = false">取消</el-button>
+        <el-button type="primary" :loading="drugReturnDialog.submitting" @click="submitDrugReturn">提交申请</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -473,7 +490,7 @@ import { callAppointment, getTodayQueue, skipAppointment, startAppointment, upda
 import { getMedicalRecords, getPatientHistory, initDoctorRecord, writeDoctorNote, type MedicalRecord } from '../../api/medical-record';
 import { getClinicalAssistance, type ClinicalSuggestion } from '../../api/ai';
 import { createMedicalOrder, getLabResults, getMedicalItems, getMedicalOrders, getReports, type LaboratoryResultItem, type MedicalItem, type MedicalOrder, type MedicalReport } from '../../api/medical-order';
-import { createPrescription, getDrugs, getPrescriptions, type Drug, type Prescription } from '../../api/pharmacy';
+import { createDrugReturn, createPrescription, getDrugs, getPrescriptions, type Drug, type Prescription } from '../../api/pharmacy';
 
 const router = useRouter();
 const auth = useAuthStore();
@@ -514,6 +531,18 @@ const mainTabs = [
 
 const currentOrders = ref<MedicalOrder[]>([]);
 const prescriptions = ref<Prescription[]>([]);
+const drugReturnTemplates = [
+  { name: '医嘱调整退药', text: '患者尚未取药，根据复诊评估调整治疗方案，原处方药品不再继续领取，申请退药。' },
+  { name: '重复开立退药', text: '患者尚未取药，核对后发现处方药品与既往用药重复，申请退药。' },
+  { name: '患者放弃取药', text: '患者尚未取药，已明确放弃本次处方取药，申请退药。' }
+];
+const drugReturnDialog = reactive({
+  visible: false,
+  submitting: false,
+  prescription: undefined as Prescription | undefined,
+  template: '医嘱调整退药',
+  opinion: '患者尚未取药，根据复诊评估调整治疗方案，原处方药品不再继续领取，申请退药。'
+});
 const reportDialogVisible = ref(false);
 const selectedReport = ref<MedicalReport>();
 const selectedLabResults = ref<LaboratoryResultItem[]>([]);
@@ -674,7 +703,14 @@ function matchDrugForSuggestion(suggestion: Pick<AiDrugSuggestion, 'drugName' | 
 
 function rxStatusLabel(status: string) {
   const map: Record<string, string> = {
-    PENDING_PAYMENT: '待缴费', PAID: '已缴费', WAITING_DISPENSE: '待取药', DISPENSED: '已取药', RETURNED: '已退药', CANCELLED: '已取消'
+    PENDING_PAYMENT: '待缴费',
+    PAID: '已缴费',
+    WAITING_DISPENSE: '待取药',
+    DISPENSED: '已取药',
+    RETURNED: '已退药',
+    RETURN_PENDING_REFUND: '待退费',
+    RETURN_REFUNDED: '已退药退费',
+    CANCELLED: '已取消'
   };
   return map[status] ?? status;
 }
@@ -682,6 +718,8 @@ function rxStatusType(status: string): '' | 'primary' | 'success' | 'info' | 'wa
   if (status === 'PENDING_PAYMENT') return 'warning';
   if (status === 'PAID' || status === 'WAITING_DISPENSE') return 'primary';
   if (status === 'DISPENSED') return 'success';
+  if (status === 'RETURN_PENDING_REFUND') return 'warning';
+  if (status === 'RETURN_REFUNDED') return 'success';
   if (status === 'RETURNED' || status === 'CANCELLED') return 'info';
   return '';
 }
@@ -733,6 +771,42 @@ async function submitManualRx() {
   ElMessage.success('处方已开立，待患者缴费');
   await loadPrescriptions();
   mainTab.value = 'record';
+}
+
+function openDrugReturn(rx: Prescription) {
+  drugReturnDialog.prescription = rx;
+  drugReturnDialog.template = '医嘱调整退药';
+  applyReturnTemplate();
+  drugReturnDialog.visible = true;
+}
+
+function canCreateDrugReturn(rx: Prescription) {
+  return ['PENDING_PAYMENT', 'CONFIRMED', 'PAID', 'WAITING_DISPENSE'].includes(rx.status);
+}
+
+function applyReturnTemplate() {
+  drugReturnDialog.opinion = drugReturnTemplates.find(item => item.name === drugReturnDialog.template)?.text ?? '';
+}
+
+async function submitDrugReturn() {
+  if (!drugReturnDialog.prescription) return;
+  if (!drugReturnDialog.opinion.trim()) {
+    ElMessage.warning('请填写医生意见');
+    return;
+  }
+  drugReturnDialog.submitting = true;
+  try {
+    await createDrugReturn(drugReturnDialog.prescription.id, {
+      doctorOpinion: drugReturnDialog.opinion.trim(),
+      opinionTemplate: drugReturnDialog.template
+    });
+    drugReturnDialog.visible = false;
+    ElMessage.success('退药记录已保存，处方已终止取药');
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message ?? error?.message ?? '退药申请提交失败');
+  } finally {
+    drugReturnDialog.submitting = false;
+  }
 }
 
 const aiModelLabel = computed(() => {

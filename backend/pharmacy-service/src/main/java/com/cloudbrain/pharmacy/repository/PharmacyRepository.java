@@ -3,6 +3,9 @@ package com.cloudbrain.pharmacy.repository;
 import com.cloudbrain.pharmacy.entity.Prescription;
 import com.cloudbrain.pharmacy.entity.PrescriptionItem;
 import com.cloudbrain.pharmacy.entity.PrescriptionStatus;
+import com.cloudbrain.pharmacy.entity.DrugReturnItem;
+import com.cloudbrain.pharmacy.entity.DrugReturnOrder;
+import com.cloudbrain.pharmacy.entity.DrugReturnStatus;
 import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -128,6 +131,14 @@ public class PharmacyRepository {
                 """, operatorId, id) == 1;
     }
 
+    public boolean markReturnedBeforeDispense(String id, String operatorId, String reason, PrescriptionStatus returnStatus) {
+        return jdbc.update("""
+                update prescription
+                set status = ?, returned_by = ?, returned_at = now(), updated_at = now()
+                where id = ?::uuid and status in ('CONFIRMED','PENDING_PAYMENT','PAID','WAITING_DISPENSE')
+                """, returnStatus.name(), operatorId, id) == 1;
+    }
+
     public StockChange deductStock(String drugId, String prescriptionId, int quantity, String operatorId) {
         int before = stock(drugId);
         int updated = jdbc.update("""
@@ -147,6 +158,71 @@ public class PharmacyRepository {
         int after = before + quantity;
         flow(drugId, prescriptionId, "IN", quantity, before, after, operatorId, reason);
         return new StockChange(before, after);
+    }
+
+    public DrugReturnOrder createDrugReturn(Prescription prescription, String doctorId, String doctorOpinion,
+            String opinionTemplate, DrugReturnStatus status) {
+        String id = UUID.randomUUID().toString();
+        BigDecimal total = prescription.items().stream()
+                .map(PrescriptionItem::amount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        String returnNo = "RT" + System.currentTimeMillis();
+        jdbc.update("""
+                insert into drug_return_request
+                    (id, return_no, prescription_id, patient_id, patient_name, doctor_id,
+                     doctor_opinion, opinion_template, status, total_amount)
+                values (?::uuid, ?, ?::uuid, ?::uuid, ?, ?, ?, ?, ?, ?)
+                """, id, returnNo, prescription.id(), prescription.patientId(), prescription.patientName(),
+                doctorId, doctorOpinion, opinionTemplate, status.name(), total);
+        return findDrugReturn(id);
+    }
+
+    public DrugReturnOrder findDrugReturn(String id) {
+        DrugReturnOrder base = jdbc.query("""
+                        select r.*, p.prescription_no
+                        from drug_return_request r
+                        join prescription p on p.id = r.prescription_id
+                        where r.id = ?::uuid
+                        """, (rs, row) -> drugReturn(rs), id)
+                .stream().findFirst().orElseThrow(() -> new IllegalArgumentException("drug return does not exist"));
+        return drugReturnWithItems(base);
+    }
+
+    public List<DrugReturnOrder> listDrugReturns(String patientId, String status) {
+        StringBuilder sql = new StringBuilder("""
+                select r.*, p.prescription_no
+                from drug_return_request r
+                join prescription p on p.id = r.prescription_id
+                where 1 = 1
+                """);
+        List<Object> args = new ArrayList<>();
+        if (patientId != null && !patientId.isBlank()) {
+            sql.append(" and r.patient_id = ?::uuid");
+            args.add(patientId);
+        }
+        if (status != null && !status.isBlank()) {
+            sql.append(" and r.status = ?");
+            args.add(status);
+        }
+        sql.append(" order by r.created_at desc");
+        return jdbc.query(sql.toString(), (rs, row) -> drugReturnWithItems(drugReturn(rs)), args.toArray());
+    }
+
+    public boolean completeDrugReturn(String id, String cashierId, String refundOrderId) {
+        return jdbc.update("""
+                update drug_return_request
+                set status = 'RETURN_REFUNDED', cashier_id = ?, refund_order_id = ?,
+                    completed_at = now(), updated_at = now()
+                where id = ?::uuid and status = 'RETURN_PENDING_REFUND'
+                """, cashierId, refundOrderId, id) == 1;
+    }
+
+    public boolean markReturnRefunded(String id) {
+        return jdbc.update("""
+                update prescription
+                set status = 'RETURN_REFUNDED', updated_at = now()
+                where id = ?::uuid and status = 'RETURN_PENDING_REFUND'
+                """, id) == 1;
     }
 
     private int stock(String drugId) {
@@ -189,8 +265,58 @@ public class PharmacyRepository {
                 rs.getInt("days"), null, rs.getBigDecimal("unit_price"), rs.getBigDecimal("amount"));
     }
 
+    private DrugReturnOrder drugReturn(ResultSet rs) throws SQLException {
+        return new DrugReturnOrder(rs.getString("id"), rs.getString("return_no"),
+                rs.getString("prescription_id"), rs.getString("prescription_no"),
+                rs.getString("patient_id"), rs.getString("patient_name"), rs.getString("doctor_id"),
+                rs.getString("doctor_opinion"), rs.getString("opinion_template"),
+                DrugReturnStatus.valueOf(rs.getString("status")), rs.getBigDecimal("total_amount"),
+                string(rs, "pharmacist_id"), string(rs, "pharmacist_opinion"),
+                string(rs, "cashier_id"), string(rs, "refund_order_id"),
+                time(rs, "created_at"), time(rs, "verified_at"),
+                time(rs, "completed_at"), List.of());
+    }
+
+    private DrugReturnOrder drugReturnWithItems(DrugReturnOrder base) {
+        List<DrugReturnItem> items = jdbc.query("""
+                select * from prescription_item
+                where prescription_id = ?::uuid
+                order by id
+                """, (rs, row) -> prescriptionItemAsReturnItem(rs, base.id()), base.prescriptionId());
+        return new DrugReturnOrder(base.id(), base.returnNo(), base.prescriptionId(), base.prescriptionNo(),
+                base.patientId(), base.patientName(), base.doctorId(), base.doctorOpinion(), base.opinionTemplate(),
+                base.status(), base.totalAmount(), base.pharmacistId(), base.pharmacistOpinion(),
+                base.cashierId(), base.refundOrderId(), base.createdAt(), base.verifiedAt(),
+                base.completedAt(), items);
+    }
+
+    private DrugReturnItem prescriptionItemAsReturnItem(ResultSet rs, String returnId) throws SQLException {
+        return new DrugReturnItem(rs.getString("id"), returnId, rs.getString("id"),
+                rs.getString("drug_id"), rs.getString("drug_name"), rs.getInt("quantity"),
+                rs.getBigDecimal("unit_price"), rs.getBigDecimal("amount"),
+                null, null, null, null, null, null);
+    }
+
     private static LocalDateTime time(java.sql.Timestamp value) {
         return value == null ? null : value.toLocalDateTime();
+    }
+
+    private static LocalDateTime time(ResultSet rs, String column) throws SQLException {
+        return hasColumn(rs, column) ? time(rs.getTimestamp(column)) : null;
+    }
+
+    private static String string(ResultSet rs, String column) throws SQLException {
+        return hasColumn(rs, column) ? rs.getString(column) : null;
+    }
+
+    private static boolean hasColumn(ResultSet rs, String column) throws SQLException {
+        var metadata = rs.getMetaData();
+        for (int index = 1; index <= metadata.getColumnCount(); index += 1) {
+            if (column.equalsIgnoreCase(metadata.getColumnLabel(index)) || column.equalsIgnoreCase(metadata.getColumnName(index))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public record Drug(String id, String drugCode, String drugName, String specification, String unit,
