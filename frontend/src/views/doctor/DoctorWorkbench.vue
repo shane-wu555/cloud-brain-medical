@@ -470,7 +470,7 @@ import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { useAuthStore } from '../../store/auth';
 import { callAppointment, getTodayQueue, skipAppointment, startAppointment, updateAppointmentStatus, type Appointment } from '../../api/appointment';
-import { getMedicalRecords, getPatientHistory, initDoctorRecord, writeDoctorNote, type MedicalRecord } from '../../api/medical-record';
+import { archiveMedicalRecord, getMedicalRecords, getPatientHistory, initDoctorRecord, writeDoctorNote, type MedicalRecord } from '../../api/medical-record';
 import { getClinicalAssistance, type ClinicalSuggestion } from '../../api/ai';
 import { createMedicalOrder, getLabResults, getMedicalItems, getMedicalOrders, getReports, type LaboratoryResultItem, type MedicalItem, type MedicalOrder, type MedicalReport } from '../../api/medical-order';
 import { createPrescription, getDrugs, getPrescriptions, type Drug, type Prescription } from '../../api/pharmacy';
@@ -898,8 +898,11 @@ async function finishVisit() {
     return;
   }
   try {
+    if (currentRecordId.value) {
+      await archiveMedicalRecord(currentRecordId.value);
+    }
     await updateAppointmentStatus(current.value.id, 'FINISHED');
-    ElMessage.success('接诊已结束');
+    ElMessage.success('接诊已结束，病历已归档');
     current.value = undefined;
     await loadQueue();
   } catch (e: any) {
