@@ -6,7 +6,7 @@
         <span>处置医生工作台</span>
       </div>
       <div class="nav__right">
-        <span>{{ auth.user?.name }} 医生</span>
+        <span>{{ auth.user?.name }}</span>
         <span>{{ today }} {{ dayOfWeek }}</span>
         <el-button size="small" text class="nav__logout" @click="logout">退出</el-button>
       </div>
@@ -400,7 +400,7 @@ onMounted(loadOrders);
   align-items: center;
   justify-content: space-between;
   padding: 0 20px;
-  background: linear-gradient(135deg, #0b5f8a, #0c8aa0);
+  background: linear-gradient(135deg, #0cbdcc 0%, #0899a5 100%);
   color: #fff;
   box-shadow: 0 2px 10px rgba(15, 39, 66, 0.16);
 }

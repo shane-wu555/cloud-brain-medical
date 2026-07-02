@@ -7,7 +7,7 @@
         <span class="wks-nav__title">门诊</span>
       </div>
       <div class="wks-nav__right">
-        <span class="wks-nav__info">{{ doctorDept }}{{ doctorDept ? ' ｜ ' : '' }}{{ auth.user?.name }} 医师</span>
+        <span class="wks-nav__info">{{ doctorDept }}{{ doctorDept ? ' ｜ ' : '' }}{{ auth.user?.name }}</span>
         <span class="wks-nav__date">{{ today }} {{ dayOfWeek }}</span>
         <el-button size="small" text @click="logout" style="color:rgba(255,255,255,0.85)">退出</el-button>
       </div>
