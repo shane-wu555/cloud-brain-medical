@@ -3,6 +3,7 @@ package com.cloudbrain.appointment.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -84,6 +85,33 @@ class AppointmentServiceTest {
         when(medicalRecords.isSaved("appt")).thenReturn(false);
         assertThatThrownBy(() -> service.updateStatus("appt", "FINISHED", "doctor"))
                 .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test void reportCanQueueRevisitBeforeDoctorStartsVisit() {
+        Appointment waiting = appointment(AppointmentStatus.WAITING, PaymentStatus.PAID);
+        Appointment revisit = appointment(AppointmentStatus.REVISIT_WAITING, PaymentStatus.PAID);
+        when(appointments.findById("appt")).thenReturn(Optional.of(waiting));
+        when(appointments.insertForRevisit("appt", 3)).thenReturn(revisit);
+
+        assertThat(service.enterRevisit("appt")).isSameAs(revisit);
+    }
+
+    @Test void reportCanQueueRevisitAfterPatientIsCalled() {
+        Appointment called = appointment(AppointmentStatus.CALLED, PaymentStatus.PAID);
+        Appointment revisit = appointment(AppointmentStatus.REVISIT_WAITING, PaymentStatus.PAID);
+        when(appointments.findById("appt")).thenReturn(Optional.of(called));
+        when(appointments.insertForRevisit("appt", 3)).thenReturn(revisit);
+
+        assertThat(service.enterRevisit("appt")).isSameAs(revisit);
+    }
+
+    @Test void cancelledAppointmentCannotEnterRevisitQueue() {
+        Appointment cancelled = appointment(AppointmentStatus.CANCELLED, PaymentStatus.CANCELLED);
+        when(appointments.findById("appt")).thenReturn(Optional.of(cancelled));
+
+        assertThatThrownBy(() -> service.enterRevisit("appt"))
+                .isInstanceOf(IllegalStateException.class);
+        verify(appointments, never()).insertForRevisit(any(), anyInt());
     }
 
     private Appointment appointment(AppointmentStatus status, PaymentStatus paymentStatus) {

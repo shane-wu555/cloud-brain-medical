@@ -108,10 +108,18 @@ public class MedicalReportService {
         String finalConclusion = blank(conclusion) ? draft.conclusion() : conclusion;
         String finalAdvice = blank(advice) ? draft.advice() : advice;
         if (blank(finalConclusion)) throw new IllegalArgumentException("报告结论不能为空");
+        MedicalOrder orderForPublish = order;
+        if (!"COMPLETED".equals(order.status())) {
+            if (Set.of("WAITING", "CALLED").contains(order.status())) {
+                orderForPublish = orderService.start(orderId, actor, role);
+            }
+        }
         MedicalReport report = reports.confirm(orderId, finalFindings, finalConclusion, finalAdvice, actor);
         String source = report.createdByType();
-        orderService.complete(orderId, actor, role, finalConclusion, source, "AI".equals(source) ? report.aiTaskId() : null);
-        workflow.publish(order, report);
+        if (!"COMPLETED".equals(orderForPublish.status())) {
+            orderForPublish = orderService.complete(orderId, actor, role, finalConclusion, source, "AI".equals(source) ? report.aiTaskId() : null);
+        }
+        workflow.publish(orderForPublish, report);
         return report;
     }
 

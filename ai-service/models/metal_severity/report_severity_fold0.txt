@@ -1,0 +1,10 @@
+                precision    recall  f1-score   support
+
+        normal     0.8609    0.8274    0.8438      4346
+   small_metal     0.4375    0.5830    0.4999      1753
+moderate_metal     0.8171    0.7927    0.8047      7059
+  severe_metal     0.9060    0.8767    0.8911      6300
+
+      accuracy                         0.8088     19458
+     macro avg     0.7554    0.7700    0.7599     19458
+  weighted avg     0.8215    0.8088    0.8140     19458

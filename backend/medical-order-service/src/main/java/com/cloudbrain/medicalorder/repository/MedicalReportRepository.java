@@ -81,12 +81,12 @@ public class MedicalReportRepository {
                      created_by_type, ai_task_id, ai_original_findings, ai_original_conclusion)
                 values (?::uuid, ?::uuid, ?, 'DRAFT', ?, ?, ?, ?, ?::uuid, ?, ?)
                 on conflict (order_id) do update set
-                    status = 'DRAFT',
-                    findings = excluded.findings,
-                    conclusion = excluded.conclusion,
-                    advice = excluded.advice,
-                    created_by_type = excluded.created_by_type,
-                    ai_task_id = excluded.ai_task_id,
+                    status = case when medical_report.status = 'CONFIRMED' then medical_report.status else 'DRAFT' end,
+                    findings = case when medical_report.status = 'CONFIRMED' then medical_report.findings else excluded.findings end,
+                    conclusion = case when medical_report.status = 'CONFIRMED' then medical_report.conclusion else excluded.conclusion end,
+                    advice = case when medical_report.status = 'CONFIRMED' then medical_report.advice else excluded.advice end,
+                    created_by_type = case when medical_report.status = 'CONFIRMED' then medical_report.created_by_type else excluded.created_by_type end,
+                    ai_task_id = case when medical_report.status = 'CONFIRMED' then medical_report.ai_task_id else excluded.ai_task_id end,
                     ai_original_findings = coalesce(medical_report.ai_original_findings, excluded.ai_original_findings),
                     ai_original_conclusion = coalesce(medical_report.ai_original_conclusion, excluded.ai_original_conclusion),
                     updated_at = now()
@@ -121,6 +121,8 @@ public class MedicalReportRepository {
                     updated_at = now()
                 where order_id = ?::uuid and status = 'DRAFT'
                 """, findings, conclusion, advice, findings, conclusion, doctor, orderId) != 1) {
+            Optional<MedicalReport> existing = reportByOrder(orderId);
+            if (existing.isPresent() && "CONFIRMED".equals(existing.get().status())) return existing.get();
             throw new IllegalStateException("report does not exist or cannot be confirmed");
         }
         return reportByOrder(orderId).orElseThrow();

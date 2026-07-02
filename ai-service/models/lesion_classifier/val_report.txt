@@ -1,0 +1,8 @@
+              precision    recall  f1-score   support
+
+      normal     0.7801    0.7284    0.7534     11499
+  hemorrhage     0.6419    0.7034    0.6712      7959
+
+    accuracy                         0.7182     19458
+   macro avg     0.7110    0.7159    0.7123     19458
+weighted avg     0.7236    0.7182    0.7198     19458
