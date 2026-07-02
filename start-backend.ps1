@@ -3,6 +3,10 @@ $DB_NAME = "cloud_brain_medical"
 $DB_USER = "postgreSQL_user"
 $DB_PASS = "postgreDB1"
 $SSL    = "sslmode=disable"
+$MINIO_ENDPOINT = "http://127.0.0.1:9000"
+$MINIO_ACCESS_KEY = "minioadmin"
+$MINIO_SECRET_KEY = "minioadmin"
+$MINIO_BUCKET = "medical-imaging"
 
 $services = @(
     @{ name = "gateway-service";        jar = "backend\gateway-service\target\gateway-service-0.1.0-SNAPSHOT.jar";        dbUrl = "" },
@@ -32,7 +36,11 @@ foreach ($svc in $services) {
 
     $lines = @(
         "`$env:DB_USERNAME = '$DB_USER'",
-        "`$env:DB_PASSWORD = '$DB_PASS'"
+        "`$env:DB_PASSWORD = '$DB_PASS'",
+        "`$env:MINIO_ENDPOINT = '$MINIO_ENDPOINT'",
+        "`$env:MINIO_ACCESS_KEY = '$MINIO_ACCESS_KEY'",
+        "`$env:MINIO_SECRET_KEY = '$MINIO_SECRET_KEY'",
+        "`$env:MINIO_MEDICAL_BUCKET = '$MINIO_BUCKET'"
     )
     if ($svc.dbUrl -ne "") {
         $kv = $svc.dbUrl -split "=", 2

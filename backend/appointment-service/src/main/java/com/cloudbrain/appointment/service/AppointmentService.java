@@ -240,7 +240,8 @@ public class AppointmentService {
     public Appointment enterRevisit(String id) {
         Appointment a = appointmentRepository.findById(id).orElseThrow(() -> new IllegalArgumentException("挂号记录不存在"));
         if (a.getStatus() == AppointmentStatus.REVISIT_WAITING) return a;
-        if (a.getStatus() != AppointmentStatus.FINISHED && a.getStatus() != AppointmentStatus.IN_VISIT)
+        if (!List.of(AppointmentStatus.WAITING, AppointmentStatus.CALLED, AppointmentStatus.IN_VISIT, AppointmentStatus.FINISHED)
+                .contains(a.getStatus()))
             throw new IllegalStateException("当前就诊状态不能进入复诊队列");
         return appointmentRepository.insertForRevisit(id, 3);
     }

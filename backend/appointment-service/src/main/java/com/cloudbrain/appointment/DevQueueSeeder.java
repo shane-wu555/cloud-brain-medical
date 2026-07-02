@@ -30,11 +30,7 @@ public class DevQueueSeeder implements CommandLineRunner {
 
         int updated = jdbc.update("""
                 update appointment
-                set visit_date = current_date,
-                    status = case
-                        when status in ('FINISHED', 'CANCELLED') then status
-                        else 'WAITING'
-                    end
+                set visit_date = current_date
                 where doctor_id = '00010001'
                   and queue_number between 100 and 114
                 """);
@@ -48,11 +44,7 @@ public class DevQueueSeeder implements CommandLineRunner {
 
         int updated = jdbc.update("""
                 update appointment
-                set visit_date = current_date,
-                    status = case
-                        when status in ('FINISHED', 'CANCELLED') then status
-                        else 'WAITING'
-                    end
+                set visit_date = current_date
                 where doctor_id = '00010001'
                   and queue_number between 200 and 214
                 """);
