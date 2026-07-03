@@ -288,7 +288,7 @@ public class ScheduleController {
         int booked=items.stream().mapToInt(TimeSlotDto::booked).sum();
         int locked=items.stream().mapToInt(TimeSlotDto::locked).sum();
         int available=items.stream().mapToInt(TimeSlotDto::available).sum();
-        return new ScheduleDto(s.id(),s.doctorId(),s.doctorName(),s.departmentId(),s.roomId(),s.roomName(),
+        return new ScheduleDto(s.id(),s.doctorId(),s.doctorName(),s.departmentId(),s.departmentName(),s.roomId(),s.roomName(),
                 s.workDate().toString(),periodLabel(s.period()),capacity,booked,locked,available,s.status(),items);
     }
     private String periodLabel(String period) {
@@ -570,7 +570,7 @@ public class ScheduleController {
     public record CreateScheduleRequest(String doctorId,String departmentId,String workDate,String period,int capacity) {}
     public record SuspendRequest(String reason) {}
     public record RescheduleRequest(String workDate,String period) {}
-    public record ScheduleDto(String id,String doctorId,String doctorName,String departmentId,String roomId,String roomName,String workDate,String period,int capacity,int booked,int locked,int available,String status,List<TimeSlotDto> timeSlots) {}
+    public record ScheduleDto(String id,String doctorId,String doctorName,String departmentId,String departmentName,String roomId,String roomName,String workDate,String period,int capacity,int booked,int locked,int available,String status,List<TimeSlotDto> timeSlots) {}
     public record TimeSlotDto(String id,String startTime,int capacity,int booked,int locked,int available) {}
     public record SlotDto(@JsonAlias("slotId") String scheduleId,int capacity,int locked,int booked,int available) {}
     public record AiScheduleRequest(List<AiDoctorCandidate> candidates,List<AiScheduleDemand> demands,String backgroundSummary) {}

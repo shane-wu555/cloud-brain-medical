@@ -1,9 +1,11 @@
 package com.cloudbrain.auth.entity;
 
+import java.io.Serializable;
 import java.time.LocalDateTime;
 import java.util.List;
 
-public class UserAccount {
+public class UserAccount implements Serializable {
+    private static final long serialVersionUID = 1L;
     private final String id;
     private final String username;
     private final String password;

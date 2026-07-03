@@ -18,6 +18,12 @@ spring:
       maximum-pool-size: 5
       idle-timeout: 300000
       connection-timeout: 20000
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: ${REDIS_TIMEOUT:2s}
   flyway:
     enabled: true
     schemas: auth
@@ -34,6 +40,8 @@ security:
   verification-code:
     ttl-seconds: ${VERIFICATION_CODE_TTL_SECONDS:300}
     expose-in-response: ${EXPOSE_VERIFICATION_CODE:false}
+  cache:
+    account-ttl-seconds: ${AUTH_ACCOUNT_CACHE_TTL_SECONDS:600}
 
 sms:
   provider: ${SMS_PROVIDER:aliyun}

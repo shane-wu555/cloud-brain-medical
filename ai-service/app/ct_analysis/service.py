@@ -93,6 +93,16 @@ def _mock_inference(request: CtAnalysisRequest) -> dict[str, Any]:
         "riskAdvice":      "AI结果仅供辅助，必须由检查医生确认后发布。（mock 模式：模型未部署）",
         "confidence":      0.86,
         "label":           "normal",
+        "metalArtifact":   {"enabled": False},
+        "metalArtifactSegmentation": {
+            "enabled": False,
+            "hasArtifactRegion": False,
+            "affectedSlices": 0,
+            "totalSlices": 0,
+            "foregroundRatio": 0.0,
+            "confidence": 0.0,
+            "topSlices": [],
+        },
         "abnormalRegions": [],
         "modelVersion":    "ct-demo-1.0",
     }

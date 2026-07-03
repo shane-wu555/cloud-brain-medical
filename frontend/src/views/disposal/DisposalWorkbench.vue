@@ -21,6 +21,8 @@
 
         <el-input v-model="keyword" clearable size="small" placeholder="搜索患者/项目/队列号" />
 
+        <DoctorPersonalSchedule />
+
         <div class="tabs">
           <button :class="['tab', tab === 'active' && 'tab--active']" @click="tab = 'active'">
             待处理 {{ activeCount }}
@@ -175,6 +177,7 @@
 import { computed, nextTick, onMounted, reactive, ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import { useRouter } from 'vue-router';
+import DoctorPersonalSchedule from '../../components/DoctorPersonalSchedule.vue';
 import { useAuthStore } from '../../store/auth';
 import {
   callMedicalOrder,
