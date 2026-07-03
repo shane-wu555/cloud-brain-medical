@@ -9,7 +9,7 @@ monai>=1.4.0
 psycopg[binary]>=3.2.0
 pytest>=8.3.0
 gdown>=5.1.0
-# CT 推理依赖
+# CT inference dependencies
 pydicom>=2.4.4
 SimpleITK>=2.3.1
 nibabel>=5.2.0
@@ -18,7 +18,7 @@ matplotlib>=3.8.0
 onnxruntime>=1.17.0
 minio>=7.2.5
 opencv-python-headless>=4.9.0.80
-# CT 训练依赖（训练机器上安装，推理服务不需要）
+# CT training dependencies. Install on training machines only; inference does not need them.
 # timm>=0.9.12
 # ultralytics>=8.1.0
 # scikit-learn>=1.4.0

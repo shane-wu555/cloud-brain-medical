@@ -9,6 +9,7 @@
       <div class="wks-nav__right">
         <span class="wks-nav__info">{{ doctorDept }}{{ doctorDept ? ' ｜ ' : '' }}{{ auth.user?.name }}</span>
         <span class="wks-nav__date">{{ today }} {{ dayOfWeek }}</span>
+        <button :class="['my-entry', showMySchedule && 'my-entry--active']" type="button" @click="showMySchedule = !showMySchedule">我的</button>
         <el-button size="small" text @click="logout" style="color:rgba(255,255,255,0.85)">退出</el-button>
       </div>
     </header>
@@ -17,7 +18,7 @@
     <div class="wks-body">
 
       <!-- Left: queue sidebar -->
-      <aside class="wks-sidebar">
+      <aside v-if="!showMySchedule" class="wks-sidebar">
         <div class="sidebar-hdr">
           <span>候诊队列</span>
           <el-button :loading="refreshing" size="small" text @click="refreshQueue" style="font-size:16px">↺</el-button>
@@ -40,8 +41,6 @@
             已接诊 {{ finishedCount }}
           </button>
         </div>
-
-        <DoctorPersonalSchedule />
 
         <div class="queue-list">
           <div
@@ -72,7 +71,11 @@
       </aside>
 
       <!-- Center: main content -->
-      <main class="wks-main">
+      <main v-if="showMySchedule" class="wks-main wks-main--schedule">
+        <DoctorPersonalSchedule />
+      </main>
+
+      <main v-else class="wks-main">
         <div v-if="!current" class="main-empty">
           <el-empty description="请从左侧选择患者开始接诊" :image-size="90" />
         </div>
@@ -522,6 +525,7 @@ const recordVersion = ref<number>();
 const currentRecordId = ref<string>();
 const dirty = ref(false);
 const refreshing = ref(false);
+const showMySchedule = ref(false);
 let loadingRecord = false;
 
 const mainTabs = [
@@ -1332,6 +1336,9 @@ watch(mainTab, (tab) => {
   padding: 14px 16px;
   display: flex; flex-direction: column;
 }
+.wks-main--schedule {
+  overflow: hidden;
+}
 .main-empty { flex: 1; display: flex; align-items: center; justify-content: center; }
 
 /* Patient header */
@@ -1854,5 +1861,23 @@ watch(mainTab, (tab) => {
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
+}
+.my-entry {
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.38);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+.my-entry:hover,
+.my-entry--active {
+  border-color: #fff;
+  background: #fff;
+  color: #0899a5;
 }
 </style>

@@ -9,6 +9,7 @@
       <div class="wks-nav__right">
         <span class="wks-nav__info">{{ auth.user?.name }}</span>
         <span class="wks-nav__date">{{ today }} {{ dayOfWeek }}</span>
+        <button :class="['my-entry', showMySchedule && 'my-entry--active']" type="button" @click="showMySchedule = !showMySchedule">我的</button>
         <el-button size="small" text @click="logout" style="color:rgba(255,255,255,0.85)">退出</el-button>
       </div>
     </header>
@@ -17,7 +18,7 @@
     <div class="wks-body">
 
       <!-- Left: queue sidebar -->
-      <aside class="wks-sidebar">
+      <aside v-if="!showMySchedule" class="wks-sidebar">
         <div class="sidebar-hdr">
           <span>待执行队列</span>
           <el-button :loading="refreshing" size="small" text @click="refreshOrders" style="font-size:16px">↺</el-button>
@@ -25,8 +26,6 @@
         <div class="sidebar-search-wrap">
           <el-input v-model="queueKeyword" clearable size="small" placeholder="搜索姓名/项目" />
         </div>
-
-        <DoctorPersonalSchedule />
 
         <div class="sidebar-tabs">
           <button :class="['stab', queueTab === 'all' && 'stab--active']" @click="queueTab = 'all'">
@@ -69,7 +68,11 @@
       </aside>
 
       <!-- Center: main content -->
-      <main class="wks-main">
+      <main v-if="showMySchedule" class="wks-main wks-main--schedule">
+        <DoctorPersonalSchedule />
+      </main>
+
+      <main v-else class="wks-main">
         <div v-if="!current" class="main-empty">
           <el-empty description="请从左侧选择医嘱开始执行" :image-size="90" />
         </div>
@@ -689,6 +692,7 @@ const queueKeyword = ref('');
 const queueTab = ref<'all' | 'waiting' | 'done'>('all');
 const mainTab = ref<'work' | 'report'>('work');
 const refreshing = ref(false);
+const showMySchedule = ref(false);
 
 // Report state
 const report = reactive({ findings: '', conclusion: '', advice: '' });
@@ -1848,6 +1852,9 @@ onMounted(async () => {
   padding: 14px 16px;
   display: flex; flex-direction: column;
 }
+.wks-main--schedule {
+  overflow: hidden;
+}
 .main-empty { flex: 1; display: flex; align-items: center; justify-content: center; }
 
 /* Patient header */
@@ -2682,5 +2689,23 @@ onMounted(async () => {
   .main-content { box-shadow: none; border-radius: 0; padding: 0; }
   .med-report { max-width: 100%; }
   .med-report__area { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+.my-entry {
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.38);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+.my-entry:hover,
+.my-entry--active {
+  border-color: #fff;
+  background: #fff;
+  color: #0899a5;
 }
 </style>

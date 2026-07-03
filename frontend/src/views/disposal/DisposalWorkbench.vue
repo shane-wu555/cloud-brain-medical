@@ -8,20 +8,19 @@
       <div class="nav__right">
         <span>{{ auth.user?.name }}</span>
         <span>{{ today }} {{ dayOfWeek }}</span>
+        <button :class="['my-entry', showMySchedule && 'my-entry--active']" type="button" @click="showMySchedule = !showMySchedule">我的</button>
         <el-button size="small" text class="nav__logout" @click="logout">退出</el-button>
       </div>
     </header>
 
-    <div class="body">
-      <aside class="sidebar">
+    <div :class="['body', showMySchedule && 'body--personal']">
+      <aside v-if="!showMySchedule" class="sidebar">
         <div class="side-head">
           <span>处置队列</span>
           <el-button :loading="refreshing" size="small" text @click="refreshOrders">刷新</el-button>
         </div>
 
         <el-input v-model="keyword" clearable size="small" placeholder="搜索患者/项目/队列号" />
-
-        <DoctorPersonalSchedule />
 
         <div class="tabs">
           <button :class="['tab', tab === 'active' && 'tab--active']" @click="tab = 'active'">
@@ -62,7 +61,11 @@
         </div>
       </aside>
 
-      <main class="main">
+      <main v-if="showMySchedule" class="main main--schedule">
+        <DoctorPersonalSchedule />
+      </main>
+
+      <main v-else class="main">
         <el-empty v-if="!current" description="请选择左侧处置患者" :image-size="100" />
 
         <template v-else>
@@ -206,6 +209,7 @@ const refreshing = ref(false);
 const submitting = ref(false);
 const published = ref(false);
 const confirmedAt = ref('');
+const showMySchedule = ref(false);
 
 const form = reactive({
   record: ''
@@ -444,6 +448,10 @@ onMounted(loadOrders);
   min-height: 0;
 }
 
+.body--personal {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .sidebar {
   display: flex;
   flex-direction: column;
@@ -560,6 +568,10 @@ onMounted(loadOrders);
   padding: 16px;
   overflow: auto;
   min-width: 0;
+}
+
+.main--schedule {
+  overflow: hidden;
 }
 
 .patient-bar {
@@ -792,5 +804,23 @@ onMounted(loadOrders);
   .sheet-section textarea {
     resize: none;
   }
+}
+.my-entry {
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.38);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+.my-entry:hover,
+.my-entry--active {
+  border-color: #fff;
+  background: #fff;
+  color: #0899a5;
 }
 </style>
