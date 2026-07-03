@@ -31,18 +31,19 @@
             <div>
               <h1>待缴费</h1>
             </div>
-            <el-button :loading="loadingAll" @click="loadAllData">刷新</el-button>
           </div>
 
           <div class="query-bar">
             <el-input
               v-model="paymentSearch.keyword"
+              class="head-search"
               clearable
               placeholder="输入身份证号或姓名"
               @keyup.enter="applyPaymentSearch"
               @clear="clearPaymentSearch"
             />
             <el-button type="primary" :loading="searchingPayment" @click="applyPaymentSearch">搜索</el-button>
+            <el-button @click="resetPaymentSearch">重置</el-button>
             <el-segmented v-model="paymentSearch.feeType" :options="feeFilterOptions" />
           </div>
 
@@ -194,18 +195,19 @@
             <div>
               <h1>挂号记录</h1>
             </div>
-            <el-button :loading="loadingAll" @click="loadAllData">刷新</el-button>
           </div>
 
           <div class="query-bar">
             <el-input
               v-model="appointmentRecordSearch.keyword"
+              class="head-search"
               clearable
               placeholder="输入身份证号或姓名"
               @keyup.enter="applyAppointmentRecordSearch"
               @clear="clearAppointmentRecordSearch"
             />
             <el-button type="primary" :loading="searchingAppointmentRecords" @click="applyAppointmentRecordSearch">搜索</el-button>
+            <el-button @click="resetAppointmentRecordSearch">重置</el-button>
             <el-select v-model="appointmentRecordSearch.status" clearable placeholder="状态" style="width: 150px">
               <el-option label="待支付" value="PENDING_PAYMENT" />
               <el-option label="已挂号" value="REGISTERED" />
@@ -214,16 +216,23 @@
             </el-select>
           </div>
 
-          <el-table v-loading="loadingAll" :data="filteredAppointmentRecords" empty-text="暂无挂号记录">
-            <el-table-column prop="businessNo" label="业务编号" width="170" show-overflow-tooltip />
-            <el-table-column prop="patientName" label="患者" width="100" />
-            <el-table-column prop="departmentName" label="科室" width="120" />
-            <el-table-column prop="doctorName" label="医生" width="100" />
+          <el-table v-loading="loadingAll" :data="filteredAppointmentRecords" table-layout="auto" empty-text="暂无挂号记录">
+            <el-table-column prop="patientName" label="患者" min-width="110" />
+            <el-table-column label="身份证号" min-width="180">
+              <template #default="{ row }">{{ appointmentPatientIdNumber(row) }}</template>
+            </el-table-column>
+            <el-table-column prop="departmentName" label="科室" min-width="140" />
+            <el-table-column prop="doctorName" label="医生" min-width="120" />
+            <el-table-column label="就诊诊室" min-width="140">
+              <template #default="{ row }">{{ appointmentRoomName(row) }}</template>
+            </el-table-column>
             <el-table-column label="就诊时间" min-width="170">
               <template #default="{ row }">{{ row.visitDate }} {{ normalizeStartTime(row.startTime) || row.period }}</template>
             </el-table-column>
-            <el-table-column label="状态" width="100">
-              <template #default="{ row }">{{ appointmentStatusLabel(row) }}</template>
+            <el-table-column label="状态" min-width="110">
+              <template #default="{ row }">
+                <el-tag :type="appointmentTagType(row)" effect="plain" size="small">{{ appointmentStatusLabel(row) }}</el-tag>
+              </template>
             </el-table-column>
             <el-table-column label="操作" width="150" fixed="right">
               <template #default="{ row }">
@@ -239,18 +248,19 @@
             <div>
               <h1>缴费退费记录</h1>
             </div>
-            <el-button :loading="loadingAll" @click="loadAllData">刷新</el-button>
           </div>
 
           <div class="query-bar">
             <el-input
               v-model="paymentRecordSearch.keyword"
+              class="head-search"
               clearable
               placeholder="输入身份证号或姓名"
               @keyup.enter="applyPaymentRecordSearch"
               @clear="clearPaymentRecordSearch"
             />
             <el-button type="primary" :loading="searchingPaymentRecords" @click="applyPaymentRecordSearch">搜索</el-button>
+            <el-button @click="resetPaymentRecordSearch">重置</el-button>
             <el-select v-model="paymentRecordSearch.businessType" clearable placeholder="费用类型" style="width: 150px">
               <el-option label="挂号费" value="APPOINTMENT" />
               <el-option label="医技费用" value="MEDICAL_ORDER" />
@@ -269,6 +279,9 @@
             </el-table-column>
             <el-table-column label="患者" width="110">
               <template #default="{ row }">{{ paymentRecordPatientName(row) }}</template>
+            </el-table-column>
+            <el-table-column label="身份证号" min-width="180">
+              <template #default="{ row }">{{ paymentRecordIdNumber(row) }}</template>
             </el-table-column>
             <el-table-column label="项目" min-width="190" show-overflow-tooltip>
               <template #default="{ row }">{{ paymentRecordTitle(row) }}</template>
@@ -303,10 +316,22 @@
             <div>
               <h1>退药待退费</h1>
             </div>
-            <el-button :loading="loadingAll" @click="loadAllData">刷新</el-button>
           </div>
 
-          <el-table v-loading="loadingAll" :data="drugReturns" empty-text="暂无待退费退药单">
+          <div class="query-bar">
+            <el-input
+              v-model="drugReturnSearch.keyword"
+              class="head-search"
+              clearable
+              placeholder="输入退药单号、处方号或患者姓名"
+              @keyup.enter="applyDrugReturnSearch"
+              @clear="clearDrugReturnSearch"
+            />
+            <el-button type="primary" :loading="searchingDrugReturns" @click="applyDrugReturnSearch">搜索</el-button>
+            <el-button @click="resetDrugReturnSearch">重置</el-button>
+          </div>
+
+          <el-table v-loading="loadingAll" :data="filteredDrugReturns" table-layout="auto" empty-text="暂无待退费退药单">
             <el-table-column prop="returnNo" label="退药单号" width="150" />
             <el-table-column prop="prescriptionNo" label="处方号" width="150" />
             <el-table-column prop="patientName" label="患者" width="110" />
@@ -422,6 +447,7 @@ import {
 } from '../../api/cashier';
 import {
   createOfflinePatient,
+  getPatientsByIds,
   patientProfileId,
   searchPatientByIdNumber,
   type Gender,
@@ -466,6 +492,7 @@ const qrPreparingKey = ref('');
 const searchingPayment = ref(false);
 const searchingAppointmentRecords = ref(false);
 const searchingPaymentRecords = ref(false);
+const searchingDrugReturns = ref(false);
 
 const departments = ref<Department[]>([]);
 const doctors = ref<Doctor[]>([]);
@@ -476,6 +503,7 @@ const prescriptions = ref<Prescription[]>([]);
 const drugReturns = ref<DrugReturnOrder[]>([]);
 const refundingReturnId = ref('');
 const paymentRecords = ref<PaymentOrder[]>([]);
+const patientProfiles = ref<PatientProfile[]>([]);
 
 const selectedDepartmentId = ref('');
 const selectedDoctorId = ref('');
@@ -491,6 +519,9 @@ const paymentRecordSearch = reactive({
   businessType: '' as BusinessType | '',
   status: '',
   patientIds: null as string[] | null
+});
+const drugReturnSearch = reactive({
+  keyword: ''
 });
 
 const qrDialog = reactive({
@@ -579,6 +610,19 @@ const scheduleOptions = computed<ScheduleOption[]>(() => {
 });
 const selectedScheduleOption = computed(() => scheduleOptions.value.find(item => item.slot.id === selectedSlotId.value));
 const doctorMap = computed(() => new Map(doctors.value.map(item => [item.id, item])));
+const patientProfileMap = computed(() => new Map(patientProfiles.value.map(item => [patientProfileId(item), item])));
+const slotRoomNameMap = computed(() => {
+  const map = new Map<string, string>();
+  schedules.value.forEach(schedule => {
+    const roomName = schedule.roomName || doctorMap.value.get(schedule.doctorId)?.roomName || '';
+    if (!roomName) return;
+    map.set(schedule.id, roomName);
+    (schedule.timeSlots ?? []).forEach(slot => {
+      map.set(slot.id, roomName);
+    });
+  });
+  return map;
+});
 const selectedRegistrationFee = computed(() => selectedScheduleOption.value ? registrationFee(selectedScheduleOption.value.schedule.doctorId) : 15);
 const selectedRegistrationFeeText = computed(() => amountText(selectedRegistrationFee.value));
 const canRegister = computed(() => Boolean(canConfirmPatient.value && selectedScheduleOption.value && selectedScheduleOption.value.slot.available > 0));
@@ -684,6 +728,16 @@ const filteredPaymentRecords = computed(() => {
     .filter(item => matchesPatientSearch(item.patientId, paymentRecordPatientName(item), paymentRecordTitle(item), paymentRecordSearch));
 });
 
+const filteredDrugReturns = computed(() => {
+  const keyword = drugReturnSearch.keyword.trim().toLowerCase();
+  return [...drugReturns.value]
+    .filter(item => {
+      if (!keyword) return true;
+      return `${item.returnNo} ${item.prescriptionNo} ${item.patientName} ${item.doctorOpinion}`.toLowerCase().includes(keyword);
+    })
+    .sort((left, right) => (right.createdAt || '').localeCompare(left.createdAt || ''));
+});
+
 const currentQrChannel = computed(
   () => paymentChannelOptions.find(item => item.value === qrDialog.channel) ?? paymentChannelOptions[0]
 );
@@ -747,13 +801,14 @@ function switchPage(page: PageKey) {
 async function loadAllData() {
   loadingAll.value = true;
   try {
-    const [appointmentsResult, prescriptionsResult, medicalOrdersResult, paymentsResult, drugReturnsResult, doctorsResult] = await Promise.allSettled([
+    const [appointmentsResult, prescriptionsResult, medicalOrdersResult, paymentsResult, drugReturnsResult, doctorsResult, schedulesResult] = await Promise.allSettled([
       getAppointments(),
       getPrescriptions(),
       getMedicalOrders(),
       getPayments(),
       getDrugReturns({ status: 'RETURN_PENDING_REFUND' }),
-      getDoctors()
+      getDoctors(),
+      getSchedules()
     ]);
     appointments.value = unwrap(appointmentsResult, [], '挂号记录');
     prescriptions.value = unwrap(prescriptionsResult, [], '处方');
@@ -761,8 +816,28 @@ async function loadAllData() {
     paymentRecords.value = unwrap(paymentsResult, [], '缴费记录');
     drugReturns.value = unwrap(drugReturnsResult, [], '退药单');
     doctors.value = unwrap(doctorsResult, doctors.value, '医生列表');
+    schedules.value = unwrap(schedulesResult, schedules.value, '排班列表');
+    await syncPatientProfiles();
   } finally {
     loadingAll.value = false;
+  }
+}
+
+async function syncPatientProfiles() {
+  const patientIds = [
+    ...new Set([
+      ...appointments.value.map(item => item.patientId),
+      ...paymentRecords.value.map(item => item.patientId)
+    ].filter(Boolean))
+  ];
+  if (!patientIds.length) {
+    patientProfiles.value = [];
+    return;
+  }
+  try {
+    patientProfiles.value = await getPatientsByIds(patientIds);
+  } catch (error) {
+    handleRequestFailure(error, '患者档案加载失败');
   }
 }
 
@@ -830,6 +905,11 @@ function clearPaymentSearch() {
   paymentSearch.patientIds = null;
 }
 
+function resetPaymentSearch() {
+  clearPaymentSearch();
+  paymentSearch.feeType = 'ALL';
+}
+
 async function applyAppointmentRecordSearch() {
   searchingAppointmentRecords.value = true;
   try {
@@ -844,6 +924,11 @@ function clearAppointmentRecordSearch() {
   appointmentRecordSearch.patientIds = null;
 }
 
+function resetAppointmentRecordSearch() {
+  clearAppointmentRecordSearch();
+  appointmentRecordSearch.status = '';
+}
+
 async function applyPaymentRecordSearch() {
   searchingPaymentRecords.value = true;
   try {
@@ -856,6 +941,29 @@ async function applyPaymentRecordSearch() {
 function clearPaymentRecordSearch() {
   paymentRecordSearch.keyword = '';
   paymentRecordSearch.patientIds = null;
+}
+
+function resetPaymentRecordSearch() {
+  clearPaymentRecordSearch();
+  paymentRecordSearch.businessType = '';
+  paymentRecordSearch.status = '';
+}
+
+async function applyDrugReturnSearch() {
+  searchingDrugReturns.value = true;
+  try {
+    await nextTick();
+  } finally {
+    searchingDrugReturns.value = false;
+  }
+}
+
+function clearDrugReturnSearch() {
+  drugReturnSearch.keyword = '';
+}
+
+function resetDrugReturnSearch() {
+  clearDrugReturnSearch();
 }
 
 function isRegistrationDepartment(departmentId: string) {
@@ -1226,6 +1334,15 @@ function canRefundAppointment(row: Appointment) {
   return !['CANCELLED', 'FINISHED', 'IN_VISIT'].includes(row.status);
 }
 
+function appointmentPatientIdNumber(row: Appointment) {
+  return patientProfileMap.value.get(row.patientId)?.idNumber || '-';
+}
+
+function appointmentRoomName(row: Appointment) {
+  const slotId = row.slotId || row.scheduleId || '';
+  return slotRoomNameMap.value.get(slotId) || doctorMap.value.get(row.doctorId)?.roomName || '-';
+}
+
 function summarize(key: FeeType, label: string) {
   const items = pendingItems.value.filter(item => item.feeType === key);
   return {
@@ -1291,6 +1408,18 @@ function paymentTagType(status: string): '' | 'primary' | 'success' | 'info' | '
   return 'info';
 }
 
+function appointmentTagType(appointment: Pick<Appointment, 'status' | 'paymentStatus'>): '' | 'primary' | 'success' | 'info' | 'warning' | 'danger' {
+  if (appointment.paymentStatus === 'REFUNDED') return 'info';
+  if (appointment.status === 'PENDING_PAYMENT') return 'warning';
+  if (appointment.status === 'CANCELLED') return 'info';
+  if (appointment.status === 'FINISHED') return 'success';
+  if (appointment.status === 'WAITING') return 'primary';
+  if (appointment.status === 'CALLED') return 'primary';
+  if (appointment.status === 'IN_VISIT') return 'danger';
+  if (appointment.status === 'REVISIT_WAITING') return 'success';
+  return 'info';
+}
+
 function paymentOrderStatusLabel(status: string) {
   return {
     PENDING: '待支付',
@@ -1346,6 +1475,10 @@ function paymentRecordPatientName(item: PaymentOrder) {
   if (item.businessType === 'APPOINTMENT') return appointmentMap.value.get(item.businessId)?.patientName ?? '-';
   if (item.businessType === 'MEDICAL_ORDER') return medicalOrderMap.value.get(item.businessId)?.patientName ?? '-';
   return prescriptionMap.value.get(item.businessId)?.patientName ?? '-';
+}
+
+function paymentRecordIdNumber(item: PaymentOrder) {
+  return patientProfileMap.value.get(item.patientId)?.idNumber || '-';
 }
 
 function amountText(value: number) {
@@ -1500,7 +1633,7 @@ onBeforeUnmount(() => {
 }
 
 .cashier-sidebar {
-  width: 180px;
+  width: clamp(140px, 16vw, 180px);
   flex-shrink: 0;
   padding: 12px;
   background: #fff;
@@ -1590,8 +1723,17 @@ onBeforeUnmount(() => {
   border: 1px solid #e5e7eb;
 }
 
-.query-bar .el-input {
+.head-search {
   width: 260px;
+}
+
+.query-bar .head-search {
+  flex: 0 1 260px;
+  min-width: 220px;
+}
+
+.work-page :deep(.el-table) {
+  width: 100%;
 }
 
 .stat-strip {
@@ -1982,8 +2124,10 @@ onBeforeUnmount(() => {
     grid-column: span 1;
   }
 
-  .query-bar .el-input {
+  .query-bar .head-search {
     width: 100%;
+    min-width: 0;
+    flex-basis: 100%;
   }
 }
 </style>

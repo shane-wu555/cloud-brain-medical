@@ -55,7 +55,7 @@ public class DoctorCatalogRepository {
     }
 
     // ── 医生（staff 表，仅门诊医生）────────────────────────────────────
-    @Cacheable(cacheNames = "doctor:doctors", key = "#departmentId == null ? 'all' : #departmentId")
+    @Cacheable(cacheNames = "doctor:doctors", key = "#p0 == null ? 'all' : #p0")
     public List<Doctor> doctors(String departmentId) {
         StringBuilder sql = new StringBuilder("""
                 select s.id, s.employee_no, s.name, s.title, s.department_id, p.name as dept_name,
@@ -107,7 +107,7 @@ public class DoctorCatalogRepository {
         return doctors(departmentId).stream().filter(d -> d.id().equals(id)).findFirst().orElseThrow();
     }
 
-    @Cacheable(cacheNames = "doctor:doctorDetails", key = "#id")
+    @Cacheable(cacheNames = "doctor:doctorDetails", key = "#p0")
     public Doctor findDoctor(String id) {
         return jdbc.query("""
                 select s.id, s.employee_no, s.name, s.title, s.department_id, p.name as dept_name,
@@ -188,7 +188,7 @@ public class DoctorCatalogRepository {
         return map.values().stream().map(DoctorEventBuilder::build).toList();
     }
 
-    @Cacheable(cacheNames = "doctor:doctorEvents", key = "'window:' + #startInclusive + ':' + #endInclusive")
+    @Cacheable(cacheNames = "doctor:doctorEvents", key = "'window:' + #p0 + ':' + #p1")
     public List<DoctorEvent> doctorEvents(LocalDate startInclusive, LocalDate endInclusive) {
         return doctorEvents().stream()
                 .map(event -> event.withDates(event.dates().stream()
@@ -287,7 +287,7 @@ public class DoctorCatalogRepository {
                 .toList();
     }
 
-    @Cacheable(cacheNames = "doctor:outpatientRooms", key = "'department:' + #departmentId")
+    @Cacheable(cacheNames = "doctor:outpatientRooms", key = "'department:' + #p0")
     public List<OutpatientRoom> outpatientRoomsWithDoctors(String departmentId) {
         return jdbc.query("""
                 select distinct r.id, r.department_id, r.name, r.location
@@ -302,7 +302,7 @@ public class DoctorCatalogRepository {
                 departmentId);
     }
 
-    @Cacheable(cacheNames = "doctor:outpatientRooms", key = "'doctor:' + #doctorId")
+    @Cacheable(cacheNames = "doctor:outpatientRooms", key = "'doctor:' + #p0")
     public OutpatientRoom outpatientRoomForDoctor(String doctorId) {
         return jdbc.query("""
                 select r.id, r.department_id, r.name, r.location
@@ -317,7 +317,7 @@ public class DoctorCatalogRepository {
     }
 
     // ── 排班 ───────────────────────────────────────────────────────────
-    @Cacheable(cacheNames = "doctor:schedules", key = "'all:' + (#doctorId == null ? '' : #doctorId) + ':' + (#departmentId == null ? '' : #departmentId)")
+    @Cacheable(cacheNames = "doctor:schedules", key = "'all:' + (#p0 == null ? '' : #p0) + ':' + (#p1 == null ? '' : #p1)")
     public List<Schedule> schedules(String doctorId, String departmentId) {
         StringBuilder sql = new StringBuilder("""
                 select s.id, s.staff_id, d.name as doctor_name, s.department_id,
@@ -338,14 +338,14 @@ public class DoctorCatalogRepository {
         return jdbc.query(sql.toString(), (rs, row) -> mapSchedule(rs), args.toArray());
     }
 
-    @Cacheable(cacheNames = "doctor:schedules", key = "'window:' + (#doctorId == null ? '' : #doctorId) + ':' + (#departmentId == null ? '' : #departmentId) + ':' + #startInclusive + ':' + #endInclusive")
+    @Cacheable(cacheNames = "doctor:schedules", key = "'window:' + (#p0 == null ? '' : #p0) + ':' + (#p1 == null ? '' : #p1) + ':' + #p2 + ':' + #p3")
     public List<Schedule> schedules(String doctorId, String departmentId, LocalDate startInclusive, LocalDate endInclusive) {
         return schedules(doctorId, departmentId).stream()
                 .filter(schedule -> !schedule.workDate().isBefore(startInclusive) && !schedule.workDate().isAfter(endInclusive))
                 .toList();
     }
 
-    @Cacheable(cacheNames = "doctor:schedules", key = "'detail:' + #id")
+    @Cacheable(cacheNames = "doctor:schedules", key = "'detail:' + #p0")
     public Schedule findSchedule(String id) {
         return jdbc.query("""
                 select s.id, s.staff_id, d.name as doctor_name, s.department_id,
@@ -370,7 +370,7 @@ public class DoctorCatalogRepository {
     }
 
     // ── 时间槽 ─────────────────────────────────────────────────────────
-    @Cacheable(cacheNames = "doctor:timeSlots", key = "#scheduleId")
+    @Cacheable(cacheNames = "doctor:timeSlots", key = "#p0")
     public List<ScheduleTimeSlot> timeSlots(String scheduleId) {
         return jdbc.query("""
                 select id, schedule_id, start_time, capacity
@@ -380,7 +380,7 @@ public class DoctorCatalogRepository {
                 rs.getObject("start_time", LocalTime.class), rs.getInt("capacity")), scheduleId);
     }
 
-    @Cacheable(cacheNames = "doctor:timeSlots", key = "#scheduleIds == null ? 'empty' : #scheduleIds.toString()")
+    @Cacheable(cacheNames = "doctor:timeSlots", key = "#p0 == null ? 'empty' : #p0.toString()")
     public List<ScheduleTimeSlot> timeSlots(List<String> scheduleIds) {
         if (scheduleIds == null || scheduleIds.isEmpty()) return List.of();
         String placeholders = String.join(",", java.util.Collections.nCopies(scheduleIds.size(), "?"));

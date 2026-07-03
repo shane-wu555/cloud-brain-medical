@@ -1,11 +1,12 @@
 import type { Appointment } from '../api/appointment';
 
-const REGISTERED_STATUSES = new Set(['WAITING', 'CALLED', 'IN_VISIT', 'REVISIT_WAITING']);
-
 export function appointmentStatusLabel(appointment: Pick<Appointment, 'status' | 'paymentStatus'>) {
   if (appointment.paymentStatus === 'REFUNDED') return '已退号';
   if (appointment.status === 'PENDING_PAYMENT') return '待支付';
-  if (REGISTERED_STATUSES.has(appointment.status)) return '已挂号';
+  if (appointment.status === 'WAITING') return '待就诊';
+  if (appointment.status === 'CALLED') return '已叫号';
+  if (appointment.status === 'IN_VISIT') return '就诊中';
+  if (appointment.status === 'REVISIT_WAITING') return '复诊待诊';
   if (appointment.status === 'CANCELLED') return '已取消';
   if (appointment.status === 'FINISHED') return '已完成';
   return appointment.status;

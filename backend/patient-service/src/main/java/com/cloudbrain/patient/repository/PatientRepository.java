@@ -5,6 +5,7 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
@@ -50,6 +51,21 @@ public class PatientRepository {
                 where id_type = ? and id_number = ?
                 order by created_at desc
                 """, (rs, row) -> map(rs), idType, normalizeIdNumber(idNumber));
+    }
+
+    public List<PatientProfile> findByIds(List<String> patientIds) {
+        List<String> normalizedIds = patientIds.stream()
+                .filter(id -> id != null && !id.isBlank())
+                .distinct()
+                .toList();
+        if (normalizedIds.isEmpty()) return List.of();
+        String placeholders = normalizedIds.stream()
+                .map(id -> "?::uuid")
+                .collect(Collectors.joining(","));
+        return jdbc.query(
+                "select * from patient where id in (%s) order by created_at desc".formatted(placeholders),
+                (rs, row) -> map(rs),
+                normalizedIds.toArray());
     }
 
     public Optional<PatientProfile> findByIdentity(String name, String gender, String idType, String idNumber) {

@@ -24,7 +24,7 @@ import org.slf4j.LoggerFactory;
 public class ScheduleController {
     private static final Logger log=LoggerFactory.getLogger(ScheduleController.class);
     private static final int REPLAN_START_DAYS=7;
-    private static final int REPLAN_DAYS=8;
+    private static final int REPLAN_DAYS=7;
     private final DoctorCatalogRepository repository;
     private final ScheduleInsightService scheduleInsightService;
     private final RestClient appointmentClient;
@@ -85,7 +85,7 @@ public class ScheduleController {
                     .accept(MediaType.APPLICATION_JSON)
                     .body(payload)
                     .retrieve().body(new ParameterizedTypeReference<Map<String,Object>>(){});
-            AiScheduleResponse mapped=mapAiScheduleResponse(response);
+            AiScheduleResponse mapped=augmentPartialAiSuggestions(normalizedRequest,mapAiScheduleResponse(response));
             log.info("AI schedule response mapped: elapsedMs={}, rawSuggestions={}, mappedSuggestions={}, fallbackUsed={}, provider={}, model={}, ragSources={}",
                     System.currentTimeMillis()-startedAt,objectListSize(response==null?null:response.get("suggestions")),
                     mapped.suggestions().size(),mapped.fallbackUsed(),mapped.provider(),mapped.model(),mapped.knowledgeSources().size());
@@ -172,8 +172,9 @@ public class ScheduleController {
     public ScheduleDto publishAiSuggestion(@PathVariable("suggestionId") String suggestionId,@RequestBody PublishAiScheduleRequest request) {
         if(request.doctorId()==null||request.departmentId()==null||request.workDate()==null||request.period()==null) throw new IllegalArgumentException("AI 排班建议缺少必要字段");
         DoctorCatalogRepository.OutpatientRoom room=repository.outpatientRoomForDoctor(request.doctorId());
-        if(request.roomId()!=null&&!request.roomId().isBlank()&&!request.roomId().equals(room.id())) {
-            throw new IllegalArgumentException("AI 排班建议中的诊室与医生绑定诊室不一致");
+        if(hasPublishRoomMismatch(request.roomId(),room)) {
+            log.warn("AI schedule publish room mismatch ignored: context=single:{}:{}:{}, doctorId={}, suggestionRoomId={}, boundRoomId={}",
+                    suggestionId,request.workDate(),request.period(),request.doctorId(),request.roomId(),room.id());
         }
         var s=repository.createSchedule(request.doctorId(),request.departmentId(),LocalDate.parse(request.workDate()),request.period(),request.capacity());
         syncSlots(repository.timeSlots(s.id()), Map.of());
@@ -189,8 +190,9 @@ public class ScheduleController {
         for(PublishAiScheduleRequest item:suggestions) {
             if(item.departmentId()==null||item.workDate()==null||item.period()==null||item.doctorId()==null) continue;
             DoctorCatalogRepository.OutpatientRoom room=repository.outpatientRoomForDoctor(item.doctorId());
-            if(item.roomId()!=null&&!item.roomId().isBlank()&&!item.roomId().equals(room.id())) {
-                throw new IllegalArgumentException("AI 排班建议中的诊室与医生绑定诊室不一致");
+            if(hasPublishRoomMismatch(item.roomId(),room)) {
+                log.warn("AI schedule publish room mismatch ignored: context=batch:{}:{}, doctorId={}, suggestionRoomId={}, boundRoomId={}",
+                        item.workDate(),item.period(),item.doctorId(),item.roomId(),room.id());
             }
             if(hasSlotConflict(usedDoctorSlots,item.doctorId(),item.workDate(),item.period())) continue;
             if(hasSlotConflict(usedRoomSlots,room.id(),item.workDate(),item.period())) continue;
@@ -527,6 +529,57 @@ public class ScheduleController {
         }
         return new AiScheduleResponse("local-ai-schedule-record-"+UUID.randomUUID(),suggestions,"backend","local-balanced",true,List.of(),request.backgroundSummary());
     }
+    private AiScheduleResponse augmentPartialAiSuggestions(AiScheduleRequest request,AiScheduleResponse response) {
+        Set<String> coveredKeys=Optional.ofNullable(response.suggestions()).orElse(List.of()).stream()
+                .map(this::scheduleDemandKey)
+                .collect(Collectors.toSet());
+        List<AiScheduleDemand> missingDemands=Optional.ofNullable(request.demands()).orElse(List.of()).stream()
+                .filter(demand -> !coveredKeys.contains(scheduleDemandKey(demand)))
+                .toList();
+        if(missingDemands.isEmpty()) return response;
+
+        AiScheduleResponse localFill=fallbackAiSuggestions(
+                new AiScheduleRequest(request.candidates(),missingDemands,request.backgroundSummary()),
+                "local-fill");
+        List<AiScheduleSuggestion> combined=new ArrayList<>(Optional.ofNullable(response.suggestions()).orElse(List.of()));
+        Set<String> missingKeys=missingDemands.stream().map(this::scheduleDemandKey).collect(Collectors.toCollection(LinkedHashSet::new));
+        Set<String> usedDoctorSlots=new HashSet<>();
+        Set<String> usedRoomSlots=new HashSet<>();
+        for(AiScheduleSuggestion suggestion:combined) {
+            reserveSlot(usedDoctorSlots,suggestion.doctorId(),suggestion.workDate(),suggestion.period());
+            reserveSlot(usedRoomSlots,suggestion.roomId(),suggestion.workDate(),suggestion.period());
+        }
+        int appended=0;
+        for(AiScheduleSuggestion suggestion:localFill.suggestions()) {
+            String key=scheduleDemandKey(suggestion);
+            if(!missingKeys.contains(key)) continue;
+            if(hasSlotConflict(usedDoctorSlots,suggestion.doctorId(),suggestion.workDate(),suggestion.period())) continue;
+            if(hasSlotConflict(usedRoomSlots,suggestion.roomId(),suggestion.workDate(),suggestion.period())) continue;
+            combined.add(suggestion);
+            reserveSlot(usedDoctorSlots,suggestion.doctorId(),suggestion.workDate(),suggestion.period());
+            reserveSlot(usedRoomSlots,suggestion.roomId(),suggestion.workDate(),suggestion.period());
+            missingKeys.remove(key);
+            appended++;
+        }
+        if(appended>0||!missingKeys.isEmpty()) {
+            log.info("AI schedule response augmented: requestedDemands={}, originalSuggestions={}, appendedLocalSuggestions={}, stillMissing={}",
+                    request.demands().size(),Optional.ofNullable(response.suggestions()).orElse(List.of()).size(),appended,missingKeys.size());
+        }
+        return new AiScheduleResponse(
+                response.aiRecordId()==null?localFill.aiRecordId():response.aiRecordId(),
+                combined,
+                response.provider()==null?localFill.provider():response.provider(),
+                appended>0&&response.model()!=null?response.model()+"+local-fill":response.model(),
+                response.fallbackUsed()||appended>0,
+                response.knowledgeSources(),
+                response.backgroundSummary()==null?localFill.backgroundSummary():response.backgroundSummary());
+    }
+    private String scheduleDemandKey(AiScheduleDemand demand) {
+        return demand.departmentId()+":"+Optional.ofNullable(demand.roomId()).orElse("")+":"+demand.workDate()+":"+demand.period();
+    }
+    private String scheduleDemandKey(AiScheduleSuggestion suggestion) {
+        return suggestion.departmentId()+":"+Optional.ofNullable(suggestion.roomId()).orElse("")+":"+suggestion.workDate()+":"+suggestion.period();
+    }
     private String insightBackground(ScheduleInsightService.ScheduleInsight insight) {
         return insight!=null&&insight.trainingReady()?insight.summary():"";
     }
@@ -544,6 +597,9 @@ public class ScheduleController {
     }
     private String slotKey(String ownerId,String workDate,String period) {
         return ownerId+":"+workDate+":"+period;
+    }
+    private boolean hasPublishRoomMismatch(String suggestionRoomId,DoctorCatalogRepository.OutpatientRoom room) {
+        return suggestionRoomId!=null&&!suggestionRoomId.isBlank()&&!suggestionRoomId.equals(room.id());
     }
     private int doctorDemandScore(AiDoctorCandidate candidate) {
         return Math.max(candidate.historicalAverageVisits(),candidate.weeklyCapacity());

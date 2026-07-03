@@ -60,6 +60,7 @@ export interface Schedule {
 export interface AiDoctorCandidate {
   doctorId: string;
   doctorName: string;
+  title?: string;
   departmentId: string;
   roomId?: string;
   roomName?: string;
