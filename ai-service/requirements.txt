@@ -18,9 +18,9 @@ matplotlib>=3.8.0
 onnxruntime>=1.17.0
 minio>=7.2.5
 opencv-python-headless>=4.9.0.80
+ultralytics>=8.1.0
 # CT training dependencies. Install on training machines only; inference does not need them.
 # timm>=0.9.12
-# ultralytics>=8.1.0
 # scikit-learn>=1.4.0
 # tqdm>=4.66.0
 # pandas>=2.2.0

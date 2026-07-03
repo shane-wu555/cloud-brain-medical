@@ -323,6 +323,9 @@
                   <button class="ct-act ct-act--primary" :disabled="!file || !current" @click="uploadCt">
                     提交 AI 分析
                   </button>
+                  <button class="ct-act" :disabled="!aiTaskId" @click="pollAi">
+                    刷新 AI
+                  </button>
                   <button class="ct-act ct-act--publish" :disabled="selectedFilmSlices.length === 0" @click="exportSelectedFilm">
                     导出所选胶片 {{ selectedFilmSlices.length || '' }}
                   </button>
@@ -618,6 +621,33 @@
             <p class="muted">{{ current?.purpose || '等待 AI 辅助分析' }}</p>
           </div>
 
+          <div v-if="role === 'CHECK_DOCTOR' && (aiStructured.label || aiStatus)" class="ai-structured">
+            <div class="ai-structured__row">
+              <span>状态</span>
+              <el-tag :type="aiStatusTagType(aiStatus)" size="small" effect="plain">{{ aiStatusLabel(aiStatus) }}</el-tag>
+            </div>
+            <div v-if="aiStructured.label" class="ai-structured__row">
+              <span>识别标签</span>
+              <strong>{{ aiStructured.label }}</strong>
+            </div>
+            <div v-if="aiStructured.confidence !== undefined" class="ai-structured__row">
+              <span>置信度</span>
+              <strong>{{ confidenceText(aiStructured.confidence) }}</strong>
+            </div>
+            <div class="ai-structured__row">
+              <span>异常框</span>
+              <strong>{{ aiStructured.abnormalRegions?.length || 0 }}</strong>
+            </div>
+            <div v-if="aiStructured.metalArtifact" class="ai-structured__row">
+              <span>金属伪影</span>
+              <strong>{{ aiStructured.metalArtifact.labelCn || aiStructured.metalArtifact.label || '已分析' }}</strong>
+            </div>
+            <div v-if="aiStructured.metalArtifactSegmentation" class="ai-structured__row">
+              <span>伪影分割</span>
+              <strong>{{ aiStructured.metalArtifactSegmentation.affectedSlices || 0 }}/{{ aiStructured.metalArtifactSegmentation.totalSlices || 0 }} 层</strong>
+            </div>
+          </div>
+
           <div class="ai-messages">
             <div v-for="msg in aiMessages" :key="msg.id" class="ai-message">
               <span class="ai-msg-label">{{ msg.label }}</span>
@@ -659,7 +689,7 @@ import {
   createSpecimen, downloadAttachment, getAttachments, getLabResults, getMedicalOrders, getReports, getSpecimens, missMedicalOrder,
   refreshAiTask, saveLabResults, startMedicalOrder,
   submitCt, transitionSpecimen, uploadAttachment,
-  type LaboratoryResultItem, type MedicalAttachment, type MedicalOrder, type Specimen
+  type AiMedicalTask, type LaboratoryResultItem, type MedicalAttachment, type MedicalOrder, type Specimen
 } from '../../api/medical-order';
 import { createReportDraft as createAiReportDraft } from '../../api/ai';
 import { readVolume, readDicomSeries, renderAxial, renderCoronal, renderSagittal, type VolumeData } from '../../utils/volumeReader';
@@ -705,6 +735,13 @@ const aiModel = ref('');
 const aiFallback = ref(false);
 const aiMessages = ref<Array<{ id: string; label: string; content: string; kind: string }>>([]);
 const aiModelLabel = computed(() => !aiModel.value ? '未生成' : aiFallback.value ? `${aiModel.value}/Mock` : aiModel.value);
+const aiStructured = ref<{
+  label?: string;
+  confidence?: number;
+  abnormalRegions?: Array<Record<string, any>>;
+  metalArtifact?: Record<string, any>;
+  metalArtifactSegmentation?: Record<string, any>;
+}>({});
 
 // Imaging state (CHECK_DOCTOR)
 const file = ref<File>();
@@ -1149,9 +1186,10 @@ function isPathologyItem(order: MedicalOrder) {
   return ['PATH', 'PATHOLOGY', '病理', '切片', '活检'].some(keyword => text.includes(keyword));
 }
 
-function aiStatusTagType(s: string): '' | 'success' | 'warning' | 'info' {
+function aiStatusTagType(s: string): '' | 'success' | 'warning' | 'info' | 'danger' {
   if (s === 'COMPLETED') return 'success';
   if (s === 'PROCESSING') return 'warning';
+  if (s === 'FAILED') return 'danger';
   return 'info';
 }
 
@@ -1225,6 +1263,7 @@ async function select(row: MedicalOrder) {
   aiStatus.value = '';
   aiMessages.value = [];
   aiModel.value = '';
+  aiStructured.value = {};
   specimenId.value = '';
   labResultRows.value = [];
   labResultsSaved.value = false;
@@ -1403,18 +1442,65 @@ function clearFile() {
   volume.value = null;
 }
 
+function parseAiOutput(raw: AiMedicalTask['rawOutput']): Record<string, any> {
+  if (!raw) return {};
+  if (typeof raw === 'string') {
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return {};
+    }
+  }
+  return raw as Record<string, any>;
+}
+
+function confidenceText(value?: number) {
+  return typeof value === 'number' ? `${Math.round(value * 100)}%` : '未返回';
+}
+
+function syncCtAiResult(task: AiMedicalTask) {
+  aiStatus.value = task.status === 'RUNNING' || task.status === 'PENDING' ? 'PROCESSING' : task.status;
+  aiModel.value = task.modelVersion || aiModel.value;
+  aiFallback.value = task.modelVersion?.includes('demo') || task.modelVersion?.includes('mock') || false;
+
+  if (task.status === 'FAILED') {
+    aiMessages.value = [{ id: 'ct-error', label: 'AI 分析失败', content: task.errorMessage || '推理失败，请检查模型文件和 AI 服务日志', kind: 'advice' }];
+    return;
+  }
+
+  const result = parseAiOutput(task.rawOutput);
+  if (!Object.keys(result).length) return;
+  aiStructured.value = {
+    label: result.label,
+    confidence: result.confidence,
+    abnormalRegions: Array.isArray(result.abnormalRegions) ? result.abnormalRegions : [],
+    metalArtifact: result.metalArtifact,
+    metalArtifactSegmentation: result.metalArtifactSegmentation,
+  };
+  report.findings = result.findings || report.findings;
+  report.conclusion = result.conclusion || report.conclusion;
+  report.advice = result.riskAdvice || report.advice;
+  aiMessages.value = [
+    { id: 'ct-f', label: 'AI 影像所见', content: result.findings, kind: 'findings' },
+    { id: 'ct-c', label: 'AI 初步结论', content: result.conclusion, kind: 'conclusion' },
+    { id: 'ct-a', label: '风险提示', content: result.riskAdvice, kind: 'advice' },
+  ].filter(item => item.content);
+}
+
 async function uploadCt() {
   if (!current.value || !file.value) return;
   const attachment = await uploadAttachment(current.value.id, file.value);
   const task = await submitCt(current.value.id, attachment.id);
   aiTaskId.value = task.externalTaskId;
-  aiStatus.value = task.status;
+  syncCtAiResult(task);
+  if (task.status === 'COMPLETED' && current.value) await loadExistingReport(current.value.id);
   ElMessage.success('CT AI 任务已提交');
 }
 
 async function pollAi() {
   const task = await refreshAiTask(aiTaskId.value);
-  aiStatus.value = task.status;
+  syncCtAiResult(task);
+  if (task.status === 'COMPLETED' && current.value) await loadExistingReport(current.value.id);
   if (task.status === 'COMPLETED') ElMessage.success('AI 分析完成，已同步至报告草稿');
 }
 
@@ -2666,6 +2752,33 @@ onMounted(async () => {
 .ai-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .context-block { margin: 12px 0; padding: 10px 12px; border-radius: 8px; background: #f0f9fa; }
 .context-block p { margin: 4px 0 0; font-size: 13px; }
+.ai-structured {
+  margin-bottom: 10px;
+  padding: 9px 10px;
+  border: 1px solid #dbeafe;
+  border-radius: 6px;
+  background: #f8fbff;
+}
+.ai-structured__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 24px;
+  font-size: 12px;
+  color: #64748b;
+}
+.ai-structured__row + .ai-structured__row {
+  border-top: 1px solid #edf2f7;
+}
+.ai-structured__row strong {
+  max-width: 170px;
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
 .ai-messages { min-height: 120px; max-height: 300px; overflow-y: auto; margin-bottom: 10px; }
 .ai-message {
   margin-bottom: 10px; padding: 10px;

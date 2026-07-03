@@ -1,4 +1,5 @@
 import logging
+import os
 import threading
 import uuid
 from typing import Any
@@ -80,6 +81,8 @@ def _run_inference(request: CtAnalysisRequest, task_id: str) -> dict[str, Any]:
 
     except Exception as exc:
         # 模型文件缺失（FileNotFoundError）或推理失败时降级
+        if os.getenv("CT_INFERENCE_ALLOW_MOCK", "true").lower() != "true":
+            raise
         log.warning(f"ML 推理失败，降级为 mock: {exc}")
         return _mock_inference(request)
 
