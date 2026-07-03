@@ -122,3 +122,45 @@ def test_schedule_mock_prioritizes_high_history_doctor_on_weekdays(monkeypatch):
 
     weekday = next(item for item in response.suggestions if item.work_date == "2026-07-08")
     assert weekday.doctor_id == "doctor-high"
+
+
+def test_schedule_mock_prioritizes_senior_titles_on_weekday_peak(monkeypatch):
+    monkeypatch.delenv("AI_RAG_DATABASE_URL", raising=False)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+
+    request = ScheduleSuggestionRequest(
+        candidates=[
+            DoctorCandidate(
+                doctorId="doctor-chief",
+                doctorName="主任医生",
+                title="主任医师",
+                departmentId="dept-general",
+                roomId="room-1",
+                weeklyCapacity=40,
+                historicalAverageVisits=20,
+            ),
+            DoctorCandidate(
+                doctorId="doctor-attending",
+                doctorName="普通医生",
+                title="主治医师",
+                departmentId="dept-general",
+                roomId="room-1",
+                weeklyCapacity=40,
+                historicalAverageVisits=20,
+            ),
+        ],
+        demands=[
+            ScheduleDemand(
+                departmentId="dept-general",
+                roomId="room-1",
+                workDate="2026-07-06",
+                period="上午",
+                expectedVisits=35,
+            )
+        ],
+    )
+
+    response = schedule_service._mock_suggest(request)
+
+    assert response.suggestions
+    assert response.suggestions[0].doctor_id == "doctor-chief"

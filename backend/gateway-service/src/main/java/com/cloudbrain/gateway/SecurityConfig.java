@@ -5,6 +5,7 @@ import javax.crypto.spec.SecretKeySpec;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.annotation.web.reactive.EnableWebFluxSecurity;
 import org.springframework.security.config.web.server.ServerHttpSecurity;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
@@ -14,6 +15,7 @@ import org.springframework.security.oauth2.jwt.ReactiveJwtDecoder;
 import org.springframework.security.web.server.SecurityWebFilterChain;
 
 @Configuration
+@EnableWebFluxSecurity
 public class SecurityConfig {
     @Bean
     ReactiveJwtDecoder jwtDecoder(
@@ -38,7 +40,8 @@ public class SecurityConfig {
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
                 .authorizeExchange(exchange -> exchange
                         .pathMatchers("/api/auth/login", "/api/auth/register", "/api/auth/sms-codes",
-                                "/api/auth/sms-login", "/api/auth/reset-password", "/actuator/health").permitAll()
+                                "/api/auth/sms-login", "/api/auth/reset-password", "/actuator/health",
+                                "/api/payments/qr-code", "/api/payments/scan-entry").permitAll()
                         .anyExchange().authenticated())
                 .oauth2ResourceServer(resource -> resource.jwt(jwt -> {}))
                 .build();

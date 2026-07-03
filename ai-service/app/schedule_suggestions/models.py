@@ -40,6 +40,7 @@ def _dict_list_or_empty(value: Any) -> list[dict]:
 class DoctorCandidate(BaseModel):
     doctor_id: str = Field(default="", alias="doctorId")
     doctor_name: str = Field(default="", alias="doctorName")
+    title: str = ""
     department_id: str = Field(default="", alias="departmentId")
     room_id: str = Field(default="", alias="roomId")
     room_name: str = Field(default="", alias="roomName")
@@ -48,7 +49,7 @@ class DoctorCandidate(BaseModel):
     historical_average_visits: int = Field(default=0, alias="historicalAverageVisits")
     unavailable_slots: list[dict] = Field(default_factory=list, alias="unavailableSlots")
 
-    @field_validator("doctor_id", "doctor_name", "department_id", "room_id", "room_name", "specialty", mode="before")
+    @field_validator("doctor_id", "doctor_name", "title", "department_id", "room_id", "room_name", "specialty", mode="before")
     @classmethod
     def default_string(cls, value: Any) -> str:
         return _string_or_empty(value)

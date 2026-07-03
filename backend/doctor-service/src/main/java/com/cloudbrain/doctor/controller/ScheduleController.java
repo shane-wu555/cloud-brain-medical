@@ -138,7 +138,7 @@ public class ScheduleController {
                                         new DoctorUnavailableSlot(date.toString(),period,event.eventType()))))
                         .toList();
                 candidates.add(new AiDoctorCandidate(
-                        doctor.id(),doctor.name(),doctor.departmentId(),doctor.roomId()==null?"":doctor.roomId(),
+                        doctor.id(),doctor.name(),doctor.title()==null?"":doctor.title(),doctor.departmentId(),doctor.roomId()==null?"":doctor.roomId(),
                         doctor.roomName()==null?"":doctor.roomName(),doctor.specialty()==null?"":doctor.specialty(),
                         Math.max(40,historicalAverage*5),
                         historicalAverage,
@@ -310,6 +310,7 @@ public class ScheduleController {
         Map<String,Object> payload=new LinkedHashMap<>();
         payload.put("doctorId", candidate.doctorId());
         payload.put("doctorName", candidate.doctorName());
+        payload.put("title", candidate.title());
         payload.put("departmentId", candidate.departmentId());
         payload.put("roomId", candidate.roomId());
         payload.put("roomName", candidate.roomName());
@@ -459,7 +460,7 @@ public class ScheduleController {
         List<AiDoctorCandidate> candidates=Optional.ofNullable(request.candidates()).orElse(List.of()).stream()
                 .filter(Objects::nonNull)
                 .map(candidate -> new AiDoctorCandidate(
-                        candidate.doctorId(),candidate.doctorName(),candidate.departmentId(),
+                        candidate.doctorId(),candidate.doctorName(),candidate.title()==null?"":candidate.title(),candidate.departmentId(),
                         candidate.roomId()==null?"":candidate.roomId(),
                         candidate.roomName()==null?"":candidate.roomName(),
                         candidate.specialty()==null?"":candidate.specialty(),
@@ -505,6 +506,7 @@ public class ScheduleController {
                     .filter(candidate -> !hasUnavailableSlot(candidate,demand.workDate(),demand.period()))
                     .sorted(Comparator
                             .comparingInt((AiDoctorCandidate candidate) -> assignedCounts.getOrDefault(candidate.doctorId(),0))
+                            .thenComparingInt(candidate -> preferSeniorOnWeekdayPeak(demand)?-seniorTitlePriority(candidate):0)
                             .thenComparingInt(candidate -> weekday?-doctorDemandScore(candidate):doctorDemandScore(candidate))
                             .thenComparing(Comparator.comparingInt(AiDoctorCandidate::weeklyCapacity).reversed())
                             .thenComparing(AiDoctorCandidate::doctorName))
@@ -546,6 +548,15 @@ public class ScheduleController {
     private int doctorDemandScore(AiDoctorCandidate candidate) {
         return Math.max(candidate.historicalAverageVisits(),candidate.weeklyCapacity());
     }
+    private int seniorTitlePriority(AiDoctorCandidate candidate) {
+        String title=candidate.title()==null?"":candidate.title();
+        if(title.contains("副主任")) return 1;
+        if(title.contains("主任")) return 2;
+        return 0;
+    }
+    private boolean preferSeniorOnWeekdayPeak(AiScheduleDemand demand) {
+        return isWeekday(LocalDate.parse(demand.workDate()))&&demand.expectedVisits()>=30;
+    }
     private boolean isWeekday(LocalDate date) {
         return date.getDayOfWeek().getValue()<=5;
     }
@@ -563,7 +574,7 @@ public class ScheduleController {
     public record TimeSlotDto(String id,String startTime,int capacity,int booked,int locked,int available) {}
     public record SlotDto(@JsonAlias("slotId") String scheduleId,int capacity,int locked,int booked,int available) {}
     public record AiScheduleRequest(List<AiDoctorCandidate> candidates,List<AiScheduleDemand> demands,String backgroundSummary) {}
-    public record AiDoctorCandidate(String doctorId,String doctorName,String departmentId,String roomId,String roomName,String specialty,int weeklyCapacity,int historicalAverageVisits,List<DoctorUnavailableSlot> unavailableSlots) {}
+    public record AiDoctorCandidate(String doctorId,String doctorName,String title,String departmentId,String roomId,String roomName,String specialty,int weeklyCapacity,int historicalAverageVisits,List<DoctorUnavailableSlot> unavailableSlots) {}
     public record DoctorUnavailableSlot(String date,String period,String type) {}
     public record AiScheduleDemand(String departmentId,String roomId,String roomName,String workDate,String period,int expectedVisits,Integer historicalVisits) {}
     public record AiScheduleResponse(String aiRecordId,List<AiScheduleSuggestion> suggestions,String provider,String model,boolean fallbackUsed,List<Map<String,Object>> knowledgeSources,String backgroundSummary) {}

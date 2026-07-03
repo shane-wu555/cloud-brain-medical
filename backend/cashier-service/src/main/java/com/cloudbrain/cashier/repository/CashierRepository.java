@@ -93,9 +93,20 @@ public class CashierRepository {
                 .orElseThrow(() -> new IllegalArgumentException("支付单不存在"));
     }
 
+    public Payment findById(String paymentId) {
+        return jdbc.query("select * from payment where id=?::uuid",
+                (rs, row) -> payment(rs), paymentId).stream().findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("payment not found"));
+    }
+
     public Optional<Payment> findOptionalByBusiness(String type, String businessId) {
         return jdbc.query("select * from payment where business_type=? and business_id=?",
                 (rs,row)->payment(rs),type,businessId).stream().findFirst();
+    }
+
+    public Optional<Payment> findOptionalById(String paymentId) {
+        return jdbc.query("select * from payment where id=?::uuid",
+                (rs, row) -> payment(rs), paymentId).stream().findFirst();
     }
 
     @Transactional
@@ -104,6 +115,21 @@ public class CashierRepository {
         jdbc.update("update payment set status='FAILED',failure_reason=? where business_type=? and business_id=? and status='PENDING'",
                 reason,type,businessId);
         return findByBusiness(type,businessId);
+    }
+
+    @Transactional
+    public Payment recordTestPaymentById(String paymentId, String channel, String operatorId, String channelTradeNo) {
+        Payment existing = findById(paymentId);
+        if (!"PENDING".equals(existing.status()) && !"PAID".equals(existing.status())) {
+            throw new IllegalStateException("payment is not scannable in the current status");
+        }
+        jdbc.update("""
+                update payment set status='PAID', method=?, operator_id=?,
+                    paid_at=coalesce(paid_at,now()),
+                    channel_trade_no=coalesce(channel_trade_no,?)
+                where id=?::uuid and status='PENDING'
+                """, channel + "_TEST", operatorId, channelTradeNo, paymentId);
+        return findById(paymentId);
     }
 
     public List<Payment> payments(String patientId, String businessId, String businessType, String status) {

@@ -3,6 +3,7 @@ package com.cloudbrain.pharmacy.controller;
 import com.cloudbrain.pharmacy.entity.DrugReturnOrder;
 import com.cloudbrain.pharmacy.entity.Prescription;
 import com.cloudbrain.pharmacy.repository.PharmacyRepository;
+import com.cloudbrain.pharmacy.service.InventoryDemandForecastService;
 import com.cloudbrain.pharmacy.service.PharmacyService;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
@@ -16,17 +17,36 @@ import org.springframework.web.server.ResponseStatusException;
 @RequestMapping("/api")
 public class PharmacyController {
     private final PharmacyService service;
+    private final InventoryDemandForecastService inventoryDemandForecastService;
     private final String internalApiKey;
 
-    public PharmacyController(PharmacyService service, @Value("${internal.api-key}") String internalApiKey) {
+    public PharmacyController(PharmacyService service, InventoryDemandForecastService inventoryDemandForecastService,
+                              @Value("${internal.api-key}") String internalApiKey) {
         this.service = service;
+        this.inventoryDemandForecastService = inventoryDemandForecastService;
         this.internalApiKey = internalApiKey;
     }
 
     @GetMapping("/drugs")
     @PreAuthorize("hasAnyRole('OUTPATIENT_DOCTOR','PHARMACY_STAFF','ADMIN')")
-    public List<PharmacyRepository.Drug> drugs(@RequestParam(name = "keyword", required = false) String keyword) {
-        return service.drugs(keyword);
+    public List<PharmacyRepository.Drug> drugs(@RequestParam(name = "keyword", required = false) String keyword,
+                                               @RequestParam(name = "storageCondition", required = false) String storageCondition) {
+        return service.drugs(keyword, storageCondition);
+    }
+
+    @PostMapping("/drugs/{id}/stock-in")
+    @PreAuthorize("hasAnyRole('PHARMACY_STAFF','ADMIN')")
+    public PharmacyRepository.Drug stockIn(@PathVariable("id") String id,
+                                           @RequestBody StockInRequest request,
+                                           JwtAuthenticationToken auth) {
+        return service.addStock(id, request, auth.getToken().getSubject());
+    }
+
+    @GetMapping("/drugs/inventory-forecast")
+    @PreAuthorize("hasAnyRole('PHARMACY_STAFF','ADMIN')")
+    public InventoryDemandForecastService.ForecastRun inventoryForecast(
+            @RequestParam(name = "lookbackDays", defaultValue = "90") int lookbackDays) {
+        return inventoryDemandForecastService.preview(lookbackDays);
     }
 
     @PostMapping("/prescriptions")
@@ -120,6 +140,9 @@ public class PharmacyController {
     }
 
     public record ReturnRequest(String reason) {
+    }
+
+    public record StockInRequest(int quantity, String reason) {
     }
 
     public record CreateDrugReturnRequest(String doctorOpinion, String opinionTemplate) {

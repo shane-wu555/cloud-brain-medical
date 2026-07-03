@@ -23,8 +23,18 @@ public class PharmacyService {
         this.patientAccessClient = patientAccessClient;
     }
 
-    public List<PharmacyRepository.Drug> drugs(String keyword) {
-        return repository.drugs(keyword);
+    public List<PharmacyRepository.Drug> drugs(String keyword, String storageCondition) {
+        return repository.drugs(keyword, storageCondition);
+    }
+
+    @Transactional
+    public PharmacyRepository.Drug addStock(String drugId, PharmacyController.StockInRequest request, String operatorId) {
+        if (request.quantity() <= 0) {
+            throw new IllegalArgumentException("入库数量必须大于 0");
+        }
+        String reason = blank(request.reason()) ? "库存登记入库" : request.reason().trim();
+        repository.addStock(drugId, request.quantity(), operatorId, reason);
+        return repository.drug(drugId);
     }
 
     @Transactional

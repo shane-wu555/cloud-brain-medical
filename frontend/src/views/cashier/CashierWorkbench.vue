@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="cashier">
     <header class="cashier-nav">
       <div class="cashier-nav__brand">
@@ -29,8 +29,7 @@
         <section v-show="currentPage === 'payments'" class="work-page">
           <div class="page-head">
             <div>
-              <h1>缴费</h1>
-              <p>展示全部待缴费用，可按证件号、姓名和费用类别筛选。</p>
+              <h1>待缴费</h1>
             </div>
             <el-button :loading="loadingAll" @click="loadAllData">刷新</el-button>
           </div>
@@ -83,7 +82,6 @@
           <div class="page-head">
             <div>
               <h1>线下挂号</h1>
-              <p>录入就诊人信息，身份证自动识别出生日期和性别；已有档案会直接复用。</p>
             </div>
             <el-button :loading="loadingSchedules" @click="refreshSchedules">刷新号源</el-button>
           </div>
@@ -195,7 +193,6 @@
           <div class="page-head">
             <div>
               <h1>挂号记录</h1>
-              <p>查询窗口和线上挂号记录，支持退号和补打挂号单。</p>
             </div>
             <el-button :loading="loadingAll" @click="loadAllData">刷新</el-button>
           </div>
@@ -240,8 +237,7 @@
         <section v-show="currentPage === 'paymentRecords'" class="work-page">
           <div class="page-head">
             <div>
-              <h1>缴费记录</h1>
-              <p>查看全部支付流水，可按患者、费用类型和支付状态查询。</p>
+              <h1>缴费退费记录</h1>
             </div>
             <el-button :loading="loadingAll" @click="loadAllData">刷新</el-button>
           </div>
@@ -305,8 +301,7 @@
         <section v-show="currentPage === 'drugReturnRefunds'" class="work-page">
           <div class="page-head">
             <div>
-              <h1>退药退费</h1>
-              <p>处理已缴费但未取药的退药记录，退费完成后处方同步为已退药退费。</p>
+              <h1>退药待退费</h1>
             </div>
             <el-button :loading="loadingAll" @click="loadAllData">刷新</el-button>
           </div>
@@ -331,38 +326,59 @@
       </main>
     </div>
 
-    <el-dialog v-model="qrDialog.visible" title="扫码缴费" width="420px" :close-on-click-modal="!qrDialog.paying">
+    <el-dialog v-model="qrDialog.visible" title="扫码缴费" width="460px" @closed="resetQrDialog">
       <div v-if="qrDialog.item" class="qr-dialog">
         <div class="qr-meta">
           <strong>{{ qrDialog.item.patientName }} · {{ feeTypeLabel(qrDialog.item.feeType) }}</strong>
           <span>{{ qrDialog.item.title }}</span>
           <em>￥{{ amountText(qrDialog.item.amount) }}</em>
         </div>
-        <div class="fake-qr" :style="{ gridTemplateColumns: `repeat(${qrSize}, 1fr)` }">
-          <span
-            v-for="(cell, index) in qrCells"
-            :key="index"
-            :class="{ dark: cell }"
+        <div class="qr-channel-picker">
+          <button
+            v-for="option in paymentChannelOptions"
+            :key="option.value"
+            type="button"
+            :class="['qr-channel-button', qrDialog.channel === option.value && 'qr-channel-button--active']"
+            :disabled="qrDialog.status === 'PAID'"
+            @click="qrDialog.channel = option.value"
+          >
+            <strong>{{ option.action }}</strong>
+            <span>{{ option.label }}</span>
+          </button>
+        </div>
+        <div class="qr-card" :data-channel="qrDialog.channel">
+          <div class="qr-card__header">
+            <span>{{ currentQrChannel.label }}</span>
+            <em>{{ qrDialog.status === 'PAID' ? '已完成' : '等待扫码' }}</em>
+          </div>
+          <div v-if="qrDialog.qrLoading" class="payment-qr payment-qr--loading">二维码生成中...</div>
+          <div v-else-if="qrDialog.qrSvg" class="payment-qr" v-html="qrDialog.qrSvg" />
+          <el-alert
+            v-else
+            :title="qrDialog.qrError || '二维码生成失败，请关闭后重新打开缴费弹窗'"
+            type="error"
+            :closable="false"
           />
         </div>
         <el-alert
           v-if="qrDialog.status === 'PAID'"
-          title="扫码支付成功，web 端已同步"
+          title="二维码已被识别，缴费成功"
           type="success"
           :closable="false"
         />
-        <p v-else class="qr-hint">模拟二维码已生成，扫码动作由下方按钮触发。</p>
+        <p v-else class="qr-hint">
+          {{ currentQrChannel.hint }}。
+        </p>
+        <p v-if="scanBaseUrlNotice" class="qr-hint qr-hint--warn">
+          当前未配置扫码基地址，二维码将使用本页地址。手机扫码测试时，请在 frontend/.env.local 配置
+          VITE_PAYMENT_SCAN_BASE_URL 为当前电脑的局域网访问地址。
+        </p>
       </div>
       <template #footer>
+        <span class="qr-footer-status">
+          {{ qrDialog.status === 'PAID' ? '缴费成功' : '等待扫码完成' }}
+        </span>
         <el-button @click="qrDialog.visible = false">关闭</el-button>
-        <el-button
-          type="primary"
-          :loading="qrDialog.paying"
-          :disabled="qrDialog.status === 'PAID'"
-          @click="simulateQrScan"
-        >
-          模拟扫码
-        </el-button>
       </template>
     </el-dialog>
 
@@ -396,8 +412,8 @@ import { getDepartments, getDoctors, getSchedules, type Department, type Doctor,
 import { getMedicalOrders, type MedicalOrder } from '../../api/medical-order';
 import { getDrugReturns, getPrescriptions, type DrugReturnOrder, type Prescription } from '../../api/pharmacy';
 import {
-  confirmTestPayment,
   createPaymentOrder,
+  getPaymentQrCode,
   getPayments,
   refundDrugReturn,
   type BusinessType,
@@ -479,10 +495,16 @@ const paymentRecordSearch = reactive({
 
 const qrDialog = reactive({
   visible: false,
-  paying: false,
+  checking: false,
   status: '' as '' | 'PENDING' | 'PAID',
+  paymentId: '',
+  channel: 'WECHAT' as PaymentChannel,
+  qrSvg: '',
+  qrLoading: false,
+  qrError: '',
   item: undefined as PendingFeeItem | undefined
 });
+let qrStatusTimer: number | undefined;
 
 const idTypeOptions: Array<{ label: string; value: IdType }> = [
   { label: '居民身份证', value: 'ID_CARD' },
@@ -515,12 +537,18 @@ const EXCLUDED_REGISTRATION_DEPARTMENT_KEYWORDS = ['处置科', '检查科', '�
 const nowTimestamp = ref(Date.now());
 let nowTimer: number | undefined;
 
+const paymentChannelOptions: Array<{ value: PaymentChannel; action: string; label: string; hint: string }> = [
+  { value: 'WECHAT', action: '按微信支付', label: '微信支付', hint: '请使用微信扫一扫当前二维码' },
+  { value: 'ALIPAY', action: '按支付宝支付', label: '支付宝支付', hint: '请使用支付宝扫一扫当前二维码' },
+  { value: 'MEDICAL_INSURANCE', action: '使用医保卡支付', label: '医保卡支付', hint: '请使用医保终端或扫码设备识别当前二维码' }
+];
+
 const navItems = computed(() => [
-  { key: 'payments' as const, label: '缴费', badge: pendingItems.value.length || '' },
+  { key: 'payments' as const, label: '待缴费', badge: pendingItems.value.length || '' },
+  { key: 'drugReturnRefunds' as const, label: '退药待退费', badge: drugReturns.value.length || '' },
   { key: 'registration' as const, label: '线下挂号', badge: '' },
   { key: 'appointmentRecords' as const, label: '挂号记录', badge: '' },
-  { key: 'drugReturnRefunds' as const, label: '退药退费', badge: drugReturns.value.length || '' },
-  { key: 'paymentRecords' as const, label: '缴费记录', badge: '' }
+  { key: 'paymentRecords' as const, label: '缴费退费记录', badge: '' }
 ]);
 
 const currentPatientId = computed(() => patient.value ? patientProfileId(patient.value) : '');
@@ -656,26 +684,56 @@ const filteredPaymentRecords = computed(() => {
     .filter(item => matchesPatientSearch(item.patientId, paymentRecordPatientName(item), paymentRecordTitle(item), paymentRecordSearch));
 });
 
-const qrSize = 23;
-const qrCells = computed(() => {
-  const source = qrDialog.item?.businessKey ?? 'empty';
-  let hash = 0;
-  for (let i = 0; i < source.length; i += 1) hash = (hash * 31 + source.charCodeAt(i)) >>> 0;
-  return Array.from({ length: qrSize * qrSize }, (_, index) => {
-    const x = index % qrSize;
-    const y = Math.floor(index / qrSize);
-    const inFinder =
-      (x < 7 && y < 7) ||
-      (x >= qrSize - 7 && y < 7) ||
-      (x < 7 && y >= qrSize - 7);
-    if (inFinder) {
-      const localX = x < 7 ? x : x - (qrSize - 7);
-      const localY = y < 7 ? y : y - (qrSize - 7);
-      return localX === 0 || localX === 6 || localY === 0 || localY === 6 || (localX >= 2 && localX <= 4 && localY >= 2 && localY <= 4);
-    }
-    return ((hash + x * 17 + y * 29 + x * y * 7) % 5) < 2;
-  });
+const currentQrChannel = computed(
+  () => paymentChannelOptions.find(item => item.value === qrDialog.channel) ?? paymentChannelOptions[0]
+);
+
+const configuredScanBaseUrl = (import.meta.env.VITE_PAYMENT_SCAN_BASE_URL ?? '').trim().replace(/\/+$/, '');
+
+const paymentScanBaseUrl = computed(() => {
+  if (configuredScanBaseUrl) return configuredScanBaseUrl;
+  if (typeof window === 'undefined') return '';
+  return window.location.origin;
 });
+
+const qrScanUrl = computed(() => {
+  if (!qrDialog.paymentId || !paymentScanBaseUrl.value) return '';
+  const url = new URL('/api/payments/scan-entry', paymentScanBaseUrl.value);
+  url.searchParams.set('paymentId', qrDialog.paymentId);
+  url.searchParams.set('channel', qrDialog.channel);
+  return url.toString();
+});
+
+const scanBaseUrlNotice = computed(() => {
+  if (configuredScanBaseUrl) return false;
+  if (typeof window === 'undefined') return false;
+  return ['localhost', '127.0.0.1'].includes(window.location.hostname);
+});
+
+async function loadQrSvg() {
+  if (!qrDialog.visible || !qrScanUrl.value) return;
+  const target = qrScanUrl.value;
+  qrDialog.qrLoading = true;
+  qrDialog.qrError = '';
+  qrDialog.qrSvg = '';
+  try {
+    const svg = await getPaymentQrCode(target);
+    if (target === qrScanUrl.value) {
+      if (!svg.trim().startsWith('<svg')) {
+        throw new Error('二维码接口未返回有效 SVG，请确认 cashier-service 和 gateway-service 已重启');
+      }
+      qrDialog.qrSvg = svg;
+    }
+  } catch (error) {
+    if (target === qrScanUrl.value) {
+      qrDialog.qrError = errorMessage(error, '二维码生成失败，请确认后端和网关服务已重启');
+    }
+  } finally {
+    if (target === qrScanUrl.value) {
+      qrDialog.qrLoading = false;
+    }
+  }
+}
 
 function switchPage(page: PageKey) {
   currentPage.value = page;
@@ -844,7 +902,7 @@ function matchesPatientSearch(patientId: string, patientName: string, text: stri
 async function openQr(item: PendingFeeItem) {
   qrPreparingKey.value = item.businessKey;
   try {
-    await createPaymentOrder({
+    const payment = await createPaymentOrder({
       businessType: item.businessType,
       businessId: item.businessId,
       patientId: item.patientId,
@@ -852,8 +910,17 @@ async function openQr(item: PendingFeeItem) {
       paymentMethod: `${defaultQrChannel()}_TEST`
     });
     qrDialog.item = item;
+    qrDialog.checking = false;
+    qrDialog.paymentId = payment.id;
+    qrDialog.channel = defaultQrChannel();
     qrDialog.status = 'PENDING';
     qrDialog.visible = true;
+    void loadQrSvg();
+    if (payment.status === 'PAID') {
+      await handleQrPaymentSuccess(payment, item);
+    } else {
+      startQrStatusPolling();
+    }
   } catch (error) {
     ElMessage.error(errorMessage(error, '生成二维码失败'));
   } finally {
@@ -861,39 +928,69 @@ async function openQr(item: PendingFeeItem) {
   }
 }
 
-async function simulateQrScan() {
-  if (!qrDialog.item) return;
-  qrDialog.paying = true;
+function defaultQrChannel(): PaymentChannel {
+  return 'WECHAT';
+}
+
+function startQrStatusPolling() {
+  stopQrStatusPolling();
+  void syncQrPaymentStatus();
+  qrStatusTimer = window.setInterval(() => {
+    void syncQrPaymentStatus();
+  }, 1500);
+}
+
+function stopQrStatusPolling() {
+  if (qrStatusTimer) window.clearInterval(qrStatusTimer);
+  qrStatusTimer = undefined;
+}
+
+async function syncQrPaymentStatus() {
+  if (!qrDialog.visible || !qrDialog.item || !qrDialog.paymentId || qrDialog.status === 'PAID') return;
+  qrDialog.checking = true;
   try {
-    const paidItem = qrDialog.item;
-    await confirmPayment(paidItem, defaultQrChannel());
-    qrDialog.status = 'PAID';
-    await loadAllData();
-    if (paidItem.businessType === 'MEDICAL_ORDER') {
-      const executor = medicalOrderExecutor(paidItem.businessId);
-      ElMessage.success(executor ? `缴费成功，分配至：${executor}` : '缴费成功');
-    } else {
-      ElMessage.success('扫码支付成功');
+    const payments = await getPayments({
+      businessId: qrDialog.item.businessId,
+      businessType: qrDialog.item.businessType
+    });
+    const payment = payments.find(item => item.id === qrDialog.paymentId) ?? payments[0];
+    if (payment?.status === 'PAID') {
+      await handleQrPaymentSuccess(payment, qrDialog.item);
     }
   } catch (error) {
-    ElMessage.error(errorMessage(error, '扫码支付失败'));
+    if (isUnauthorized(error)) {
+      stopQrStatusPolling();
+      redirectToLogin();
+    }
   } finally {
-    qrDialog.paying = false;
+    qrDialog.checking = false;
   }
 }
 
-async function confirmPayment(item: PendingFeeItem, channel: PaymentChannel) {
-  await confirmTestPayment({
-    businessType: item.businessType,
-    businessId: item.businessId,
-    patientId: item.patientId,
-    channel,
-    channelTradeNo: `${channel.toLowerCase()}-${item.businessType.toLowerCase()}-${item.businessId}-${Date.now()}`
-  });
+async function handleQrPaymentSuccess(payment: PaymentOrder, paidItem: PendingFeeItem) {
+  if (qrDialog.status === 'PAID') return;
+  qrDialog.status = 'PAID';
+  qrDialog.paymentId = payment.id;
+  stopQrStatusPolling();
+  await loadAllData();
+  if (paidItem.businessType === 'MEDICAL_ORDER') {
+    const executor = medicalOrderExecutor(paidItem.businessId);
+    ElMessage.success(executor ? `缴费成功，分配至：${executor}` : '缴费成功');
+  } else {
+    ElMessage.success('扫码支付成功');
+  }
 }
 
-function defaultQrChannel(): PaymentChannel {
-  return 'WECHAT';
+function resetQrDialog() {
+  stopQrStatusPolling();
+  qrDialog.checking = false;
+  qrDialog.status = '';
+  qrDialog.paymentId = '';
+  qrDialog.channel = defaultQrChannel();
+  qrDialog.qrSvg = '';
+  qrDialog.qrLoading = false;
+  qrDialog.qrError = '';
+  qrDialog.item = undefined;
 }
 
 function idTypeLabel(value?: string) {
@@ -1210,6 +1307,8 @@ function paymentMethodLabel(method?: string) {
     WECHAT_TEST: '微信支付',
     ALIPAY: '支付宝',
     ALIPAY_TEST: '支付宝',
+    MEDICAL_INSURANCE: '医保卡支付',
+    MEDICAL_INSURANCE_TEST: '医保卡支付',
     SIMULATED: '模拟支付',
     OFFLINE_WINDOW: '窗口收费',
     CASH: '现金',
@@ -1307,6 +1406,14 @@ function logout() {
 
 watch(scheduleOptions, syncSelectedSlot);
 
+watch(() => qrDialog.visible, (visible) => {
+  if (!visible) stopQrStatusPolling();
+});
+
+watch(qrScanUrl, () => {
+  void loadQrSvg();
+});
+
 watch(registrationDepartments, (options) => {
   if (selectedDepartmentId.value && !options.some(item => item.id === selectedDepartmentId.value)) {
     selectedDepartmentId.value = '';
@@ -1329,6 +1436,7 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   if (nowTimer) window.clearInterval(nowTimer);
   if (autoSearchTimer) window.clearTimeout(autoSearchTimer);
+  stopQrStatusPolling();
 });
 </script>
 
@@ -1626,27 +1734,129 @@ onBeforeUnmount(() => {
   font-style: normal;
 }
 
-.fake-qr {
-  width: 220px;
-  height: 220px;
+.qr-channel-picker {
+  width: 100%;
   display: grid;
-  gap: 2px;
-  padding: 10px;
-  background: #fff;
-  border: 1px solid #d1d5db;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
 }
 
-.fake-qr span {
-  background: #fff;
+.qr-channel-button {
+  border: 1px solid #dbe6ef;
+  border-radius: 14px;
+  padding: 10px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: #f8fbff;
+  color: #334155;
+  cursor: pointer;
+  transition: all 0.2s ease;
 }
 
-.fake-qr span.dark {
-  background: #111827;
+.qr-channel-button strong {
+  font-size: 13px;
+}
+
+.qr-channel-button span {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.qr-channel-button:hover:not(:disabled) {
+  border-color: #8ec5ff;
+  transform: translateY(-1px);
+}
+
+.qr-channel-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.qr-channel-button--active {
+  border-color: #0ea5e9;
+  background: linear-gradient(180deg, #f0f9ff 0%, #e0f2fe 100%);
+  box-shadow: 0 10px 22px rgb(14 165 233 / 14%);
+}
+
+.qr-card {
+  width: 100%;
+  padding: 14px;
+  border-radius: 22px;
+  background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
+  border: 1px solid #d6e4f0;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 80%);
+}
+
+.qr-card[data-channel='WECHAT'] {
+  border-color: #b8e6c6;
+  background: linear-gradient(180deg, #ffffff 0%, #f3fff6 100%);
+}
+
+.qr-card[data-channel='ALIPAY'] {
+  border-color: #b5dcff;
+  background: linear-gradient(180deg, #ffffff 0%, #f2f9ff 100%);
+}
+
+.qr-card[data-channel='MEDICAL_INSURANCE'] {
+  border-color: #ffd9a8;
+  background: linear-gradient(180deg, #ffffff 0%, #fff8ef 100%);
+}
+
+.qr-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: #475569;
+}
+
+.qr-card__header em {
+  font-style: normal;
+  color: #0f766e;
+}
+
+.payment-qr {
+  width: 100%;
+  max-width: 260px;
+  min-height: 260px;
+  display: block;
+  margin: 0 auto;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 12px 30px rgb(15 23 42 / 10%);
+  overflow: hidden;
+}
+
+.payment-qr :deep(svg) {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.payment-qr--loading {
+  display: grid;
+  place-items: center;
+  color: #64748b;
+  font-size: 13px;
 }
 
 .qr-hint {
   margin: 0;
   color: #64748b;
+  font-size: 13px;
+  line-height: 1.65;
+  text-align: center;
+}
+
+.qr-hint--warn {
+  color: #b45309;
+}
+
+.qr-footer-status {
+  margin-right: auto;
+  color: #475569;
   font-size: 13px;
 }
 
@@ -1777,3 +1987,7 @@ onBeforeUnmount(() => {
   }
 }
 </style>
+
+
+
+
