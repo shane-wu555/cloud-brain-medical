@@ -5,3 +5,11 @@ declare module '*.vue' {
   export default component;
 }
 
+interface ImportMetaEnv {
+  readonly VITE_PAYMENT_SCAN_BASE_URL?: string;
+}
+
+interface ImportMeta {
+  readonly env: ImportMetaEnv;
+}
+

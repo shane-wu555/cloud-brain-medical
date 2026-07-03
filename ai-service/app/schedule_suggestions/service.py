@@ -88,6 +88,7 @@ unavailableSlots 由后端从 doctor_event 表按本次重排日期窗口展开�
 同一医生同一日期同一时段只能安排一次；period=全天 与上午/下午互斥。
 同一 roomId 在同一日期同一时段必须有且仅有一个医生；如果 demand 提供 roomId，建议医生必须属于该 roomId。
 同一医生同一天尽量上午/下午状态一致：能排则优先排满当天，不能排则优先整天不排，除非可用性或诊室需求不允许。
+周一到周五客流较大的时段，可优先安排主任医师、副主任医师。
 capacity 必须在 1 到 70 之间。
 尽量考虑同诊室不同医生之间的负载均衡。
 """,
@@ -223,6 +224,7 @@ def _mock_suggest(request: ScheduleSuggestionRequest, fallback_used: bool = Fals
             available,
             key=lambda item: (
                 assigned_counts.get(item.doctor_id, 0),
+                -_title_priority(item) if _prefer_senior_on_weekday_peak(demand) else 0,
                 -_doctor_demand_score(item) if weekday else _doctor_demand_score(item),
                 -item.weekly_capacity,
                 item.doctor_name,
@@ -298,6 +300,19 @@ def _is_weekday(work_date: str) -> bool:
 
 def _doctor_demand_score(candidate) -> int:
     return max(candidate.historical_average_visits, candidate.weekly_capacity)
+
+
+def _title_priority(candidate) -> int:
+    title = (candidate.title or "").strip()
+    if "副主任" in title:
+        return 1
+    if "主任" in title:
+        return 2
+    return 0
+
+
+def _prefer_senior_on_weekday_peak(demand) -> bool:
+    return _is_weekday(demand.work_date) and demand.expected_visits >= 30
 
 
 def _slot_conflicts(assigned_slots: set[tuple[str, str, str]], owner_id: str, work_date: str, period: str) -> bool:

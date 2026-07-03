@@ -7,6 +7,8 @@ export interface Drug {
   specification: string;
   unit: string;
   unitPrice: number;
+  dosageForm: string;
+  storageCondition: string;
   quantity: number;
   warningThreshold: number;
 }
@@ -92,8 +94,13 @@ export interface DrugReturnOrder {
   items: DrugReturnItem[];
 }
 
-export async function getDrugs(keyword?: string) {
-  const { data } = await http.get<Drug[]>('/drugs', { params: { keyword } });
+export async function getDrugs(params: { keyword?: string; storageCondition?: string } = {}) {
+  const { data } = await http.get<Drug[]>('/drugs', { params });
+  return data;
+}
+
+export async function stockInDrug(id: string, payload: { quantity: number; reason?: string }) {
+  const { data } = await http.post<Drug>(`/drugs/${id}/stock-in`, payload);
   return data;
 }
 

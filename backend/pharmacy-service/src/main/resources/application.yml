@@ -31,3 +31,12 @@ internal:
 services:
   patient:
     base-url: ${PATIENT_SERVICE_URL:http://localhost:8102}
+
+inventory:
+  ai-forecast:
+    enabled: ${INVENTORY_AI_FORECAST_ENABLED:false}
+    lookback-days: ${INVENTORY_AI_FORECAST_LOOKBACK_DAYS:90}
+    lead-time-days: ${INVENTORY_AI_FORECAST_LEAD_TIME_DAYS:14}
+    min-training-sample-days: ${INVENTORY_AI_FORECAST_MIN_TRAINING_SAMPLE_DAYS:30}
+    refresh-ms: ${INVENTORY_AI_FORECAST_REFRESH_MS:86400000}
+    initial-delay-ms: ${INVENTORY_AI_FORECAST_INITIAL_DELAY_MS:30000}

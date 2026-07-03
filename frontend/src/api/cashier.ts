@@ -1,7 +1,7 @@
 import { http } from './http';
 
 export type BusinessType = 'APPOINTMENT' | 'MEDICAL_ORDER' | 'PRESCRIPTION';
-export type PaymentChannel = 'WECHAT' | 'ALIPAY' | 'SIMULATED';
+export type PaymentChannel = 'WECHAT' | 'ALIPAY' | 'MEDICAL_INSURANCE' | 'SIMULATED';
 
 export interface PaymentOrder {
   id: string;
@@ -71,4 +71,11 @@ export async function confirmTestPayment(payload: {
   channelTradeNo: string;
 }) {
   return (await http.post<PaymentOrder>('/payments/test-callback', payload)).data;
+}
+
+export async function getPaymentQrCode(target: string) {
+  return (await http.get<string>('/payments/qr-code', {
+    params: { target },
+    responseType: 'text'
+  })).data;
 }

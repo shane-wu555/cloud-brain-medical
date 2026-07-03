@@ -9,6 +9,7 @@ import com.cloudbrain.pharmacy.entity.DrugReturnStatus;
 import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -24,7 +25,7 @@ public class PharmacyRepository {
         this.jdbc = jdbc;
     }
 
-    public List<Drug> drugs(String keyword) {
+    public List<Drug> drugs(String keyword, String storageCondition) {
         String like = keyword == null || keyword.isBlank() ? null : "%" + keyword.trim() + "%";
         StringBuilder sql = new StringBuilder("""
                 select d.*, s.quantity, s.warning_threshold
@@ -38,7 +39,11 @@ public class PharmacyRepository {
             args.add(like);
             args.add(like);
         }
-        sql.append(" order by d.code");
+        if (storageCondition != null && !storageCondition.isBlank()) {
+            sql.append(" and d.storage_condition = ?");
+            args.add(storageCondition.trim());
+        }
+        sql.append(" order by case when s.quantity <= s.warning_threshold then 0 else 1 end, d.dosage_form, d.drug_name, d.code");
         return jdbc.query(sql.toString(), (rs, row) -> drug(rs), args.toArray());
     }
 
@@ -50,6 +55,41 @@ public class PharmacyRepository {
                 where d.id = ?::uuid and d.active = true
                 """, (rs, row) -> drug(rs), drugId).stream().findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("drug does not exist or is inactive"));
+    }
+
+    public List<DrugDemandObservation> drugDemandObservations(int lookbackDays) {
+        return jdbc.query("""
+                select d.id as drug_id,
+                       d.code as drug_code,
+                       d.drug_name,
+                       d.unit_price,
+                       s.quantity,
+                       s.warning_threshold,
+                       day.demand_date::date as demand_date,
+                       coalesce(sum(f.quantity), 0)::int as dispensed_quantity
+                from drug d
+                join drug_stock s on s.drug_id = d.id
+                cross join generate_series(
+                    current_date - (?::int - 1),
+                    current_date,
+                    interval '1 day'
+                ) as day(demand_date)
+                left join stock_flow f on f.drug_id = d.id
+                    and f.direction = 'OUT'
+                    and f.created_at::date = day.demand_date::date
+                where d.active = true
+                group by d.id, d.code, d.drug_name, d.unit_price, s.quantity,
+                         s.warning_threshold, day.demand_date
+                order by d.code, day.demand_date
+                """, (rs, row) -> demandObservation(rs), Math.max(1, lookbackDays));
+    }
+
+    public int updateWarningThreshold(String drugId, int warningThreshold) {
+        return jdbc.update("""
+                update drug_stock
+                set warning_threshold = ?
+                where drug_id = ?::uuid
+                """, Math.max(0, warningThreshold), drugId);
     }
 
     public void insertPrescription(Prescription prescription) {
@@ -160,6 +200,14 @@ public class PharmacyRepository {
         return new StockChange(before, after);
     }
 
+    public StockChange addStock(String drugId, int quantity, String operatorId, String reason) {
+        int before = stock(drugId);
+        jdbc.update("update drug_stock set quantity = quantity + ? where drug_id = ?::uuid", quantity, drugId);
+        int after = before + quantity;
+        flow(drugId, null, "IN", quantity, before, after, operatorId, reason);
+        return new StockChange(before, after);
+    }
+
     public DrugReturnOrder createDrugReturn(Prescription prescription, String doctorId, String doctorOpinion,
             String opinionTemplate, DrugReturnStatus status) {
         String id = UUID.randomUUID().toString();
@@ -244,7 +292,15 @@ public class PharmacyRepository {
     private Drug drug(ResultSet rs) throws SQLException {
         return new Drug(rs.getString("id"), rs.getString("code"), rs.getString("drug_name"),
                 rs.getString("specification"), rs.getString("unit"), rs.getBigDecimal("unit_price"),
+                rs.getString("dosage_form"), rs.getString("storage_condition"),
                 rs.getInt("quantity"), rs.getInt("warning_threshold"));
+    }
+
+    private DrugDemandObservation demandObservation(ResultSet rs) throws SQLException {
+        return new DrugDemandObservation(rs.getString("drug_id"), rs.getString("drug_code"),
+                rs.getString("drug_name"), rs.getBigDecimal("unit_price"), rs.getInt("quantity"),
+                rs.getInt("warning_threshold"), rs.getObject("demand_date", LocalDate.class),
+                rs.getInt("dispensed_quantity"));
     }
 
     private Prescription prescription(ResultSet rs) throws SQLException {
@@ -320,6 +376,9 @@ public class PharmacyRepository {
     }
 
     public record Drug(String id, String drugCode, String drugName, String specification, String unit,
-            BigDecimal unitPrice, int quantity, int warningThreshold) {}
+            BigDecimal unitPrice, String dosageForm, String storageCondition,
+            int quantity, int warningThreshold) {}
+    public record DrugDemandObservation(String drugId, String drugCode, String drugName, BigDecimal unitPrice,
+            int quantity, int warningThreshold, LocalDate demandDate, int dispensedQuantity) {}
     public record StockChange(int beforeQuantity, int afterQuantity) {}
 }

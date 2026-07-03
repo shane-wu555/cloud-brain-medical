@@ -277,33 +277,92 @@
 
           <div class="query-bar">
             <el-input v-model="drugKeyword" clearable placeholder="药品名称或编码" @keyup.enter="loadDrugs" @clear="loadDrugs" />
+            <el-select v-model="drugStorageCondition" placeholder="存储条件" @change="loadDrugs">
+              <el-option
+                v-for="option in storageConditionOptions"
+                :key="option.value || 'all'"
+                :label="option.label"
+                :value="option.value"
+              />
+            </el-select>
             <el-button type="primary" :loading="loadingDrugs" @click="loadDrugs">搜索</el-button>
             <el-button @click="resetDrugSearch">重置</el-button>
           </div>
 
           <section class="work-card">
-            <el-table v-loading="loadingDrugs" :data="drugs" row-key="id" empty-text="暂无药品">
-              <el-table-column prop="drugCode" label="编码" min-width="120" />
-              <el-table-column prop="drugName" label="药品" min-width="180" />
-              <el-table-column prop="specification" label="规格" min-width="140" />
-              <el-table-column prop="unit" label="单位" width="90" />
-              <el-table-column label="单价" width="100" align="right">
-                <template #default="{ row }">¥{{ amountText(row.unitPrice) }}</template>
-              </el-table-column>
-              <el-table-column prop="quantity" label="库存" width="90" />
-              <el-table-column prop="warningThreshold" label="预警阈值" width="100" />
-              <el-table-column label="预警" width="100">
-                <template #default="{ row }">
-                  <el-tag :type="row.quantity <= row.warningThreshold ? 'danger' : 'success'" effect="plain">
-                    {{ row.quantity <= row.warningThreshold ? '偏低' : '正常' }}
-                  </el-tag>
-                </template>
-              </el-table-column>
-            </el-table>
+            <div v-loading="loadingDrugs" class="inventory-groups">
+              <el-empty v-if="!inventoryGroups.length" description="暂无药品" :image-size="96" />
+              <template v-else>
+                <section
+                  v-for="group in inventoryGroups"
+                  :key="group.dosageForm"
+                  :class="['inventory-group', group.lowStockCount > 0 && 'inventory-group--warning']"
+                >
+                  <button class="inventory-group__head" type="button" @click="toggleDosageGroup(group.dosageForm)">
+                    <span class="inventory-group__toggle">{{ group.collapsed ? '+' : '-' }}</span>
+                    <strong>{{ group.dosageForm }}</strong>
+                    <span>{{ group.items.length }} 个药品</span>
+                    <el-tag v-if="group.lowStockCount > 0" type="danger" effect="plain">
+                      {{ group.lowStockCount }} 个库存预警
+                    </el-tag>
+                  </button>
+                  <el-table
+                    v-show="!group.collapsed"
+                    :data="group.items"
+                    row-key="id"
+                    empty-text="暂无药品"
+                    class="inventory-group__table"
+                  >
+                    <el-table-column prop="drugCode" label="编码" min-width="120" />
+                    <el-table-column prop="drugName" label="药品" min-width="180" />
+                    <el-table-column prop="specification" label="规格" min-width="140" />
+                    <el-table-column prop="storageCondition" label="存储条件" width="120" />
+                    <el-table-column prop="unit" label="单位" width="90" />
+                    <el-table-column label="单价" width="100" align="right">
+                      <template #default="{ row }">¥{{ amountText(row.unitPrice) }}</template>
+                    </el-table-column>
+                    <el-table-column prop="quantity" label="库存" width="90" />
+                    <el-table-column prop="warningThreshold" label="预警阈值" width="100" />
+                    <el-table-column label="预警" width="100">
+                      <template #default="{ row }">
+                        <el-tag :type="isLowStock(row) ? 'danger' : 'success'" effect="plain">
+                          {{ isLowStock(row) ? '偏低' : '正常' }}
+                        </el-tag>
+                      </template>
+                    </el-table-column>
+                    <el-table-column label="操作" width="100" fixed="right">
+                      <template #default="{ row }">
+                        <el-button type="primary" link @click="openStockIn(row)">入库</el-button>
+                      </template>
+                    </el-table-column>
+                  </el-table>
+                </section>
+              </template>
+            </div>
           </section>
         </section>
       </main>
     </div>
+
+    <el-dialog v-model="stockInForm.visible" title="新增库存登记" width="420px" destroy-on-close>
+      <div v-if="stockInForm.drug" class="stock-in-summary">
+        <strong>{{ stockInForm.drug.drugName }}</strong>
+        <span>{{ stockInForm.drug.specification }} / {{ stockInForm.drug.dosageForm }}</span>
+        <em>当前库存 {{ stockInForm.drug.quantity }} {{ stockInForm.drug.unit }}</em>
+      </div>
+      <el-form label-width="86px">
+        <el-form-item label="入库数量">
+          <el-input-number v-model="stockInForm.quantity" :min="1" :step="1" :precision="0" controls-position="right" />
+        </el-form-item>
+        <el-form-item label="登记备注">
+          <el-input v-model="stockInForm.reason" maxlength="128" show-word-limit placeholder="如采购入库、盘盈调整" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="stockInForm.visible = false">取消</el-button>
+        <el-button type="primary" :loading="stockInSubmitting" @click="submitStockIn">确认入库</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -317,12 +376,19 @@ import {
   getDrugReturns,
   getDrugs,
   getPrescriptions,
+  stockInDrug,
   type Drug,
   type DrugReturnOrder,
   type Prescription
 } from '../../api/pharmacy';
 
 type PageKey = 'dispense' | 'returns' | 'inventory';
+type InventoryGroup = {
+  dosageForm: string;
+  items: Drug[];
+  lowStockCount: number;
+  collapsed: boolean;
+};
 
 const router = useRouter();
 const auth = useAuthStore();
@@ -337,9 +403,12 @@ const drugReturns = ref<DrugReturnOrder[]>([]);
 const drugs = ref<Drug[]>([]);
 const returnStatus = ref('RETURN_PENDING_REFUND');
 const drugKeyword = ref('');
+const drugStorageCondition = ref('');
+const collapsedDosageGroups = ref<string[]>([]);
 const loadingPrescriptions = ref(false);
 const loadingReturns = ref(false);
 const loadingDrugs = ref(false);
+const stockInSubmitting = ref(false);
 const dispensingId = ref('');
 const authRedirecting = ref(false);
 
@@ -361,11 +430,26 @@ const activeReturnSearch = reactive({
   prescriptionNo: '',
   returnNo: ''
 });
+const stockInForm = reactive({
+  visible: false,
+  drug: undefined as Drug | undefined,
+  quantity: 1,
+  reason: ''
+});
 
 const returnStatusOptions = [
   { label: '未缴费（已退药）', value: 'RETURNED' },
   { label: '未退费（已退药）', value: 'RETURN_PENDING_REFUND' },
   { label: '已退费（已退药）', value: 'RETURN_REFUNDED' }
+];
+
+const storageConditionOptions = [
+  { label: '全部存储条件', value: '' },
+  { label: '常温', value: '常温' },
+  { label: '阴凉干燥', value: '阴凉干燥' },
+  { label: '避光常温', value: '避光常温' },
+  { label: '避光阴凉', value: '避光阴凉' },
+  { label: '冷藏2-8℃', value: '冷藏2-8℃' }
 ];
 
 const navItems = computed(() => [
@@ -374,7 +458,35 @@ const navItems = computed(() => [
   { key: 'inventory' as const, label: '药品库存管理', badge: lowStockCount.value || '' }
 ]);
 
-const lowStockCount = computed(() => drugs.value.filter((item) => item.quantity <= item.warningThreshold).length);
+const lowStockCount = computed(() => drugs.value.filter(isLowStock).length);
+const inventoryGroups = computed<InventoryGroup[]>(() => {
+  const collapsed = new Set(collapsedDosageGroups.value);
+  const byDosageForm = new Map<string, Drug[]>();
+  for (const item of drugs.value) {
+    const dosageForm = item.dosageForm || '未分类';
+    const groupItems = byDosageForm.get(dosageForm) ?? [];
+    groupItems.push(item);
+    byDosageForm.set(dosageForm, groupItems);
+  }
+
+  return [...byDosageForm.entries()]
+    .map(([dosageForm, items]) => {
+      const sortedItems = [...items].sort(compareDrugsForInventory);
+      return {
+        dosageForm,
+        items: sortedItems,
+        lowStockCount: sortedItems.filter(isLowStock).length,
+        collapsed: collapsed.has(dosageForm)
+      };
+    })
+    .sort((left, right) => {
+      const leftHasWarning = left.lowStockCount > 0;
+      const rightHasWarning = right.lowStockCount > 0;
+      if (leftHasWarning !== rightHasWarning) return leftHasWarning ? -1 : 1;
+      if (left.lowStockCount !== right.lowStockCount) return right.lowStockCount - left.lowStockCount;
+      return left.dosageForm.localeCompare(right.dosageForm, 'zh-CN');
+    });
+});
 
 const filteredWaitingPrescriptions = computed(() => filterPrescriptions(waitingPrescriptions.value));
 const filteredDispensedPrescriptions = computed(() => filterPrescriptions(dispensedPrescriptions.value));
@@ -416,7 +528,10 @@ async function loadReturns() {
 async function loadDrugs() {
   loadingDrugs.value = true;
   try {
-    drugs.value = await getDrugs(drugKeyword.value.trim());
+    drugs.value = await getDrugs({
+      keyword: drugKeyword.value.trim(),
+      storageCondition: drugStorageCondition.value
+    });
   } catch (error) {
     handleRequestFailure(error, '药品库存加载失败');
   } finally {
@@ -434,6 +549,36 @@ async function dispense(id: string) {
     handleRequestFailure(error, '发药失败');
   } finally {
     dispensingId.value = '';
+  }
+}
+
+function openStockIn(row: Drug) {
+  stockInForm.drug = row;
+  stockInForm.quantity = 1;
+  stockInForm.reason = '';
+  stockInForm.visible = true;
+}
+
+async function submitStockIn() {
+  if (!stockInForm.drug) return;
+  const quantity = Number(stockInForm.quantity);
+  if (!Number.isFinite(quantity) || quantity <= 0) {
+    ElMessage.error('入库数量必须大于 0');
+    return;
+  }
+  stockInSubmitting.value = true;
+  try {
+    await stockInDrug(stockInForm.drug.id, {
+      quantity,
+      reason: stockInForm.reason.trim() || undefined
+    });
+    ElMessage.success('入库登记完成');
+    stockInForm.visible = false;
+    await loadDrugs();
+  } catch (error) {
+    handleRequestFailure(error, '入库登记失败');
+  } finally {
+    stockInSubmitting.value = false;
   }
 }
 
@@ -480,7 +625,25 @@ function resetReturnSearch() {
 
 function resetDrugSearch() {
   drugKeyword.value = '';
+  drugStorageCondition.value = '';
   loadDrugs();
+}
+
+function toggleDosageGroup(dosageForm: string) {
+  collapsedDosageGroups.value = collapsedDosageGroups.value.includes(dosageForm)
+    ? collapsedDosageGroups.value.filter((item) => item !== dosageForm)
+    : [...collapsedDosageGroups.value, dosageForm];
+}
+
+function isLowStock(item: Drug) {
+  return item.quantity <= item.warningThreshold;
+}
+
+function compareDrugsForInventory(left: Drug, right: Drug) {
+  if (isLowStock(left) !== isLowStock(right)) return isLowStock(left) ? -1 : 1;
+  const nameCompare = left.drugName.localeCompare(right.drugName, 'zh-CN');
+  if (nameCompare !== 0) return nameCompare;
+  return left.drugCode.localeCompare(right.drugCode);
 }
 
 function filterPrescriptions(items: Prescription[]) {
@@ -775,6 +938,77 @@ onMounted(async () => {
   width: 240px;
 }
 
+.query-bar .el-select {
+  width: 180px;
+}
+
+.inventory-groups {
+  min-height: 160px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.inventory-group {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.inventory-group--warning {
+  border-color: #f3b8b8;
+}
+
+.inventory-group__head {
+  width: 100%;
+  min-height: 44px;
+  border: none;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #f8fafc;
+  color: #374151;
+  cursor: pointer;
+  text-align: left;
+}
+
+.inventory-group--warning .inventory-group__head {
+  background: #fff5f5;
+}
+
+.inventory-group__head:hover {
+  background: #edf8fa;
+}
+
+.inventory-group__head strong {
+  color: #111827;
+  font-size: 15px;
+}
+
+.inventory-group__head span {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.inventory-group__toggle {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  background: #e6f9fa;
+  color: #0899a5;
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.inventory-group__table {
+  width: 100%;
+}
+
 .dispense-layout,
 .return-layout {
   display: grid;
@@ -886,6 +1120,29 @@ onMounted(async () => {
   white-space: pre-wrap;
 }
 
+.stock-in-summary {
+  margin-bottom: 16px;
+  padding: 12px;
+  border: 1px solid #d1f2f4;
+  border-radius: 8px;
+  background: #f0f9fa;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stock-in-summary strong {
+  color: #111827;
+  font-size: 16px;
+}
+
+.stock-in-summary span,
+.stock-in-summary em {
+  color: #64748b;
+  font-size: 13px;
+  font-style: normal;
+}
+
 @media (max-width: 1200px) {
   .dispense-layout,
   .return-layout {
@@ -947,6 +1204,10 @@ onMounted(async () => {
   }
 
   .query-bar .el-input {
+    width: 100%;
+  }
+
+  .query-bar .el-select {
     width: 100%;
   }
 }

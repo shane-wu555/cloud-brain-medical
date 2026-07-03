@@ -1,5 +1,6 @@
 package com.cloudbrain.pharmacy.service;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.anyInt;
@@ -104,6 +105,27 @@ class PharmacyServiceTest {
         assertThatThrownBy(() -> service.prescribe(request, "doctor-1"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("aiAssistanceId");
+    }
+
+    @Test
+    void stockInAddsInventoryAndReturnsUpdatedDrug() {
+        var drug = new PharmacyRepository.Drug("drug-1", "DRUG-1", "test drug", "10mg×10片",
+                "盒", BigDecimal.TEN, "片剂", "常温", 35, 10);
+        when(repository.drug("drug-1")).thenReturn(drug);
+
+        PharmacyRepository.Drug updated = service.addStock("drug-1",
+                new PharmacyController.StockInRequest(5, "purchase"), "pharmacist");
+
+        assertThat(updated.quantity()).isEqualTo(35);
+        verify(repository).addStock("drug-1", 5, "pharmacist", "purchase");
+    }
+
+    @Test
+    void stockInQuantityMustBePositive() {
+        assertThatThrownBy(() -> service.addStock("drug-1",
+                new PharmacyController.StockInRequest(0, "purchase"), "pharmacist"))
+                .isInstanceOf(IllegalArgumentException.class);
+        verify(repository, never()).addStock(any(), anyInt(), any(), any());
     }
 
     private Prescription prescription(PrescriptionStatus status) {
