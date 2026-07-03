@@ -41,6 +41,8 @@
           </button>
         </div>
 
+        <DoctorPersonalSchedule />
+
         <div class="queue-list">
           <div
             v-for="item in filteredQueue"
@@ -485,6 +487,7 @@
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
+import DoctorPersonalSchedule from '../../components/DoctorPersonalSchedule.vue';
 import { useAuthStore } from '../../store/auth';
 import { callAppointment, getTodayQueue, skipAppointment, startAppointment, updateAppointmentStatus, type Appointment } from '../../api/appointment';
 import { archiveMedicalRecord, getMedicalRecords, getPatientHistory, initDoctorRecord, writeDoctorNote, type MedicalRecord } from '../../api/medical-record';

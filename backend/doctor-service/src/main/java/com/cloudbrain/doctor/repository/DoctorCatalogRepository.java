@@ -1,10 +1,13 @@
 package com.cloudbrain.doctor.repository;
 
+import java.io.Serializable;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -23,10 +26,12 @@ public class DoctorCatalogRepository {
     public DoctorCatalogRepository(JdbcTemplate jdbc) { this.jdbc = jdbc; }
 
     // ── 科室 ───────────────────────────────────────────────────────────
+    @Cacheable(cacheNames = "doctor:departments")
     public List<Department> departments() {
         return jdbc.query("select id,name,description from department where active order by name",
                 (rs, row) -> new Department(rs.getString(1), rs.getString(2), rs.getString(3)));
     }
+    @Cacheable(cacheNames = "doctor:schedulingDepartments")
     public List<Department> schedulingDepartments() {
         return jdbc.query("""
                 select distinct d.id, d.name, d.description
@@ -37,6 +42,12 @@ public class DoctorCatalogRepository {
                 order by d.name
                 """, (rs, row) -> new Department(rs.getString(1), rs.getString(2), rs.getString(3)));
     }
+    @CacheEvict(cacheNames = {
+            "doctor:departments",
+            "doctor:schedulingDepartments",
+            "doctor:doctors",
+            "doctor:schedules"
+    }, allEntries = true)
     public Department createDepartment(String name, String description) {
         String id = "dept-" + UUID.randomUUID();
         jdbc.update("insert into department (id,name,description) values (?,?,?)", id, name, description);
@@ -44,6 +55,7 @@ public class DoctorCatalogRepository {
     }
 
     // ── 医生（staff 表，仅门诊医生）────────────────────────────────────
+    @Cacheable(cacheNames = "doctor:doctors", key = "#departmentId == null ? 'all' : #departmentId")
     public List<Doctor> doctors(String departmentId) {
         StringBuilder sql = new StringBuilder("""
                 select s.id, s.employee_no, s.name, s.title, s.department_id, p.name as dept_name,
@@ -67,6 +79,14 @@ public class DoctorCatalogRepository {
                 rs.getString("room_id"), rs.getString("room_name")), args.toArray());
     }
 
+    @CacheEvict(cacheNames = {
+            "doctor:schedulingDepartments",
+            "doctor:doctors",
+            "doctor:doctorDetails",
+            "doctor:outpatientRooms",
+            "doctor:schedules",
+            "doctor:timeSlots"
+    }, allEntries = true)
     public Doctor createDoctor(String employeeNo, String name, String title,
             String departmentId, String roleType, String specialty) {
         validateSchedulingDepartment(departmentId);
@@ -87,6 +107,7 @@ public class DoctorCatalogRepository {
         return doctors(departmentId).stream().filter(d -> d.id().equals(id)).findFirst().orElseThrow();
     }
 
+    @Cacheable(cacheNames = "doctor:doctorDetails", key = "#id")
     public Doctor findDoctor(String id) {
         return jdbc.query("""
                 select s.id, s.employee_no, s.name, s.title, s.department_id, p.name as dept_name,
@@ -104,6 +125,14 @@ public class DoctorCatalogRepository {
                 .orElseThrow(() -> new IllegalArgumentException("医生不存在"));
     }
 
+    @CacheEvict(cacheNames = {
+            "doctor:schedulingDepartments",
+            "doctor:doctors",
+            "doctor:doctorDetails",
+            "doctor:outpatientRooms",
+            "doctor:schedules",
+            "doctor:timeSlots"
+    }, allEntries = true)
     public Doctor updateDoctor(String id, String name, String title, String departmentId, String specialty) {
         validateSchedulingDepartment(departmentId);
         if (jdbc.update("""
@@ -128,6 +157,7 @@ public class DoctorCatalogRepository {
     }
 
     // ── 请假/手术安排 ─────────────────────────────────────────────────
+    @Cacheable(cacheNames = "doctor:doctorEvents", key = "'all'")
     public List<DoctorEvent> doctorEvents() {
         String sql = """
                 select e.id, e.staff_id, s.name as doctor_name, d.name as department_name,
@@ -158,6 +188,7 @@ public class DoctorCatalogRepository {
         return map.values().stream().map(DoctorEventBuilder::build).toList();
     }
 
+    @Cacheable(cacheNames = "doctor:doctorEvents", key = "'window:' + #startInclusive + ':' + #endInclusive")
     public List<DoctorEvent> doctorEvents(LocalDate startInclusive, LocalDate endInclusive) {
         return doctorEvents().stream()
                 .map(event -> event.withDates(event.dates().stream()
@@ -167,6 +198,10 @@ public class DoctorCatalogRepository {
                 .toList();
     }
 
+    @CacheEvict(cacheNames = {
+            "doctor:doctorEvents",
+            "doctor:schedules"
+    }, allEntries = true)
     public DoctorEvent createDoctorEvent(String doctorId, String eventType,
             List<LocalDate> dates, List<String> periods, String note) {
         validateDoctorEvent(doctorId, eventType, dates, periods);
@@ -177,6 +212,10 @@ public class DoctorCatalogRepository {
         return findDoctorEvent(id);
     }
 
+    @CacheEvict(cacheNames = {
+            "doctor:doctorEvents",
+            "doctor:schedules"
+    }, allEntries = true)
     public DoctorEvent updateDoctorEvent(String id, String doctorId, String eventType,
             List<LocalDate> dates, List<String> periods, String note) {
         validateDoctorEvent(doctorId, eventType, dates, periods);
@@ -191,6 +230,10 @@ public class DoctorCatalogRepository {
         return findDoctorEvent(id);
     }
 
+    @CacheEvict(cacheNames = {
+            "doctor:doctorEvents",
+            "doctor:schedules"
+    }, allEntries = true)
     public void deleteDoctorEvent(String id) {
         if (jdbc.update("delete from doctor_event where id = ?", id) != 1) {
             throw new IllegalArgumentException("安排不存在");
@@ -244,6 +287,7 @@ public class DoctorCatalogRepository {
                 .toList();
     }
 
+    @Cacheable(cacheNames = "doctor:outpatientRooms", key = "'department:' + #departmentId")
     public List<OutpatientRoom> outpatientRoomsWithDoctors(String departmentId) {
         return jdbc.query("""
                 select distinct r.id, r.department_id, r.name, r.location
@@ -258,6 +302,7 @@ public class DoctorCatalogRepository {
                 departmentId);
     }
 
+    @Cacheable(cacheNames = "doctor:outpatientRooms", key = "'doctor:' + #doctorId")
     public OutpatientRoom outpatientRoomForDoctor(String doctorId) {
         return jdbc.query("""
                 select r.id, r.department_id, r.name, r.location
@@ -272,13 +317,16 @@ public class DoctorCatalogRepository {
     }
 
     // ── 排班 ───────────────────────────────────────────────────────────
+    @Cacheable(cacheNames = "doctor:schedules", key = "'all:' + (#doctorId == null ? '' : #doctorId) + ':' + (#departmentId == null ? '' : #departmentId)")
     public List<Schedule> schedules(String doctorId, String departmentId) {
         StringBuilder sql = new StringBuilder("""
                 select s.id, s.staff_id, d.name as doctor_name, s.department_id,
+                       dept.name as department_name,
                        s.work_date, s.period, s.capacity, s.status,
                        r.id as room_id, r.name as room_name
                 from schedule s
                 join staff d on d.id = s.staff_id
+                join department dept on dept.id = s.department_id
                 left join outpatient_doctor od on od.staff_id = s.staff_id
                 left join outpatient_room r on r.id = od.room_id and r.active
                 where 1 = 1
@@ -290,19 +338,23 @@ public class DoctorCatalogRepository {
         return jdbc.query(sql.toString(), (rs, row) -> mapSchedule(rs), args.toArray());
     }
 
+    @Cacheable(cacheNames = "doctor:schedules", key = "'window:' + (#doctorId == null ? '' : #doctorId) + ':' + (#departmentId == null ? '' : #departmentId) + ':' + #startInclusive + ':' + #endInclusive")
     public List<Schedule> schedules(String doctorId, String departmentId, LocalDate startInclusive, LocalDate endInclusive) {
         return schedules(doctorId, departmentId).stream()
                 .filter(schedule -> !schedule.workDate().isBefore(startInclusive) && !schedule.workDate().isAfter(endInclusive))
                 .toList();
     }
 
+    @Cacheable(cacheNames = "doctor:schedules", key = "'detail:' + #id")
     public Schedule findSchedule(String id) {
         return jdbc.query("""
                 select s.id, s.staff_id, d.name as doctor_name, s.department_id,
+                       dept.name as department_name,
                        s.work_date, s.period, s.capacity, s.status,
                        r.id as room_id, r.name as room_name
                 from schedule s
                 join staff d on d.id = s.staff_id
+                join department dept on dept.id = s.department_id
                 left join outpatient_doctor od on od.staff_id = s.staff_id
                 left join outpatient_room r on r.id = od.room_id and r.active
                 where s.id = ?
@@ -312,12 +364,13 @@ public class DoctorCatalogRepository {
 
     private Schedule mapSchedule(java.sql.ResultSet rs) throws java.sql.SQLException {
         return new Schedule(rs.getString("id"), rs.getString("staff_id"), rs.getString("doctor_name"),
-                rs.getString("department_id"), rs.getDate("work_date").toLocalDate(),
+                rs.getString("department_id"), rs.getString("department_name"), rs.getDate("work_date").toLocalDate(),
                 rs.getString("period"), rs.getInt("capacity"), rs.getString("status"),
                 rs.getString("room_id"), rs.getString("room_name"));
     }
 
     // ── 时间槽 ─────────────────────────────────────────────────────────
+    @Cacheable(cacheNames = "doctor:timeSlots", key = "#scheduleId")
     public List<ScheduleTimeSlot> timeSlots(String scheduleId) {
         return jdbc.query("""
                 select id, schedule_id, start_time, capacity
@@ -327,6 +380,7 @@ public class DoctorCatalogRepository {
                 rs.getObject("start_time", LocalTime.class), rs.getInt("capacity")), scheduleId);
     }
 
+    @Cacheable(cacheNames = "doctor:timeSlots", key = "#scheduleIds == null ? 'empty' : #scheduleIds.toString()")
     public List<ScheduleTimeSlot> timeSlots(List<String> scheduleIds) {
         if (scheduleIds == null || scheduleIds.isEmpty()) return List.of();
         String placeholders = String.join(",", java.util.Collections.nCopies(scheduleIds.size(), "?"));
@@ -340,6 +394,10 @@ public class DoctorCatalogRepository {
                 scheduleIds.toArray());
     }
 
+    @CacheEvict(cacheNames = {
+            "doctor:schedules",
+            "doctor:timeSlots"
+    }, allEntries = true)
     public Schedule createSchedule(String doctorId, String departmentId,
             LocalDate date, String period, int capacity) {
         validateSchedulingDepartment(departmentId);
@@ -376,6 +434,10 @@ public class DoctorCatalogRepository {
         return List.of();
     }
 
+    @CacheEvict(cacheNames = {
+            "doctor:schedules",
+            "doctor:timeSlots"
+    }, allEntries = true)
     public void deleteSchedulesForDepartmentWindow(String departmentId, LocalDate startInclusive, LocalDate endInclusive) {
         validateSchedulingDepartment(departmentId);
         List<String> ids = jdbc.query("""
@@ -388,12 +450,20 @@ public class DoctorCatalogRepository {
         jdbc.update("delete from schedule where id in (" + placeholders + ")", ids.toArray());
     }
 
+    @CacheEvict(cacheNames = {
+            "doctor:schedules",
+            "doctor:timeSlots"
+    }, allEntries = true)
     public Schedule suspendSchedule(String id, String reason) {
         if (jdbc.update("update schedule set status='SUSPENDED', suspension_reason=? where id=? and status='PUBLISHED'",
                 reason, id) != 1) throw new IllegalArgumentException("排班不存在或已停诊");
         return findSchedule(id);
     }
 
+    @CacheEvict(cacheNames = {
+            "doctor:schedules",
+            "doctor:timeSlots"
+    }, allEntries = true)
     public Schedule reschedule(String id, LocalDate date, String period) {
         validateSchedulePeriod(period);
         Schedule current = findSchedule(id);
@@ -462,20 +532,20 @@ public class DoctorCatalogRepository {
         }
     }
 
-    public record Department(String id, String name, String description) {}
+    public record Department(String id, String name, String description) implements Serializable {}
     public record Doctor(String id, String employeeNo, String name, String title,
             String departmentId, String departmentName, String specialty, String roleType,
-            String roomId, String roomName) {}
-    public record OutpatientRoom(String id, String departmentId, String name, String location) {}
+            String roomId, String roomName) implements Serializable {}
+    public record OutpatientRoom(String id, String departmentId, String name, String location) implements Serializable {}
     public record DoctorEvent(String id, String doctorId, String doctorName, String departmentName,
-            String eventType, List<LocalDate> dates, List<String> periods, String note) {
+            String eventType, List<LocalDate> dates, List<String> periods, String note) implements Serializable {
         public DoctorEvent withDates(List<LocalDate> dates) {
             return new DoctorEvent(id, doctorId, doctorName, departmentName, eventType, dates, periods, note);
         }
     }
-    public record Schedule(String id, String doctorId, String doctorName, String departmentId,
-            LocalDate workDate, String period, int capacity, String status, String roomId, String roomName) {}
-    public record ScheduleTimeSlot(String id, String scheduleId, LocalTime startTime, int capacity) {}
+    public record Schedule(String id, String doctorId, String doctorName, String departmentId, String departmentName,
+            LocalDate workDate, String period, int capacity, String status, String roomId, String roomName) implements Serializable {}
+    public record ScheduleTimeSlot(String id, String scheduleId, LocalTime startTime, int capacity) implements Serializable {}
 
     private static class DoctorEventBuilder {
         private final String id;

@@ -26,6 +26,8 @@
           <el-input v-model="queueKeyword" clearable size="small" placeholder="搜索姓名/项目" />
         </div>
 
+        <DoctorPersonalSchedule />
+
         <div class="sidebar-tabs">
           <button :class="['stab', queueTab === 'all' && 'stab--active']" @click="queueTab = 'all'">
             全部 {{ orders.length }}
@@ -647,6 +649,7 @@ import { ElMessage } from 'element-plus';
 import JsBarcode from 'jsbarcode';
 import * as XLSX from 'xlsx';
 import { useRouter } from 'vue-router';
+import DoctorPersonalSchedule from '../../components/DoctorPersonalSchedule.vue';
 import { useAuthStore } from '../../store/auth';
 import {
   callMedicalOrder, confirmReport, createReportDraft as saveReportDraft,

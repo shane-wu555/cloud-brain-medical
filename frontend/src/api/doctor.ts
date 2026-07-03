@@ -44,6 +44,7 @@ export interface Schedule {
   doctorId: string;
   doctorName: string;
   departmentId: string;
+  departmentName?: string;
   roomId?: string;
   roomName?: string;
   workDate: string;

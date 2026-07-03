@@ -14,6 +14,7 @@ from .preprocessing import download_and_load, volume_to_slices
 from .classifier    import classify_volume
 from .detector      import detect_volume, top_abnormal_slices
 from .metal_classifier import classify_metal_artifact
+from .metal_segmentation import segment_metal_artifact
 
 log = logging.getLogger(__name__)
 
@@ -88,6 +89,25 @@ def _metal_report_text(metal_result: dict) -> tuple[str, str]:
     return finding, advice
 
 
+def _metal_seg_report_text(seg_result: dict) -> tuple[str, str]:
+    if not seg_result.get("enabled"):
+        return "", ""
+    if not seg_result.get("hasArtifactRegion"):
+        return "金属伪影区域分割：未定位到明显疑似区域。", ""
+
+    affected = int(seg_result.get("affectedSlices", 0))
+    total = int(seg_result.get("totalSlices", 0))
+    fg_ratio = float(seg_result.get("foregroundRatio", 0.0))
+    confidence = float(seg_result.get("confidence", 0.0))
+    finding = (
+        "金属伪影区域分割：已定位到疑似金属/伪影区域，"
+        f"累及 {affected}/{total} 层，前景占比 {fg_ratio:.2%}，"
+        f"最高置信度 {confidence:.0%}。"
+    )
+    advice = "请在金属伪影分割提示区域内结合原始图像复核，该区域的病灶判断需谨慎。"
+    return finding, advice
+
+
 def run(object_key: str, order_id: str, clinical_context: str = "") -> dict[str, Any]:
     """
     完整推理流程入口。
@@ -110,6 +130,7 @@ def run(object_key: str, order_id: str, clinical_context: str = "") -> dict[str,
     confidence  = clf_result["confidence"]
     slice_probs = clf_result["slice_probs"]
     metal_result = classify_metal_artifact(slices)
+    metal_seg_result = segment_metal_artifact(hu_volume, valid_indices)
     log.info(f"[CT推理] 分类结果: {label} ({confidence:.2%})")
 
     # ── 3. 检测（仅异常时）────────────────────────────────
@@ -131,10 +152,15 @@ def run(object_key: str, order_id: str, clinical_context: str = "") -> dict[str,
     conclusion = CONCLUSION_TEMPLATE[label].format(confidence=confidence)
     risk_advice = RISK_ADVICE[label]
     metal_finding, metal_advice = _metal_report_text(metal_result)
+    metal_seg_finding, metal_seg_advice = _metal_seg_report_text(metal_seg_result)
     if metal_finding:
         findings = f"{findings} {metal_finding}"
+    if metal_seg_finding:
+        findings = f"{findings} {metal_seg_finding}"
     if metal_advice:
         risk_advice = f"{risk_advice} {metal_advice}"
+    if metal_seg_advice:
+        risk_advice = f"{risk_advice} {metal_seg_advice}"
 
     if clinical_context:
         risk_advice += f"  临床背景：{clinical_context}"
@@ -146,6 +172,7 @@ def run(object_key: str, order_id: str, clinical_context: str = "") -> dict[str,
         "confidence":     confidence,
         "label":          label,
         "metalArtifact":  metal_result,
+        "metalArtifactSegmentation": metal_seg_result,
         "abnormalRegions": detections,
         "modelVersion":   model_version,
     }

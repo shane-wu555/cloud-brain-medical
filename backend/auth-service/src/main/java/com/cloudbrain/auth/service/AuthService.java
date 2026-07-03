@@ -169,6 +169,9 @@ public class AuthService {
         Map<String, Object> user = new HashMap<>();
         user.put("id", account.getId());
         user.put("username", account.getUsername());
+        if (account.getEmployeeNo() != null && !account.getEmployeeNo().isBlank()) {
+            user.put("employeeNo", account.getEmployeeNo());
+        }
         user.put("name", account.getName());
         user.put("role", account.getRole());
         user.put("realNameVerified", account.isRealNameVerified());

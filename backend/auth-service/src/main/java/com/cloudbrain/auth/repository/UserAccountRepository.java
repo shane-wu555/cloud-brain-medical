@@ -1,5 +1,6 @@
 package com.cloudbrain.auth.repository;
 
+import com.cloudbrain.auth.cache.AuthAccountCacheService;
 import com.cloudbrain.auth.entity.UserAccount;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -13,13 +14,19 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class UserAccountRepository {
     private final JdbcTemplate jdbcTemplate;
+    private final AuthAccountCacheService accountCache;
     private final RowMapper<UserAccount> rowMapper = new UserAccountRowMapper();
 
-    public UserAccountRepository(JdbcTemplate jdbcTemplate) {
+    public UserAccountRepository(JdbcTemplate jdbcTemplate, AuthAccountCacheService accountCache) {
         this.jdbcTemplate = jdbcTemplate;
+        this.accountCache = accountCache;
     }
 
     public Optional<UserAccount> findByUsername(String username) {
+        return accountCache.findByUsername(username, () -> queryByUsername(username));
+    }
+
+    private Optional<UserAccount> queryByUsername(String username) {
         List<UserAccount> result = jdbcTemplate.query(
                 "select * from user_account where username = ?",
                 rowMapper,
@@ -28,6 +35,10 @@ public class UserAccountRepository {
     }
 
     public Optional<UserAccount> findByEmployeeNo(String employeeNo) {
+        return accountCache.findByEmployeeNo(employeeNo, () -> queryByEmployeeNo(employeeNo));
+    }
+
+    private Optional<UserAccount> queryByEmployeeNo(String employeeNo) {
         List<UserAccount> result = jdbcTemplate.query(
                 "select * from user_account where employee_no = ? or username = ?",
                 rowMapper,
@@ -37,12 +48,20 @@ public class UserAccountRepository {
     }
 
     public Optional<UserAccount> findByPhone(String phone) {
+        return accountCache.findByPhone(phone, () -> queryByPhone(phone));
+    }
+
+    private Optional<UserAccount> queryByPhone(String phone) {
         List<UserAccount> result = jdbcTemplate.query(
                 "select * from user_account where phone = ? order by created_at limit 1", rowMapper, phone);
         return result.stream().findFirst();
     }
 
     public Optional<UserAccount> findById(String id) {
+        return accountCache.findById(id, () -> queryById(id));
+    }
+
+    private Optional<UserAccount> queryById(String id) {
         List<UserAccount> result = jdbcTemplate.query("select * from user_account where id = ?", rowMapper, id);
         return result.stream().findFirst();
     }
@@ -71,6 +90,7 @@ public class UserAccountRepository {
     }
 
     public UserAccount save(UserAccount account) {
+        queryByUsername(account.getUsername()).ifPresent(accountCache::evict);
         jdbcTemplate.update("""
                 insert into user_account (id, username, password, phone, name, role, permissions, real_name_verified, employee_no, active)
                 values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -94,10 +114,12 @@ public class UserAccountRepository {
                 account.isRealNameVerified(),
                 account.getEmployeeNo(),
                 account.isActive());
+        accountCache.put(account);
         return account;
     }
 
     public UserAccount updateStaffProfile(String id, String name, String phone, String role) {
+        queryById(id).ifPresent(accountCache::evict);
         if (jdbcTemplate.update("""
                 update user_account
                 set name = ?, phone = ?, role = ?
@@ -105,33 +127,45 @@ public class UserAccountRepository {
                 """, name, phone, role, id) != 1) {
             throw new IllegalArgumentException("员工账号不存在");
         }
-        return findById(id).orElseThrow();
+        UserAccount account = queryById(id).orElseThrow();
+        accountCache.put(account);
+        return account;
     }
 
     public void updatePassword(String id, String encodedPassword) {
+        queryById(id).ifPresent(accountCache::evict);
         jdbcTemplate.update("update user_account set password = ? where id = ?", encodedPassword, id);
+        queryById(id).ifPresent(accountCache::put);
     }
 
     public UserAccount updateStaffPassword(String id, String encodedPassword) {
+        queryById(id).ifPresent(accountCache::evict);
         if (jdbcTemplate.update("update user_account set password = ? where id = ? and role <> 'PATIENT'",
                 encodedPassword, id) != 1) {
             throw new IllegalArgumentException("员工账号不存在");
         }
-        return findById(id).orElseThrow();
+        UserAccount account = queryById(id).orElseThrow();
+        accountCache.put(account);
+        return account;
     }
 
     public UserAccount setStaffActive(String id, boolean active) {
+        queryById(id).ifPresent(accountCache::evict);
         if (jdbcTemplate.update("update user_account set active = ? where id = ? and role <> 'PATIENT'",
                 active, id) != 1) {
             throw new IllegalArgumentException("员工账号不存在");
         }
-        return findById(id).orElseThrow();
+        UserAccount account = queryById(id).orElseThrow();
+        accountCache.put(account);
+        return account;
     }
 
     public void markRealNameVerified(String id) {
+        queryById(id).ifPresent(accountCache::evict);
         if (jdbcTemplate.update("update user_account set real_name_verified = true where id = ? and role = 'PATIENT'", id) != 1) {
             throw new IllegalArgumentException("患者账号不存在");
         }
+        queryById(id).ifPresent(accountCache::put);
     }
 
     public int size() {

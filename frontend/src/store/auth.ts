@@ -12,6 +12,8 @@ export type Role =
 
 export interface CurrentUser {
   id: string;
+  username?: string;
+  employeeNo?: string;
   name: string;
   phone?: string;
   role: Role;
