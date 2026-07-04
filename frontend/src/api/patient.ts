@@ -37,6 +37,10 @@ export async function searchPatientByIdNumber(idNumber: string) {
 export async function searchPatientByPhone(phone: string) {
   return (await http.get<PatientProfile[]>('/patients', { params: { phone } })).data;
 }
+export async function getPatientsByIds(patientIds: string[]) {
+  if (!patientIds.length) return [];
+  return (await http.get<PatientProfile[]>('/patients', { params: { ids: patientIds.join(',') } })).data;
+}
 export async function createOfflinePatient(payload: OfflinePatientPayload) {
   return (await http.post<PatientProfile>('/patients/offline', payload)).data;
 }

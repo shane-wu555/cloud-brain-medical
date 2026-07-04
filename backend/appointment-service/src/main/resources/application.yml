@@ -32,6 +32,8 @@ internal:
   api-key: ${INTERNAL_API_KEY:cloud-brain-medical-internal-development-key}
 
 services:
+  doctor:
+    base-url: ${DOCTOR_SERVICE_URL:http://localhost:8103}
   cashier:
     base-url: ${CASHIER_SERVICE_URL:http://localhost:8113}
   patient:

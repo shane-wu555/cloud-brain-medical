@@ -43,65 +43,16 @@
               <el-button :loading="pageLoading" @click="refreshAll">刷新数据</el-button>
             </div>
           </div>
-
-          <div class="stat-strip">
-            <div class="stat-box">
-              <span>今日挂号</span>
-              <strong>{{ overview?.todayAppointments ?? 0 }}</strong>
-              <em>全部渠道</em>
-            </div>
-            <div class="stat-box">
-              <span>待接诊</span>
-              <strong>{{ overview?.waitingVisits ?? 0 }}</strong>
-              <em>候诊队列</em>
-            </div>
-            <div class="stat-box">
-              <span>出诊医生</span>
-              <strong>{{ overview?.activeDoctors ?? 0 }}</strong>
-              <em>已发布排班</em>
-            </div>
-            <div class="stat-box">
-              <span>AI 问诊</span>
-              <strong>{{ overview?.aiTriageCount ?? 0 }}</strong>
-              <em>辅助记录</em>
-            </div>
-          </div>
-
-          <div class="overview-layout">
-            <section class="work-card">
-              <div class="card-head">
-                <div>
-                  <h2>科室负载</h2>
-                </div>
-              </div>
-              <el-table :data="overview?.departmentLoads ?? []" empty-text="暂无科室负载">
-                <el-table-column prop="name" label="科室" />
-                <el-table-column prop="value" label="挂号量" width="120" />
-              </el-table>
-            </section>
-
-            <section class="work-card">
-              <div class="card-head">
-                <div>
-                  <h2>待处理事项</h2>
-                </div>
-              </div>
-              <div class="task-list">
-                <button class="task-item" @click="currentPage = 'aiSchedule'">
-                  <span>AI 排班建议</span>
-                  <strong>{{ pendingSuggestions.length }}</strong>
-                </button>
-                <button class="task-item" @click="currentPage = 'manualSchedule'">
-                  <span>排班信息</span>
-                  <strong>{{ schedules.length }}</strong>
-                </button>
-                <button class="task-item" @click="currentPage = 'doctorProfile'">
-                  <span>医生账号与档案</span>
-                  <strong>{{ allStaffAccounts.length }}</strong>
-                </button>
-              </div>
-            </section>
-          </div>
+          <AdminOverviewVisuals
+            :active="currentPage === 'overview'"
+            :overview="overview"
+            :schedules="schedules"
+            :doctors="doctors"
+            :doctor-events="doctorEvents"
+            :staff-accounts="allStaffAccounts"
+            :pending-suggestions="pendingSuggestions.length"
+            @navigate="currentPage = $event"
+          />
         </section>
 
         <section v-show="currentPage === 'aiSchedule'" class="work-page">
@@ -146,6 +97,7 @@
                   刷新待确认重排建议
                 </el-button>
               </el-form>
+              <p v-if="aiTaskNotice" class="ai-task-notice">{{ aiTaskNotice }}</p>
               <p v-if="aiBackgroundSummary" class="ai-summary">{{ aiBackgroundSummary }}</p>
             </section>
 
@@ -681,9 +633,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
+import AdminOverviewVisuals from '../../components/AdminOverviewVisuals.vue';
 import { useAuthStore } from '../../store/auth';
 import {
   createDoctor,
@@ -691,7 +644,7 @@ import {
   createSchedule,
   deleteDoctorEvent,
   getAiScheduleSuggestions,
-  getAiReplanPreview,
+  getAiReplanPreviewJob,
   getDepartments,
   getDoctorEvents,
   getDoctors,
@@ -699,12 +652,14 @@ import {
   publishAiScheduleSuggestion,
   publishAiScheduleSuggestions,
   suspendSchedule,
+  startAiReplanPreviewJob,
   updateDoctor,
   updateDoctorEvent,
   type AiDoctorCandidate,
   type AiScheduleDemand,
   type AiScheduleResponse,
   type AiScheduleSuggestion,
+  type AiScheduleTask,
   type Department,
   type Doctor,
   type DoctorEvent,
@@ -789,6 +744,10 @@ const doctorEvents = ref<DoctorEvent[]>([]);
 const staffAccounts = ref<StaffAccount[]>([]);
 const allStaffAccounts = ref<StaffAccount[]>([]);
 const aiResponse = ref<AiScheduleResponse | null>(null);
+const aiTaskId = ref('');
+const aiTaskStatus = ref<AiScheduleTask['status'] | ''>('');
+const aiTaskMessage = ref('');
+const aiTaskPollTimer = ref<ReturnType<typeof window.setInterval> | null>(null);
 const publishedSuggestionIds = ref<string[]>([]);
 const collapsedScheduleDepartments = ref<string[]>([]);
 const aiScheduleBoardWeekOffset = ref(0);
@@ -807,7 +766,7 @@ const selectedDoctorDetail = ref<Doctor | null>(null);
 const availability = reactive<Record<string, AvailabilitySettings>>({});
 const NON_REGISTRATION_DEPARTMENT_NAMES = ['影像检查科', '检验科', '处置科', '药房', '系统管理', '收费处'];
 const REPLAN_WINDOW_START_OFFSET = 7;
-const REPLAN_WINDOW_DAYS = 8;
+const REPLAN_WINDOW_DAYS = 7;
 const SCHEDULE_BOARD_MANUAL_DAYS = 7;
 const SCHEDULE_WEEKDAY_LABELS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
 const SCHEDULE_BOARD_PERIODS = ['上午', '下午'];
@@ -889,6 +848,7 @@ const accountFilter = reactive({
 });
 
 const departmentMap = computed(() => new Map(departments.value.map((item) => [item.id, item.name])));
+const doctorById = computed(() => new Map(doctors.value.map((doctor) => [doctor.id, doctor])));
 const schedulableDepartments = computed(() =>
   departments.value.filter((department) => !NON_REGISTRATION_DEPARTMENT_NAMES.includes(department.name))
 );
@@ -952,6 +912,11 @@ const aiSourceLabel = computed(() => {
   return `${provider}${model}${aiResponse.value.fallbackUsed ? ' 兜底' : ''}`;
 });
 const aiBackgroundSummary = computed(() => aiResponse.value?.backgroundSummary || '');
+const aiTaskNotice = computed(() => {
+  if (!aiTaskStatus.value || aiTaskStatus.value === 'COMPLETED') return '';
+  if (aiTaskStatus.value === 'FAILED') return aiTaskMessage.value || 'AI 排班任务执行失败，请稍后重试。';
+  return aiTaskMessage.value || 'AI 正在生成排班建议，预计需要较长时间，您可以先处理其他事项。';
+});
 
 const pendingSuggestions = computed(() =>
   suggestions.value.filter((suggestion) => !isSuggestionPublished(suggestion.suggestionId))
@@ -979,6 +944,7 @@ const aiCandidates = computed<AiDoctorCandidate[]>(() =>
     return {
       doctorId: doctor.id,
       doctorName: doctor.name,
+      title: doctor.title ?? '',
       departmentId: doctor.departmentId,
       roomId: doctor.roomId || '',
       roomName: doctor.roomName || '',
@@ -1036,6 +1002,11 @@ async function refreshAll() {
     if (needsAutomaticReplan()) {
       await loadAiReplanPreview(false, false);
     } else {
+      clearAiTaskPolling();
+      suggestionLoading.value = false;
+      aiTaskId.value = '';
+      aiTaskStatus.value = '';
+      aiTaskMessage.value = '';
       aiResponse.value = {
         aiRecordId: null,
         suggestions: [],
@@ -1111,11 +1082,12 @@ function resetDoctorEventsSearch() {
 }
 
 async function loadAiReplanPreview(showFeedback = false, force = showFeedback) {
+  clearAiTaskPolling();
   suggestionLoading.value = true;
   try {
     aiForm.startDate = addDays(todayIso(), REPLAN_WINDOW_START_OFFSET);
     aiForm.days = REPLAN_WINDOW_DAYS;
-    aiResponse.value = await getAiReplanPreview({
+    const task = await startAiReplanPreviewJob({
       departmentId: aiForm.departmentId || undefined,
       baseVisits: aiForm.baseVisits,
       weekdayPeak: aiForm.weekdayPeak,
@@ -1124,21 +1096,74 @@ async function loadAiReplanPreview(showFeedback = false, force = showFeedback) {
       morningIncrease: aiForm.morningIncrease,
       force
     });
-    publishedSuggestionIds.value = [];
+    applyAiTask(task);
     if (showFeedback) {
-      if (suggestions.value.length > 0) {
-        ElMessage.success(`已生成 ${suggestions.value.length} 条第 8-15 天待确认排班建议`);
-      } else {
-        ElMessage.warning('当前窗口暂无可用重排建议');
-      }
+      ElMessage.info('AI 排班任务已提交，预计需要较长时间，您可以先处理其他事项。');
     }
+    startAiTaskPolling(task.taskId, showFeedback);
   } catch (error) {
+    suggestionLoading.value = false;
+    aiTaskStatus.value = 'FAILED';
+    aiTaskMessage.value = errorMessage(error);
     if (showFeedback) {
       ElMessage.error(errorMessage(error));
     }
-  } finally {
-    suggestionLoading.value = false;
   }
+}
+
+function applyAiTask(task: AiScheduleTask) {
+  aiTaskId.value = task.taskId;
+  aiTaskStatus.value = task.status;
+  aiTaskMessage.value = task.message || '';
+}
+
+function clearAiTaskPolling() {
+  if (aiTaskPollTimer.value !== null) {
+    window.clearInterval(aiTaskPollTimer.value);
+    aiTaskPollTimer.value = null;
+  }
+}
+
+function startAiTaskPolling(taskId: string, notifyOnCompletion: boolean) {
+  const poll = async () => {
+    if (aiTaskId.value !== taskId) return;
+    try {
+      const task = await getAiReplanPreviewJob(taskId);
+      if (aiTaskId.value !== taskId) return;
+      applyAiTask(task);
+      if (task.status === 'COMPLETED') {
+        clearAiTaskPolling();
+        suggestionLoading.value = false;
+        aiResponse.value = task.result ?? null;
+        publishedSuggestionIds.value = [];
+        if (notifyOnCompletion) {
+          if (suggestions.value.length > 0) {
+            ElMessage.success(`AI 排班已完成，生成 ${suggestions.value.length} 条第 8-15 天待确认建议`);
+          } else {
+            ElMessage.warning('AI 排班已完成，当前窗口暂无可用重排建议');
+          }
+        }
+      } else if (task.status === 'FAILED') {
+        clearAiTaskPolling();
+        suggestionLoading.value = false;
+        if (notifyOnCompletion) {
+          ElMessage.error(task.message || 'AI 排班任务执行失败，请稍后重试');
+        }
+      }
+    } catch (error) {
+      clearAiTaskPolling();
+      suggestionLoading.value = false;
+      aiTaskStatus.value = 'FAILED';
+      aiTaskMessage.value = errorMessage(error);
+      if (notifyOnCompletion) {
+        ElMessage.error(errorMessage(error));
+      }
+    }
+  };
+  void poll();
+  aiTaskPollTimer.value = window.setInterval(() => {
+    void poll();
+  }, 3000);
 }
 
 function seedDefaults() {
@@ -1231,7 +1256,7 @@ async function publishSuggestion(suggestion: AiScheduleSuggestion, silent = fals
     }
   }
   await publishAiScheduleSuggestion(suggestion.suggestionId, {
-    ...suggestion,
+    ...normalizeAiSuggestionForPublish(suggestion),
     aiRecordId: aiResponse.value?.aiRecordId ?? null
   });
   publishedSuggestionIds.value = [...publishedSuggestionIds.value, suggestion.suggestionId];
@@ -1255,7 +1280,7 @@ async function publishPendingSuggestions() {
     await publishAiScheduleSuggestions({
       aiRecordId: aiResponse.value?.aiRecordId ?? null,
       suggestions: pendingSuggestions.value.map((suggestion) => ({
-        ...suggestion,
+        ...normalizeAiSuggestionForPublish(suggestion),
         aiRecordId: aiResponse.value?.aiRecordId ?? null
       }))
     });
@@ -1591,6 +1616,21 @@ function startOfWeekMonday(isoDate: string) {
   return addDays(isoDate, offset);
 }
 
+function normalizeAiSuggestionForPublish(suggestion: AiScheduleSuggestion) {
+  const doctor = doctorById.value.get(suggestion.doctorId);
+  return {
+    ...suggestion,
+    roomId: doctor?.roomId || suggestion.roomId || '',
+    roomName: doctor?.roomName || suggestion.roomName || ''
+  };
+}
+
+function scheduleDoctorSubtitle(doctor: Doctor | undefined, departmentId: string, roomName = '') {
+  const title = doctor?.title?.trim() || '';
+  const location = (doctor?.roomName || roomName || departmentName(doctor?.departmentId || departmentId)).trim();
+  return [title, location].filter(Boolean).join('\n');
+}
+
 function buildScheduleBoardRows(days: ScheduleBoardDay[], includeAiSuggestions: boolean): ScheduleBoardDisplayRow[] {
   const dateSet = new Set(days.map((day) => day.date));
   const doctorMap = new Map<string, { doctorId: string; doctorName: string; subtitle: string; departmentId: string; roomName: string }>();
@@ -1600,13 +1640,13 @@ function buildScheduleBoardRows(days: ScheduleBoardDay[], includeAiSuggestions: 
 
   const ensureDoctor = (doctorId: string, doctorName: string, departmentId: string, roomName = '') => {
     if (!doctorId || doctorMap.has(doctorId)) return;
-    const doctor = doctors.value.find((item) => item.id === doctorId);
+    const doctor = doctorById.value.get(doctorId);
     doctorMap.set(doctorId, {
       doctorId,
       doctorName: doctor?.name || doctorName || doctorId,
       departmentId: doctor?.departmentId || departmentId,
       roomName: doctor?.roomName || roomName || '',
-      subtitle: doctor?.roomName || roomName || departmentName(doctor?.departmentId || departmentId)
+      subtitle: scheduleDoctorSubtitle(doctor, departmentId, roomName)
     });
   };
 
@@ -1891,8 +1931,26 @@ function needsAutomaticReplan() {
         schedule.workDate >= start &&
         schedule.workDate <= end
     );
+    const roomIds = Array.from(
+      new Set(
+        schedulableDoctors.value
+          .filter((doctor) => doctor.departmentId === departmentId)
+          .map((doctor) => doctor.roomId || '')
+          .filter(Boolean)
+      )
+    );
     for (let day = 0; day < REPLAN_WINDOW_DAYS; day += 1) {
       const workDate = addDays(start, day);
+      if (
+        roomIds.length > 0 &&
+        roomIds.some(
+          (roomId) =>
+            !coversScheduleRoomPeriod(windowSchedules, roomId, workDate, '上午') ||
+            !coversScheduleRoomPeriod(windowSchedules, roomId, workDate, '下午')
+        )
+      ) {
+        return true;
+      }
       if (!coversSchedulePeriod(windowSchedules, workDate, '上午') || !coversSchedulePeriod(windowSchedules, workDate, '下午')) {
         return true;
       }
@@ -1903,6 +1961,10 @@ function needsAutomaticReplan() {
 
 function coversSchedulePeriod(items: Schedule[], workDate: string, period: string) {
   return items.some((schedule) => schedule.workDate === workDate && schedule.period === period);
+}
+
+function coversScheduleRoomPeriod(items: Schedule[], roomId: string, workDate: string, period: string) {
+  return items.some((schedule) => schedule.roomId === roomId && schedule.workDate === workDate && schedule.period === period);
 }
 
 function hasDoctorEventConflict(schedule: Schedule, start: string, end: string) {
@@ -1932,6 +1994,7 @@ function logout() {
 }
 
 onMounted(refreshAll);
+onUnmounted(clearAiTaskPolling);
 </script>
 
 <style scoped>
@@ -2265,6 +2328,17 @@ onMounted(refreshAll);
   line-height: 1.6;
 }
 
+.ai-task-notice {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border: 1px solid #bae6fd;
+  border-radius: 6px;
+  background: #f0f9ff;
+  color: #0369a1;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
 .schedule-visual-card {
   overflow: hidden;
 }
@@ -2502,10 +2576,9 @@ onMounted(refreshAll);
   margin-top: 4px;
   color: #94a3b8;
   font-size: 12px;
+  line-height: 1.45;
   font-style: normal;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: pre-line;
 }
 
 .schedule-board__cell {

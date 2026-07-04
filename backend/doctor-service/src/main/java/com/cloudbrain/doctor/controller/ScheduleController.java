@@ -3,8 +3,13 @@ package com.cloudbrain.doctor.controller;
 import com.cloudbrain.doctor.repository.DoctorCatalogRepository;
 import com.cloudbrain.doctor.service.ScheduleInsightService;
 import com.fasterxml.jackson.annotation.JsonAlias;
+import jakarta.annotation.PreDestroy;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Value;
@@ -24,12 +29,15 @@ import org.slf4j.LoggerFactory;
 public class ScheduleController {
     private static final Logger log=LoggerFactory.getLogger(ScheduleController.class);
     private static final int REPLAN_START_DAYS=7;
-    private static final int REPLAN_DAYS=8;
+    private static final int REPLAN_DAYS=7;
+    private static final int MAX_AI_TASKS=100;
     private final DoctorCatalogRepository repository;
     private final ScheduleInsightService scheduleInsightService;
     private final RestClient appointmentClient;
     private final RestClient aiClient;
     private final String internalApiKey;
+    private final ExecutorService aiTaskExecutor=Executors.newFixedThreadPool(2);
+    private final Map<String,AiScheduleTask> aiTasks=new ConcurrentHashMap<>();
     public ScheduleController(DoctorCatalogRepository repository, ScheduleInsightService scheduleInsightService,
             @Value("${internal.api-key}") String internalApiKey,
             @Value("${services.appointment.base-url:http://localhost:8104}") String appointmentUrl,
@@ -40,6 +48,10 @@ public class ScheduleController {
         aiRequestFactory.setConnectTimeout(10000);
         aiRequestFactory.setReadTimeout(180000);
         this.aiClient=RestClient.builder().requestFactory(aiRequestFactory).baseUrl(aiUrl).build();
+    }
+    @PreDestroy
+    public void shutdown() {
+        aiTaskExecutor.shutdownNow();
     }
     @ExceptionHandler(IllegalArgumentException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
@@ -85,7 +97,7 @@ public class ScheduleController {
                     .accept(MediaType.APPLICATION_JSON)
                     .body(payload)
                     .retrieve().body(new ParameterizedTypeReference<Map<String,Object>>(){});
-            AiScheduleResponse mapped=mapAiScheduleResponse(response);
+            AiScheduleResponse mapped=augmentPartialAiSuggestions(normalizedRequest,mapAiScheduleResponse(response));
             log.info("AI schedule response mapped: elapsedMs={}, rawSuggestions={}, mappedSuggestions={}, fallbackUsed={}, provider={}, model={}, ragSources={}",
                     System.currentTimeMillis()-startedAt,objectListSize(response==null?null:response.get("suggestions")),
                     mapped.suggestions().size(),mapped.fallbackUsed(),mapped.provider(),mapped.model(),mapped.knowledgeSources().size());
@@ -168,12 +180,44 @@ public class ScheduleController {
         if(candidates.isEmpty()||demands.isEmpty()) return new AiScheduleResponse(null,List.of(),null,null,false,List.of(),insightBackground(insight));
         return requestAiSuggestions(new AiScheduleRequest(candidates,demands,insightBackground(insight)));
     }
+    @PostMapping("/ai-replan-preview/jobs") @PreAuthorize("hasRole('ADMIN')")
+    public AiScheduleTask startAiReplanPreview(@RequestParam(name="departmentId", required=false) String departmentId,
+            @RequestParam(name="baseVisits", defaultValue="24") int baseVisits,
+            @RequestParam(name="weekdayPeak", defaultValue="true") boolean weekdayPeak,
+            @RequestParam(name="weekdayIncrease", defaultValue="35") int weekdayIncrease,
+            @RequestParam(name="morningPeak", defaultValue="true") boolean morningPeak,
+            @RequestParam(name="morningIncrease", defaultValue="25") int morningIncrease,
+            @RequestParam(name="force", defaultValue="false") boolean force) {
+        trimAiTasks();
+        String taskId="ai-schedule-task-"+UUID.randomUUID();
+        AiScheduleTask queued=AiScheduleTask.queued(taskId);
+        aiTasks.put(taskId, queued);
+        aiTaskExecutor.submit(() -> {
+            aiTasks.put(taskId, queued.running());
+            try {
+                AiScheduleResponse response=aiReplanPreview(departmentId,baseVisits,weekdayPeak,weekdayIncrease,morningPeak,morningIncrease,force);
+                aiTasks.put(taskId, queued.completed(response));
+                log.info("AI schedule async task completed: taskId={}, suggestions={}",taskId,response.suggestions().size());
+            } catch (Exception exception) {
+                log.warn("AI schedule async task failed: taskId={}, message={}",taskId,exception.getMessage(),exception);
+                aiTasks.put(taskId, queued.failed("AI 排班任务执行失败：" + exception.getMessage()));
+            }
+        });
+        return queued;
+    }
+    @GetMapping("/ai-replan-preview/jobs/{taskId}") @PreAuthorize("hasRole('ADMIN')")
+    public AiScheduleTask aiReplanPreviewTask(@PathVariable("taskId") String taskId) {
+        AiScheduleTask task=aiTasks.get(taskId);
+        if(task==null) throw new IllegalArgumentException("AI 排班任务不存在或已过期");
+        return task;
+    }
     @PostMapping("/ai-suggestions/{suggestionId}/publish") @PreAuthorize("hasRole('ADMIN')")
     public ScheduleDto publishAiSuggestion(@PathVariable("suggestionId") String suggestionId,@RequestBody PublishAiScheduleRequest request) {
         if(request.doctorId()==null||request.departmentId()==null||request.workDate()==null||request.period()==null) throw new IllegalArgumentException("AI 排班建议缺少必要字段");
         DoctorCatalogRepository.OutpatientRoom room=repository.outpatientRoomForDoctor(request.doctorId());
-        if(request.roomId()!=null&&!request.roomId().isBlank()&&!request.roomId().equals(room.id())) {
-            throw new IllegalArgumentException("AI 排班建议中的诊室与医生绑定诊室不一致");
+        if(hasPublishRoomMismatch(request.roomId(),room)) {
+            log.warn("AI schedule publish room mismatch ignored: context=single:{}:{}:{}, doctorId={}, suggestionRoomId={}, boundRoomId={}",
+                    suggestionId,request.workDate(),request.period(),request.doctorId(),request.roomId(),room.id());
         }
         var s=repository.createSchedule(request.doctorId(),request.departmentId(),LocalDate.parse(request.workDate()),request.period(),request.capacity());
         syncSlots(repository.timeSlots(s.id()), Map.of());
@@ -189,8 +233,9 @@ public class ScheduleController {
         for(PublishAiScheduleRequest item:suggestions) {
             if(item.departmentId()==null||item.workDate()==null||item.period()==null||item.doctorId()==null) continue;
             DoctorCatalogRepository.OutpatientRoom room=repository.outpatientRoomForDoctor(item.doctorId());
-            if(item.roomId()!=null&&!item.roomId().isBlank()&&!item.roomId().equals(room.id())) {
-                throw new IllegalArgumentException("AI 排班建议中的诊室与医生绑定诊室不一致");
+            if(hasPublishRoomMismatch(item.roomId(),room)) {
+                log.warn("AI schedule publish room mismatch ignored: context=batch:{}:{}, doctorId={}, suggestionRoomId={}, boundRoomId={}",
+                        item.workDate(),item.period(),item.doctorId(),item.roomId(),room.id());
             }
             if(hasSlotConflict(usedDoctorSlots,item.doctorId(),item.workDate(),item.period())) continue;
             if(hasSlotConflict(usedRoomSlots,room.id(),item.workDate(),item.period())) continue;
@@ -527,6 +572,57 @@ public class ScheduleController {
         }
         return new AiScheduleResponse("local-ai-schedule-record-"+UUID.randomUUID(),suggestions,"backend","local-balanced",true,List.of(),request.backgroundSummary());
     }
+    private AiScheduleResponse augmentPartialAiSuggestions(AiScheduleRequest request,AiScheduleResponse response) {
+        Set<String> coveredKeys=Optional.ofNullable(response.suggestions()).orElse(List.of()).stream()
+                .map(this::scheduleDemandKey)
+                .collect(Collectors.toSet());
+        List<AiScheduleDemand> missingDemands=Optional.ofNullable(request.demands()).orElse(List.of()).stream()
+                .filter(demand -> !coveredKeys.contains(scheduleDemandKey(demand)))
+                .toList();
+        if(missingDemands.isEmpty()) return response;
+
+        AiScheduleResponse localFill=fallbackAiSuggestions(
+                new AiScheduleRequest(request.candidates(),missingDemands,request.backgroundSummary()),
+                "local-fill");
+        List<AiScheduleSuggestion> combined=new ArrayList<>(Optional.ofNullable(response.suggestions()).orElse(List.of()));
+        Set<String> missingKeys=missingDemands.stream().map(this::scheduleDemandKey).collect(Collectors.toCollection(LinkedHashSet::new));
+        Set<String> usedDoctorSlots=new HashSet<>();
+        Set<String> usedRoomSlots=new HashSet<>();
+        for(AiScheduleSuggestion suggestion:combined) {
+            reserveSlot(usedDoctorSlots,suggestion.doctorId(),suggestion.workDate(),suggestion.period());
+            reserveSlot(usedRoomSlots,suggestion.roomId(),suggestion.workDate(),suggestion.period());
+        }
+        int appended=0;
+        for(AiScheduleSuggestion suggestion:localFill.suggestions()) {
+            String key=scheduleDemandKey(suggestion);
+            if(!missingKeys.contains(key)) continue;
+            if(hasSlotConflict(usedDoctorSlots,suggestion.doctorId(),suggestion.workDate(),suggestion.period())) continue;
+            if(hasSlotConflict(usedRoomSlots,suggestion.roomId(),suggestion.workDate(),suggestion.period())) continue;
+            combined.add(suggestion);
+            reserveSlot(usedDoctorSlots,suggestion.doctorId(),suggestion.workDate(),suggestion.period());
+            reserveSlot(usedRoomSlots,suggestion.roomId(),suggestion.workDate(),suggestion.period());
+            missingKeys.remove(key);
+            appended++;
+        }
+        if(appended>0||!missingKeys.isEmpty()) {
+            log.info("AI schedule response augmented: requestedDemands={}, originalSuggestions={}, appendedLocalSuggestions={}, stillMissing={}",
+                    request.demands().size(),Optional.ofNullable(response.suggestions()).orElse(List.of()).size(),appended,missingKeys.size());
+        }
+        return new AiScheduleResponse(
+                response.aiRecordId()==null?localFill.aiRecordId():response.aiRecordId(),
+                combined,
+                response.provider()==null?localFill.provider():response.provider(),
+                appended>0&&response.model()!=null?response.model()+"+local-fill":response.model(),
+                response.fallbackUsed()||appended>0,
+                response.knowledgeSources(),
+                response.backgroundSummary()==null?localFill.backgroundSummary():response.backgroundSummary());
+    }
+    private String scheduleDemandKey(AiScheduleDemand demand) {
+        return demand.departmentId()+":"+Optional.ofNullable(demand.roomId()).orElse("")+":"+demand.workDate()+":"+demand.period();
+    }
+    private String scheduleDemandKey(AiScheduleSuggestion suggestion) {
+        return suggestion.departmentId()+":"+Optional.ofNullable(suggestion.roomId()).orElse("")+":"+suggestion.workDate()+":"+suggestion.period();
+    }
     private String insightBackground(ScheduleInsightService.ScheduleInsight insight) {
         return insight!=null&&insight.trainingReady()?insight.summary():"";
     }
@@ -544,6 +640,9 @@ public class ScheduleController {
     }
     private String slotKey(String ownerId,String workDate,String period) {
         return ownerId+":"+workDate+":"+period;
+    }
+    private boolean hasPublishRoomMismatch(String suggestionRoomId,DoctorCatalogRepository.OutpatientRoom room) {
+        return suggestionRoomId!=null&&!suggestionRoomId.isBlank()&&!suggestionRoomId.equals(room.id());
     }
     private int doctorDemandScore(AiDoctorCandidate candidate) {
         return Math.max(candidate.historicalAverageVisits(),candidate.weeklyCapacity());
@@ -567,6 +666,15 @@ public class ScheduleController {
         if(morningPeak&&"上午".equals(period)) expected*=1+morningIncrease/100f;
         return Math.max(1,Math.round(expected));
     }
+    private void trimAiTasks() {
+        if(aiTasks.size()<MAX_AI_TASKS) return;
+        aiTasks.entrySet().stream()
+                .sorted(Comparator.comparing(entry -> entry.getValue().createdAt()))
+                .limit(Math.max(1,aiTasks.size()-MAX_AI_TASKS+1))
+                .map(Map.Entry::getKey)
+                .toList()
+                .forEach(aiTasks::remove);
+    }
     public record CreateScheduleRequest(String doctorId,String departmentId,String workDate,String period,int capacity) {}
     public record SuspendRequest(String reason) {}
     public record RescheduleRequest(String workDate,String period) {}
@@ -578,6 +686,21 @@ public class ScheduleController {
     public record DoctorUnavailableSlot(String date,String period,String type) {}
     public record AiScheduleDemand(String departmentId,String roomId,String roomName,String workDate,String period,int expectedVisits,Integer historicalVisits) {}
     public record AiScheduleResponse(String aiRecordId,List<AiScheduleSuggestion> suggestions,String provider,String model,boolean fallbackUsed,List<Map<String,Object>> knowledgeSources,String backgroundSummary) {}
+    public record AiScheduleTask(String taskId,String status,String message,LocalDateTime createdAt,LocalDateTime updatedAt,AiScheduleResponse result) {
+        public static AiScheduleTask queued(String taskId) {
+            LocalDateTime now=LocalDateTime.now();
+            return new AiScheduleTask(taskId,"QUEUED","AI 排班任务已提交，预计需要较长时间，请稍后查看通知。",now,now,null);
+        }
+        public AiScheduleTask running() {
+            return new AiScheduleTask(taskId,"RUNNING","AI 正在生成排班建议，管理员可先处理其他事项。",createdAt,LocalDateTime.now(),null);
+        }
+        public AiScheduleTask completed(AiScheduleResponse result) {
+            return new AiScheduleTask(taskId,"COMPLETED","AI 排班建议已生成。",createdAt,LocalDateTime.now(),result);
+        }
+        public AiScheduleTask failed(String message) {
+            return new AiScheduleTask(taskId,"FAILED",message,createdAt,LocalDateTime.now(),null);
+        }
+    }
     public record AiScheduleSuggestion(String suggestionId,String doctorId,String doctorName,String departmentId,String roomId,String roomName,String workDate,String period,int capacity,boolean requiresAdminConfirmation) {}
     public record PublishAiScheduleRequest(String aiRecordId,String doctorId,String doctorName,String departmentId,String roomId,String roomName,String workDate,String period,int capacity,boolean requiresAdminConfirmation) {}
     public record PublishAiScheduleBatchRequest(String aiRecordId,List<PublishAiScheduleRequest> suggestions) {}

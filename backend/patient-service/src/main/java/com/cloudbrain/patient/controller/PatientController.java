@@ -6,6 +6,7 @@ import jakarta.validation.constraints.NotBlank;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -63,8 +64,16 @@ public class PatientController {
     @GetMapping
     @PreAuthorize("hasAnyRole('CASHIER','ADMIN')")
     public List<PatientRepository.PatientProfile> search(
+            @RequestParam(name = "ids", required = false) String ids,
             @RequestParam(name = "phone", required = false) String phone,
             @RequestParam(name = "idNumber", required = false) String idNumber) {
+        if (ids != null && !ids.isBlank()) {
+            return repository.findByIds(Arrays.stream(ids.split(","))
+                    .map(String::trim)
+                    .filter(value -> !value.isBlank())
+                    .distinct()
+                    .toList());
+        }
         if (idNumber != null && !idNumber.isBlank()) {
             return repository.findByIdNumber("ID_CARD", idNumber);
         }

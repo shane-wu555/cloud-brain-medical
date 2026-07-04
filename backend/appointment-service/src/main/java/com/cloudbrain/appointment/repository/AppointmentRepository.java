@@ -6,6 +6,7 @@ import com.cloudbrain.appointment.entity.AppointmentStatus;
 import com.cloudbrain.appointment.entity.PaymentStatus;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -105,6 +106,42 @@ public class AppointmentRepository {
     public int size() {
         Integer count = jdbcTemplate.queryForObject("select count(*) from appointment", Integer.class);
         return count == null ? 0 : count;
+    }
+
+    public DashboardAppointmentStats dashboardStats(LocalDate visitDate) {
+        Integer todayAppointments = jdbcTemplate.queryForObject("""
+                select count(*)
+                from appointment
+                where visit_date = ?
+                  and status in ('WAITING','CALLED','IN_VISIT','REVISIT_WAITING','FINISHED')
+                """, Integer.class, visitDate);
+        Integer waitingVisits = jdbcTemplate.queryForObject("""
+                select count(*)
+                from appointment
+                where visit_date = ?
+                  and status in ('WAITING','CALLED','IN_VISIT','REVISIT_WAITING')
+                """, Integer.class, visitDate);
+        Integer aiTriageCount = jdbcTemplate.queryForObject("""
+                select count(*)
+                from appointment
+                where visit_date = ?
+                  and status in ('WAITING','CALLED','IN_VISIT','REVISIT_WAITING','FINISHED')
+                  and nullif(trim(coalesce(triage_summary, '')), '') is not null
+                  and trim(triage_summary) <> '窗口线下挂号'
+                """, Integer.class, visitDate);
+        List<DepartmentLoad> departmentLoads = jdbcTemplate.query("""
+                select department_name, count(*) as visit_count
+                from appointment
+                where visit_date = ?
+                  and status in ('WAITING','CALLED','IN_VISIT','REVISIT_WAITING','FINISHED')
+                group by department_name
+                order by visit_count desc, department_name
+                """, (rs, row) -> new DepartmentLoad(rs.getString("department_name"), rs.getInt("visit_count")), visitDate);
+        return new DashboardAppointmentStats(
+                todayAppointments == null ? 0 : todayAppointments,
+                waitingVisits == null ? 0 : waitingVisits,
+                aiTriageCount == null ? 0 : aiTriageCount,
+                departmentLoads);
     }
 
     public SchedulingHistorySummary schedulingHistorySummary(int lookbackDays) {
@@ -261,6 +298,12 @@ public class AppointmentRepository {
             List<DoctorVisitAverage> doctorAverages,
             List<DepartmentVisitAverage> departmentAverages,
             List<WeekdayVisitAverage> weekdayAverages) {}
+    public record DashboardAppointmentStats(
+            int todayAppointments,
+            int waitingVisits,
+            int aiTriageCount,
+            List<DepartmentLoad> departmentLoads) {}
+    public record DepartmentLoad(String name, int value) {}
     public record DoctorVisitAverage(String doctorId, String doctorName, String departmentId, String departmentName, int averageVisits) {}
     public record DepartmentVisitAverage(String departmentId, String departmentName, int averageVisits) {}
     public record WeekdayVisitAverage(int isoDow, int averageVisits) {}

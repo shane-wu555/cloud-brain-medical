@@ -60,6 +60,7 @@ export interface Schedule {
 export interface AiDoctorCandidate {
   doctorId: string;
   doctorName: string;
+  title?: string;
   departmentId: string;
   roomId?: string;
   roomName?: string;
@@ -107,6 +108,15 @@ export interface AiScheduleResponse {
     content?: string;
     score?: number | null;
   }>;
+}
+
+export interface AiScheduleTask {
+  taskId: string;
+  status: 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED';
+  message: string;
+  createdAt: string;
+  updatedAt: string;
+  result?: AiScheduleResponse | null;
 }
 
 export async function getDepartments() {
@@ -190,6 +200,22 @@ export async function getAiReplanPreview(params: {
   force?: boolean;
 } = {}) {
   return (await http.get<AiScheduleResponse>('/schedules/ai-replan-preview', { params, timeout: 180000 })).data;
+}
+
+export async function startAiReplanPreviewJob(params: {
+  departmentId?: string;
+  baseVisits?: number;
+  weekdayPeak?: boolean;
+  weekdayIncrease?: number;
+  morningPeak?: boolean;
+  morningIncrease?: number;
+  force?: boolean;
+} = {}) {
+  return (await http.post<AiScheduleTask>('/schedules/ai-replan-preview/jobs', null, { params })).data;
+}
+
+export async function getAiReplanPreviewJob(taskId: string) {
+  return (await http.get<AiScheduleTask>(`/schedules/ai-replan-preview/jobs/${taskId}`)).data;
 }
 
 export async function publishAiScheduleSuggestion(
