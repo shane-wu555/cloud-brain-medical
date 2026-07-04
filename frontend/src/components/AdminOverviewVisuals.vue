@@ -3,24 +3,13 @@
     <section class="overview-hero">
       <div class="overview-hero__copy">
         <span class="overview-hero__eyebrow">智慧运营驾驶舱</span>
-        <h2>把挂号、排班、人员和风险放进同一张首页</h2>
-        <p>用更直观的图表快速看清今天的门诊热度、未来 7 日号源供给和待处理运营风险。</p>
+        <h2>实时运营总览</h2>
       </div>
+
       <div class="overview-hero__chips">
-        <div class="hero-chip">
-          <span>未来 7 日号源</span>
-          <strong>{{ totalSevenDayCapacity }}</strong>
-          <em>基于当前排班汇总</em>
-        </div>
-        <div class="hero-chip">
-          <span>启用账号</span>
-          <strong>{{ activeAccountCount }}/{{ staffAccounts.length || 0 }}</strong>
-          <em>{{ activeAccountRate }}% 处于启用状态</em>
-        </div>
-        <div class="hero-chip">
-          <span>重点风险</span>
-          <strong>{{ totalRiskSignals }}</strong>
-          <em>待确认 AI 排班、事件、停用账号</em>
+        <div v-for="chip in heroChips" :key="chip.label" class="hero-chip">
+          <span>{{ chip.label }}</span>
+          <strong>{{ chip.value }}</strong>
         </div>
       </div>
     </section>
@@ -33,91 +22,16 @@
       >
         <div class="stat-card__top">
           <span>{{ card.label }}</span>
-          <em>{{ card.badge }}</em>
         </div>
         <strong>{{ card.value }}</strong>
-        <p>{{ card.note }}</p>
       </article>
     </div>
 
     <div class="overview-grid">
-      <section class="viz-card viz-card--wide">
-        <div class="card-head">
-          <div>
-            <h3>科室挂号负载</h3>
-            <p>柱状图展示当前重点科室的接诊热度。</p>
-          </div>
-          <div class="pill-row">
-            <span v-for="item in topDepartmentHighlights" :key="item.name" class="metric-pill">
-              {{ item.name }} {{ item.value }}
-            </span>
-          </div>
-        </div>
-        <div ref="departmentChartRef" class="chart-surface"></div>
-      </section>
-
-      <section class="viz-card">
-        <div class="card-head">
-          <div>
-            <h3>账号角色分布</h3>
-            <p>环形图展示当前后台账号构成。</p>
-          </div>
-        </div>
-        <div ref="roleChartRef" class="chart-surface chart-surface--compact"></div>
-      </section>
-
-      <section class="viz-card viz-card--wide">
-        <div class="card-head">
-          <div>
-            <h3>未来 7 日号源趋势</h3>
-            <p>折线面积图对比总号源、已预约与可预约容量。</p>
-          </div>
-        </div>
-        <div ref="trendChartRef" class="chart-surface"></div>
-      </section>
-
-      <section class="viz-card">
-        <div class="card-head">
-          <div>
-            <h3>运营画像雷达</h3>
-            <p>从热度、压力、覆盖率和排班完备度观察整体状态。</p>
-          </div>
-        </div>
-        <div ref="radarChartRef" class="chart-surface chart-surface--compact"></div>
-      </section>
-    </div>
-
-    <div class="overview-bottom">
-      <section class="viz-card">
-        <div class="card-head">
-          <div>
-            <h3>科室资源排行</h3>
-            <p>按排班容量和医生配置查看当前资源重心。</p>
-          </div>
-        </div>
-        <div v-if="departmentRanking.length" class="ranking-list">
-          <article v-for="item in departmentRanking" :key="item.name" class="ranking-item">
-            <div class="ranking-item__head">
-              <strong>{{ item.name }}</strong>
-              <span>{{ item.capacity }} 号源</span>
-            </div>
-            <div class="ranking-bar">
-              <span :style="{ width: `${item.rate}%`, background: item.fill }"></span>
-            </div>
-            <div class="ranking-item__meta">
-              <em>{{ item.doctorCount }} 名医生</em>
-              <em>{{ item.scheduleCount }} 个班次</em>
-            </div>
-          </article>
-        </div>
-        <div v-else class="empty-state">暂无可展示的排班资源数据</div>
-      </section>
-
       <section class="viz-card viz-card--tasks">
         <div class="card-head">
           <div>
             <h3>待处理事项</h3>
-            <p>把最需要管理员立即操作的模块放在右侧。</p>
           </div>
         </div>
         <div class="task-grid">
@@ -129,10 +43,82 @@
           >
             <span class="task-card__label">{{ item.label }}</span>
             <strong>{{ item.count }}</strong>
-            <em>{{ item.note }}</em>
             <span class="task-card__action">进入模块</span>
           </button>
         </div>
+      </section>
+
+      <section class="viz-card viz-card--wide viz-card--ocean">
+        <div class="card-head">
+          <div>
+            <h3>未来 7 日号源趋势</h3>
+          </div>
+        </div>
+        <div ref="trendChartRef" class="chart-surface"></div>
+      </section>
+    </div>
+
+    <div class="candidate-grid">
+      <section class="viz-card candidate-card candidate-card--narrow viz-card--aurora">
+        <div class="card-head">
+          <div>
+            <h3>预约转化漏斗</h3>
+          </div>
+        </div>
+        <div class="funnel-surface chart-surface--candidate">
+          <svg viewBox="0 0 620 320" class="funnel-svg" role="img" aria-label="预约转化漏斗">
+            <g v-for="stage in funnelSvgStages" :key="stage.name">
+              <polygon
+                :points="stage.points"
+                :fill="stage.color"
+                :stroke="stage.color"
+                stroke-width="18"
+                stroke-linejoin="round"
+              />
+              <text :x="stage.centerX" :y="stage.centerY - 6" text-anchor="middle" class="funnel-svg__label">
+                {{ stage.name }}
+              </text>
+              <text :x="stage.centerX" :y="stage.centerY + 14" text-anchor="middle" class="funnel-svg__value">
+                {{ stage.value }}
+              </text>
+            </g>
+          </svg>
+        </div>
+      </section>
+
+      <section class="viz-card candidate-card candidate-card--wide viz-card--violet">
+        <div class="card-head">
+          <div>
+            <h3>分时段热力图</h3>
+          </div>
+        </div>
+        <div ref="heatmapChartRef" class="chart-surface chart-surface--candidate"></div>
+      </section>
+    </div>
+
+    <div class="overview-bottom">
+      <section class="viz-card viz-card--sunset">
+        <div class="card-head">
+          <div>
+            <h3>账号角色管理</h3>
+          </div>
+        </div>
+        <div ref="roleChartRef" class="chart-surface chart-surface--compact chart-surface--role"></div>
+      </section>
+
+      <section class="viz-card viz-card--wide viz-card--mint">
+        <div class="card-head">
+          <div>
+            <h3>科室号源排行</h3>
+          </div>
+          <div class="pill-row">
+            <span v-for="item in departmentRanking" :key="item.name" class="metric-pill">
+              {{ item.name }} {{ item.capacity }}
+            </span>
+          </div>
+        </div>
+        <div v-if="departmentRanking.length" ref="rankingChartRef" class="chart-surface"></div>
+        <div v-else class="empty-state">暂无数据</div>
       </section>
     </div>
   </div>
@@ -140,14 +126,8 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { BarChart, LineChart, PieChart, RadarChart } from 'echarts/charts';
-import {
-  GridComponent,
-  LegendComponent,
-  RadarComponent,
-  TitleComponent,
-  TooltipComponent
-} from 'echarts/components';
+import { BarChart, HeatmapChart, LineChart, PieChart } from 'echarts/charts';
+import { GridComponent, LegendComponent, TitleComponent, TooltipComponent, VisualMapComponent } from 'echarts/components';
 import { use, init, graphic, type ECharts } from 'echarts/core';
 import { CanvasRenderer } from 'echarts/renderers';
 import type { StaffAccount } from '../api/auth';
@@ -155,7 +135,7 @@ import type { DashboardOverview } from '../api/dashboard';
 import type { Doctor, DoctorEvent, Schedule } from '../api/doctor';
 
 type OverviewPageKey = 'aiSchedule' | 'manualSchedule' | 'doctorProfile' | 'doctorEvents';
-type ChartKey = 'department' | 'role' | 'trend' | 'radar';
+type ChartKey = 'ranking' | 'role' | 'trend' | 'heatmap';
 
 const props = defineProps<{
   active: boolean;
@@ -171,12 +151,23 @@ const emit = defineEmits<{
   navigate: [page: OverviewPageKey];
 }>();
 
-const departmentChartRef = ref<HTMLDivElement | null>(null);
+const rankingChartRef = ref<HTMLDivElement | null>(null);
 const roleChartRef = ref<HTMLDivElement | null>(null);
 const trendChartRef = ref<HTMLDivElement | null>(null);
-const radarChartRef = ref<HTMLDivElement | null>(null);
+const heatmapChartRef = ref<HTMLDivElement | null>(null);
 
-use([BarChart, LineChart, PieChart, RadarChart, GridComponent, LegendComponent, RadarComponent, TitleComponent, TooltipComponent, CanvasRenderer]);
+use([
+  BarChart,
+  HeatmapChart,
+  LineChart,
+  PieChart,
+  GridComponent,
+  LegendComponent,
+  TitleComponent,
+  TooltipComponent,
+  VisualMapComponent,
+  CanvasRenderer
+]);
 
 const chartInstances = new Map<ChartKey, ECharts>();
 let renderFrame = 0;
@@ -191,38 +182,16 @@ const ROLE_LABELS: Record<string, string> = {
   PHARMACY_STAFF: '药房人员'
 };
 
-const PIE_COLORS = ['#0899a5', '#14b8a6', '#38bdf8', '#6366f1', '#f59e0b', '#f97316', '#ef4444'];
-const RANKING_FILLS = [
-  'linear-gradient(90deg, #0fbac6 0%, #0899a5 100%)',
-  'linear-gradient(90deg, #27c4a5 0%, #0f766e 100%)',
-  'linear-gradient(90deg, #59b7ff 0%, #2563eb 100%)',
-  'linear-gradient(90deg, #f8c44d 0%, #f97316 100%)',
-  'linear-gradient(90deg, #fb7185 0%, #e11d48 100%)'
-];
+const PIE_COLORS = ['#0f766e', '#0284c7', '#f97316', '#7c3aed', '#ec4899', '#14b8a6', '#f59e0b'];
 const BAR_GRADIENTS: Array<[string, string]> = [
   ['#12c2c8', '#0f766e'],
-  ['#3ec7f4', '#0284c7'],
+  ['#4facfe', '#2563eb'],
   ['#f8cd65', '#f97316'],
-  ['#8b8cfb', '#6366f1'],
+  ['#c084fc', '#7c3aed'],
   ['#fb7185', '#e11d48']
 ];
-
-const departmentLoadData = computed(() => {
-  const direct = props.overview?.departmentLoads ?? [];
-  if (direct.length) return direct;
-
-  const loadMap = new Map<string, number>();
-  props.schedules.forEach((schedule) => {
-    if (schedule.status === 'SUSPENDED') return;
-    const name = schedule.departmentName || '未命名科室';
-    loadMap.set(name, (loadMap.get(name) ?? 0) + (schedule.booked || 0));
-  });
-
-  return Array.from(loadMap.entries())
-    .map(([name, value]) => ({ name, value }))
-    .sort((left, right) => right.value - left.value)
-    .slice(0, 6);
-});
+const HEATMAP_PERIODS = ['上午', '下午'];
+const FUNNEL_COLORS = ['#2563eb', '#14b8a6', '#f59e0b', '#ec4899'];
 
 const roleDistribution = computed(() =>
   Array.from(
@@ -284,35 +253,122 @@ const departmentRanking = computed(() => {
     rankingMap.set(key, existing);
   });
 
-  const rows = Array.from(rankingMap.values()).filter((item) => item.capacity > 0 || item.doctorIds.size > 0);
-  const maxCapacity = Math.max(...rows.map((item) => item.capacity), 1);
-
-  return rows
+  return Array.from(rankingMap.values())
+    .filter((item) => item.capacity > 0 || item.doctorIds.size > 0)
     .sort((left, right) => right.capacity - left.capacity || right.doctorIds.size - left.doctorIds.size)
     .slice(0, 5)
-    .map((item, index) => ({
+    .map((item) => ({
       name: item.name,
       capacity: item.capacity,
       scheduleCount: item.scheduleCount,
-      doctorCount: item.doctorIds.size,
-      rate: Math.max(10, Math.round((item.capacity / maxCapacity) * 100)),
-      fill: RANKING_FILLS[index % RANKING_FILLS.length]
+      doctorCount: item.doctorIds.size
     }));
 });
 
-const activeAccountCount = computed(() => props.staffAccounts.filter((account) => account.active).length);
-const activeAccountRate = computed(() => safePercent(activeAccountCount.value, props.staffAccounts.length));
-const totalSevenDayCapacity = computed(() =>
-  scheduleTrend.value.reduce((sum, item) => sum + item.capacity, 0)
+const scheduleHeatmapCells = computed(() =>
+  HEATMAP_PERIODS.flatMap((period, periodIndex) =>
+    scheduleTrend.value.map((day, dateIndex) => {
+      const items = props.schedules.filter(
+        (schedule) =>
+          schedule.workDate === day.date &&
+          schedule.period === period &&
+          schedule.status !== 'SUSPENDED'
+      );
+      const capacity = items.reduce((sum, item) => sum + (item.capacity || 0), 0);
+      const booked = items.reduce((sum, item) => sum + (item.booked || 0), 0);
+      const available = items.reduce((sum, item) => sum + (item.available || 0), 0);
+      const utilization = capacity ? clampPercent((booked / capacity) * 100) : 0;
+
+      return {
+        date: day.date,
+        label: day.label,
+        period,
+        dateIndex,
+        periodIndex,
+        capacity,
+        booked,
+        available,
+        utilization
+      };
+    })
+  )
 );
-const inactiveAccountCount = computed(() => Math.max(props.staffAccounts.length - activeAccountCount.value, 0));
-const totalRiskSignals = computed(() => props.pendingSuggestions + props.doctorEvents.length + inactiveAccountCount.value);
-const scheduleCompletionRate = computed(() => {
-  const total = props.schedules.length + props.pendingSuggestions;
-  return total === 0 ? 100 : Math.round((props.schedules.length / total) * 100);
+
+const activeAccountCount = computed(() => props.staffAccounts.filter((account) => account.active).length);
+const totalSevenDayCapacity = computed(() => scheduleTrend.value.reduce((sum, item) => sum + item.capacity, 0));
+const totalSevenDayBooked = computed(() => scheduleTrend.value.reduce((sum, item) => sum + item.booked, 0));
+const waitingPressureRate = computed(() => {
+  const waitingVisits = props.overview?.waitingVisits ?? 0;
+  const todayAppointments = props.overview?.todayAppointments ?? 0;
+  return safePercent(waitingVisits, todayAppointments || waitingVisits || 1);
+});
+const doctorCoverageRate = computed(() => {
+  return clampPercent(props.overview?.roomCoverageRate ?? 0);
+});
+const aiCoverageRate = computed(() => {
+  const aiTriageCount = props.overview?.aiTriageCount ?? 0;
+  const todayAppointments = props.overview?.todayAppointments ?? 0;
+  return safePercent(aiTriageCount, todayAppointments || aiTriageCount || 1);
 });
 
-const topDepartmentHighlights = computed(() => departmentLoadData.value.slice(0, 3));
+const funnelData = computed(() => {
+  const todayAppointments = props.overview?.todayAppointments ?? 0;
+  const aiTriageCount = props.overview?.aiTriageCount ?? 0;
+  const waitingVisits = props.overview?.waitingVisits ?? 0;
+
+  const totalSupply = Math.max(totalSevenDayCapacity.value, totalSevenDayBooked.value, todayAppointments);
+  const bookedStage = Math.min(totalSupply, Math.max(totalSevenDayBooked.value, todayAppointments));
+  const aiStage = Math.min(bookedStage, aiTriageCount || bookedStage);
+  const waitingStage = Math.min(aiStage, waitingVisits || aiStage);
+
+  return [
+    { name: '总号源', value: totalSupply },
+    { name: '已预约', value: bookedStage },
+    { name: 'AI 问诊', value: aiStage },
+    { name: '待接诊', value: waitingStage }
+  ];
+});
+
+const funnelSvgStages = computed(() => {
+  const svgWidth = 620;
+  const stageHeight = 66;
+  const stageGap = 12;
+  const startY = 10;
+  const total = funnelData.value[0]?.value || 1;
+  const minWidth = svgWidth * 0.42;
+  const maxWidth = svgWidth * 0.9;
+
+  return funnelData.value.map((item, index) => {
+    const ratio = item.value / total;
+    const nextValue = funnelData.value[index + 1]?.value ?? item.value;
+    const nextRatio = nextValue / total;
+    const currentWidth = minWidth + (maxWidth - minWidth) * ratio;
+    const nextWidth = index === funnelData.value.length - 1
+      ? currentWidth
+      : minWidth + (maxWidth - minWidth) * nextRatio;
+    const y = startY + index * (stageHeight + stageGap);
+    const x1 = (svgWidth - currentWidth) / 2;
+    const x2 = x1 + currentWidth;
+    const x4 = (svgWidth - nextWidth) / 2;
+    const x3 = x4 + nextWidth;
+
+    return {
+      ...item,
+      color: FUNNEL_COLORS[index % FUNNEL_COLORS.length],
+      points: `${x1},${y} ${x2},${y} ${x3},${y + stageHeight} ${x4},${y + stageHeight}`,
+      centerX: svgWidth / 2,
+      centerY: y + stageHeight / 2
+    };
+  });
+});
+
+const heroChips = computed(() => [
+  { label: '未来 7 日号源', value: totalSevenDayCapacity.value },
+  { label: '启用账号', value: `${activeAccountCount.value}/${props.staffAccounts.length || 0}` },
+  { label: '候诊压力', value: `${waitingPressureRate.value}%` },
+  { label: '诊室出诊覆盖率', value: `${doctorCoverageRate.value}%` },
+  { label: 'AI 问诊覆盖率', value: `${aiCoverageRate.value}%` }
+]);
 
 const kpiCards = computed(() => {
   const todayAppointments = props.overview?.todayAppointments ?? 0;
@@ -321,92 +377,22 @@ const kpiCards = computed(() => {
   const aiTriageCount = props.overview?.aiTriageCount ?? 0;
 
   return [
-    {
-      label: '今日挂号',
-      value: todayAppointments,
-      note: '覆盖线上与线下全部挂号渠道',
-      badge: `${departmentLoadData.value.length || 0} 个重点科室`,
-      tone: 'teal'
-    },
-    {
-      label: '待接诊',
-      value: waitingVisits,
-      note: '当前候诊队列需要持续消化',
-      badge: `候诊压力 ${safePercent(waitingVisits, todayAppointments || waitingVisits || 1)}%`,
-      tone: 'cyan'
-    },
-    {
-      label: '出诊医生',
-      value: activeDoctors,
-      note: '结合已发布排班统计当前在岗医生',
-      badge: `覆盖率 ${safePercent(activeDoctors, props.doctors.length || activeDoctors || 1)}%`,
-      tone: 'amber'
-    },
-    {
-      label: 'AI 问诊',
-      value: aiTriageCount,
-      note: '用于辅助诊前记录与分诊判断',
-      badge: `覆盖率 ${safePercent(aiTriageCount, todayAppointments || aiTriageCount || 1)}%`,
-      tone: 'rose'
-    }
-  ];
-});
-
-const radarMetrics = computed(() => {
-  const todayAppointments = props.overview?.todayAppointments ?? 0;
-  const waitingVisits = props.overview?.waitingVisits ?? 0;
-  const activeDoctors = props.overview?.activeDoctors ?? 0;
-  const aiTriageCount = props.overview?.aiTriageCount ?? 0;
-
-  return [
-    { name: '挂号热度', value: clampPercent((todayAppointments / 60) * 100) },
-    { name: '候诊压力', value: clampPercent((waitingVisits / 20) * 100) },
-    { name: '医生覆盖', value: clampPercent((activeDoctors / Math.max(props.doctors.length || 1, 1)) * 100) },
-    { name: 'AI 覆盖', value: clampPercent((aiTriageCount / Math.max(todayAppointments || 1, 1)) * 100) },
-    { name: '账号稳定', value: clampPercent((activeAccountCount.value / Math.max(props.staffAccounts.length || 1, 1)) * 100) },
-    { name: '排班完备', value: clampPercent(scheduleCompletionRate.value) }
+    { label: '今日挂号', value: todayAppointments, tone: 'teal' },
+    { label: '待接诊', value: waitingVisits, tone: 'cyan' },
+    { label: '出诊医生', value: activeDoctors, tone: 'amber' },
+    { label: 'AI 问诊', value: aiTriageCount, tone: 'rose' }
   ];
 });
 
 const actionCards = computed(() => [
-  {
-    label: 'AI 排班建议',
-    count: props.pendingSuggestions,
-    note: '查看待确认的智能排班结果',
-    page: 'aiSchedule' as const,
-    tone: 'amber'
-  },
-  {
-    label: '排班信息',
-    count: props.schedules.length,
-    note: '进入人工排班与班次调整模块',
-    page: 'manualSchedule' as const,
-    tone: 'teal'
-  },
-  {
-    label: '医生账号与档案',
-    count: props.staffAccounts.length,
-    note: '统一维护人员账号与医生信息',
-    page: 'doctorProfile' as const,
-    tone: 'cyan'
-  },
-  {
-    label: '请假 / 手术事件',
-    count: props.doctorEvents.length,
-    note: '检查影响排班的特殊事件安排',
-    page: 'doctorEvents' as const,
-    tone: 'rose'
-  }
+  { label: 'AI 排班建议', count: props.pendingSuggestions, page: 'aiSchedule' as const, tone: 'amber' },
+  { label: '排班信息', count: props.schedules.length, page: 'manualSchedule' as const, tone: 'teal' },
+  { label: '账号角色管理', count: props.staffAccounts.length, page: 'doctorProfile' as const, tone: 'cyan' },
+  { label: '请假 / 手术事件', count: props.doctorEvents.length, page: 'doctorEvents' as const, tone: 'rose' }
 ]);
 
 watch(
-  [
-    () => props.active,
-    departmentLoadData,
-    roleDistribution,
-    scheduleTrend,
-    radarMetrics
-  ],
+  [() => props.active, departmentRanking, roleDistribution, scheduleHeatmapCells, scheduleTrend],
   () => {
     if (props.active) {
       queueRenderCharts();
@@ -431,10 +417,10 @@ function queueRenderCharts() {
   cancelAnimationFrame(renderFrame);
   renderFrame = requestAnimationFrame(() => {
     nextTick(() => {
-      renderDepartmentChart();
+      renderHeatmapChart();
+      renderRankingChart();
       renderRoleChart();
       renderTrendChart();
-      renderRadarChart();
       resizeCharts();
     });
   });
@@ -454,56 +440,66 @@ function ensureChart(key: ChartKey, element: HTMLDivElement | null) {
   return chart;
 }
 
-function renderDepartmentChart() {
-  const chart = ensureChart('department', departmentChartRef.value);
+function renderRankingChart() {
+  const chart = ensureChart('ranking', rankingChartRef.value);
   if (!chart) return;
 
   chart.setOption(
     {
       animationDuration: 700,
       tooltip: {
-        trigger: 'axis',
-        axisPointer: { type: 'shadow' },
+        trigger: 'item',
         backgroundColor: '#0f172a',
         borderWidth: 0,
-        textStyle: { color: '#e2e8f0' }
+        textStyle: { color: '#e2e8f0' },
+        formatter: (params: { name: string; dataIndex: number }) => {
+          const item = departmentRanking.value[params.dataIndex];
+          if (!item) return params.name;
+          return [
+            `${item.name}`,
+            `号源 ${item.capacity}`,
+            `医生 ${item.doctorCount}`,
+            `班次 ${item.scheduleCount}`
+          ].join('<br/>');
+        }
       },
-      grid: { left: 10, right: 18, top: 24, bottom: 28, containLabel: true },
+      grid: { left: 18, right: 24, top: 12, bottom: 18, containLabel: true },
       xAxis: {
-        type: 'category',
-        data: departmentLoadData.value.map((item) => item.name),
-        axisTick: { show: false },
-        axisLine: { lineStyle: { color: '#d7e3ec' } },
-        axisLabel: { color: '#475569', interval: 0 }
-      },
-      yAxis: {
         type: 'value',
         axisLine: { show: false },
         axisTick: { show: false },
         axisLabel: { color: '#94a3b8' },
         splitLine: { lineStyle: { color: 'rgba(148, 163, 184, 0.18)' } }
       },
+      yAxis: {
+        type: 'category',
+        inverse: true,
+        data: departmentRanking.value.map((item) => item.name),
+        axisTick: { show: false },
+        axisLine: { show: false },
+        axisLabel: { color: '#334155', fontWeight: 600 }
+      },
       series: [
         {
-          name: '挂号量',
+          name: '号源',
           type: 'bar',
-          barWidth: 28,
+          barWidth: 18,
           showBackground: true,
           backgroundStyle: {
             color: 'rgba(148, 163, 184, 0.08)',
-            borderRadius: [10, 10, 0, 0]
+            borderRadius: 999
           },
           label: {
             show: true,
-            position: 'top',
+            position: 'right',
             color: '#0f172a',
             fontWeight: 700
           },
-          data: departmentLoadData.value.map((item, index) => ({
-            value: item.value,
+          data: departmentRanking.value.map((item, index) => ({
+            value: item.capacity,
             itemStyle: {
               color: buildBarGradient(index),
-              borderRadius: [10, 10, 0, 0]
+              borderRadius: 999
             }
           }))
         }
@@ -531,7 +527,7 @@ function renderRoleChart() {
       animationDuration: 700,
       title: {
         text: `${props.staffAccounts.length || 0}`,
-        subtext: '员工账号',
+        subtext: '账号',
         left: 'center',
         top: '38%',
         textStyle: { color: '#0f172a', fontSize: 26, fontWeight: 700 },
@@ -545,21 +541,24 @@ function renderRoleChart() {
       },
       legend: {
         show: hasData,
-        bottom: 0,
+        bottom: 4,
         itemWidth: 10,
         itemHeight: 10,
         textStyle: { color: '#475569', fontSize: 12 }
       },
       series: [
         {
-          name: '账号角色分布',
+          name: '账号角色',
           type: 'pie',
-          radius: ['48%', '72%'],
-          center: ['50%', '42%'],
-          avoidLabelOverlap: false,
+          top: 10,
+          bottom: 34,
+          radius: ['42%', '64%'],
+          center: ['50%', '46%'],
+          avoidLabelOverlap: true,
           itemStyle: { borderColor: '#fff', borderWidth: 4 },
           label: hasData
             ? {
+                distanceToLabelLine: 2,
                 formatter: '{name|{b}}\n{percent|{d}%}',
                 rich: {
                   name: { color: '#334155', fontSize: 11, lineHeight: 16, fontWeight: 600 },
@@ -567,8 +566,94 @@ function renderRoleChart() {
                 }
               }
             : { show: false },
-          labelLine: { show: hasData, length: 10, length2: 10 },
+          labelLine: { show: hasData, length: 8, length2: 8 },
           data: seriesData
+        }
+      ]
+    },
+    true
+  );
+}
+
+function renderHeatmapChart() {
+  const chart = ensureChart('heatmap', heatmapChartRef.value);
+  if (!chart) return;
+
+  chart.setOption(
+    {
+      animationDuration: 700,
+      tooltip: {
+        trigger: 'item',
+        backgroundColor: '#0f172a',
+        borderWidth: 0,
+        textStyle: { color: '#e2e8f0' },
+        formatter: (params: { value: [number, number, number] }) => {
+          const cell = scheduleHeatmapCells.value.find(
+            (item) => item.dateIndex === params.value[0] && item.periodIndex === params.value[1]
+          );
+          if (!cell) return '';
+          return [
+            `${cell.label} ${cell.period}`,
+            `拥挤度 ${cell.utilization}%`,
+            `已预约 ${cell.booked}`,
+            `可预约 ${cell.available}`
+          ].join('<br/>');
+        }
+      },
+      grid: { left: 10, right: 10, top: 12, bottom: 46, containLabel: true },
+      xAxis: {
+        type: 'category',
+        data: scheduleTrend.value.map((item) => item.label),
+        splitArea: { show: true, areaStyle: { color: ['#fbfdff', '#f8fafc'] } },
+        axisLine: { lineStyle: { color: '#d7e3ec' } },
+        axisTick: { show: false },
+        axisLabel: { color: '#475569' }
+      },
+      yAxis: {
+        type: 'category',
+        data: HEATMAP_PERIODS,
+        splitArea: { show: true, areaStyle: { color: ['#fbfdff', '#f8fafc'] } },
+        axisLine: { show: false },
+        axisTick: { show: false },
+        axisLabel: { color: '#334155', fontWeight: 600 }
+      },
+      visualMap: {
+        min: 0,
+        max: 100,
+        calculable: false,
+        orient: 'horizontal',
+        left: 'center',
+        bottom: 0,
+        itemWidth: 120,
+        itemHeight: 12,
+        text: ['高', '低'],
+        textStyle: { color: '#64748b' },
+        inRange: {
+          color: ['#eff6ff', '#60a5fa', '#14b8a6', '#f59e0b', '#ef4444']
+        }
+      },
+      series: [
+        {
+          name: '分时段热度',
+          type: 'heatmap',
+          data: scheduleHeatmapCells.value.map((item) => [item.dateIndex, item.periodIndex, item.utilization]),
+          label: {
+            show: true,
+            formatter: (params: { value: [number, number, number] }) => `${params.value[2]}%`,
+            color: '#0f172a',
+            fontWeight: 700
+          },
+          itemStyle: {
+            borderRadius: 10,
+            borderColor: '#fff',
+            borderWidth: 2
+          },
+          emphasis: {
+            itemStyle: {
+              shadowBlur: 12,
+              shadowColor: 'rgba(15, 23, 42, 0.18)'
+            }
+          }
         }
       ]
     },
@@ -652,57 +737,9 @@ function renderTrendChart() {
   );
 }
 
-function renderRadarChart() {
-  const chart = ensureChart('radar', radarChartRef.value);
-  if (!chart) return;
-
-  chart.setOption(
-    {
-      animationDuration: 700,
-      tooltip: {
-        trigger: 'item',
-        backgroundColor: '#0f172a',
-        borderWidth: 0,
-        textStyle: { color: '#e2e8f0' }
-      },
-      radar: {
-        center: ['50%', '53%'],
-        radius: '64%',
-        splitNumber: 4,
-        indicator: radarMetrics.value.map((item) => ({ name: item.name, max: 100 })),
-        axisName: { color: '#334155', fontSize: 12 },
-        axisLine: { lineStyle: { color: 'rgba(148, 163, 184, 0.26)' } },
-        splitLine: { lineStyle: { color: 'rgba(14, 165, 164, 0.16)' } },
-        splitArea: {
-          areaStyle: {
-            color: ['rgba(240, 253, 250, 0.72)', 'rgba(239, 246, 255, 0.78)']
-          }
-        }
-      },
-      series: [
-        {
-          name: '运营画像',
-          type: 'radar',
-          data: [
-            {
-              value: radarMetrics.value.map((item) => item.value),
-              areaStyle: { color: 'rgba(8, 153, 165, 0.28)' },
-              lineStyle: { color: '#0899a5', width: 3 },
-              itemStyle: { color: '#f59e0b' },
-              symbol: 'circle',
-              symbolSize: 7
-            }
-          ]
-        }
-      ]
-    },
-    true
-  );
-}
-
 function buildBarGradient(index: number) {
   const [start, end] = BAR_GRADIENTS[index % BAR_GRADIENTS.length];
-  return new graphic.LinearGradient(0, 0, 0, 1, [
+  return new graphic.LinearGradient(0, 0, 1, 0, [
     { offset: 0, color: start },
     { offset: 1, color: end }
   ]);
@@ -745,33 +782,34 @@ function formatMonthDay(isoDate: string) {
   overflow: hidden;
   padding: 24px 24px 22px;
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
-  gap: 20px;
-  border-radius: 20px;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 18px;
+  border-radius: 24px;
   background:
-    radial-gradient(circle at 84% 18%, rgb(255 255 255 / 26%) 0 8%, transparent 8%),
-    radial-gradient(circle at 92% 76%, rgb(255 255 255 / 14%) 0 9%, transparent 9%),
-    linear-gradient(135deg, #0f766e 0%, #0899a5 48%, #f59e0b 100%);
+    radial-gradient(circle at 84% 18%, rgb(255 255 255 / 20%) 0 8%, transparent 8%),
+    radial-gradient(circle at 92% 76%, rgb(255 255 255 / 12%) 0 9%, transparent 9%),
+    linear-gradient(135deg, #0f766e 0%, #0899a5 42%, #1d4ed8 74%, #f59e0b 100%);
   color: #fff;
   box-shadow: 0 18px 36px rgb(8 153 165 / 18%);
 }
 
-.overview-hero__copy h2 {
-  margin: 8px 0 10px;
-  font-size: 28px;
-  line-height: 1.15;
+.overview-hero__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 6px;
 }
 
-.overview-hero__copy p {
-  max-width: 660px;
+.overview-hero__copy h2 {
   margin: 0;
-  color: rgb(240 253 250 / 92%);
-  font-size: 14px;
-  line-height: 1.7;
+  font-size: 30px;
+  line-height: 1.12;
 }
 
 .overview-hero__eyebrow {
   height: 28px;
+  width: fit-content;
   padding: 0 12px;
   border: 1px solid rgb(255 255 255 / 22%);
   border-radius: 999px;
@@ -785,33 +823,32 @@ function formatMonthDay(isoDate: string) {
 
 .overview-hero__chips {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
+  align-content: start;
 }
 
 .hero-chip {
-  min-height: 118px;
-  padding: 16px;
+  min-height: 98px;
+  padding: 14px;
   border: 1px solid rgb(255 255 255 / 16%);
   border-radius: 18px;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  justify-content: center;
   background: linear-gradient(180deg, rgb(255 255 255 / 20%), rgb(255 255 255 / 10%));
   backdrop-filter: blur(10px);
 }
 
-.hero-chip span,
-.hero-chip em {
+.hero-chip span {
   color: rgb(240 253 250 / 84%);
   font-size: 12px;
-  font-style: normal;
 }
 
 .hero-chip strong {
-  margin: 8px 0;
+  margin-top: 8px;
   color: #fff;
-  font-size: 30px;
+  font-size: 24px;
   line-height: 1;
 }
 
@@ -824,7 +861,7 @@ function formatMonthDay(isoDate: string) {
 .stat-card {
   position: relative;
   overflow: hidden;
-  padding: 18px 18px 16px;
+  padding: 18px;
   border: 1px solid #e6edf3;
   border-radius: 18px;
   background: #fff;
@@ -861,7 +898,6 @@ function formatMonthDay(isoDate: string) {
 .stat-card__top {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 10px;
 }
 
@@ -871,42 +907,19 @@ function formatMonthDay(isoDate: string) {
   font-weight: 700;
 }
 
-.stat-card__top em {
-  height: 24px;
-  padding: 0 10px;
-  border-radius: 999px;
-  display: inline-flex;
-  align-items: center;
-  background: #f8fafc;
-  color: #64748b;
-  font-size: 11px;
-  font-style: normal;
-}
-
 .stat-card strong {
   display: block;
-  margin-top: 18px;
+  margin-top: 12px;
   color: #0f172a;
   font-size: 32px;
   line-height: 1;
 }
 
-.stat-card p {
-  margin: 12px 0 0;
-  color: #64748b;
-  font-size: 13px;
-  line-height: 1.6;
-}
-
-.overview-grid {
+.overview-grid,
+.overview-bottom,
+.candidate-grid {
   display: grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));
-  gap: 16px;
-}
-
-.overview-bottom {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(360px, 0.92fr);
   gap: 16px;
 }
 
@@ -919,17 +932,60 @@ function formatMonthDay(isoDate: string) {
 }
 
 .viz-card--wide {
-  grid-column: span 7;
+  grid-column: span 8;
 }
 
-.overview-grid > .viz-card:not(.viz-card--wide) {
-  grid-column: span 5;
+.viz-card--full {
+  grid-column: span 12;
+}
+
+.overview-grid > .viz-card:not(.viz-card--wide):not(.viz-card--full),
+.overview-bottom > .viz-card:not(.viz-card--wide) {
+  grid-column: span 4;
+}
+
+.candidate-card--wide {
+  grid-column: span 8;
+}
+
+.candidate-card--narrow {
+  grid-column: span 4;
+}
+
+.viz-card--ocean {
+  background:
+    radial-gradient(circle at top right, rgb(2 132 199 / 12%), transparent 32%),
+    linear-gradient(180deg, #fff, #f6fbff);
+}
+
+.viz-card--mint {
+  background:
+    radial-gradient(circle at top right, rgb(225 29 72 / 12%), transparent 30%),
+    linear-gradient(180deg, #fff, #fff7fa);
+}
+
+.viz-card--sunset {
+  background:
+    radial-gradient(circle at top right, rgb(249 115 22 / 12%), transparent 30%),
+    linear-gradient(180deg, #fff, #fff8f1);
+}
+
+.viz-card--aurora {
+  background:
+    radial-gradient(circle at top right, rgb(15 118 110 / 12%), transparent 30%),
+    linear-gradient(180deg, #fff, #f4fffc);
+}
+
+.viz-card--violet {
+  background:
+    radial-gradient(circle at top right, rgb(225 29 72 / 12%), transparent 30%),
+    linear-gradient(180deg, #fff, #fff7fb);
 }
 
 .viz-card--tasks {
   background:
-    radial-gradient(circle at top right, rgb(14 165 164 / 9%), transparent 34%),
-    linear-gradient(180deg, #fff, #f8fbfd);
+    radial-gradient(circle at top right, rgb(15 118 110 / 10%), transparent 34%),
+    linear-gradient(180deg, #fff, #f7fffc);
 }
 
 .card-head {
@@ -944,13 +1000,6 @@ function formatMonthDay(isoDate: string) {
   margin: 0;
   color: #0f172a;
   font-size: 18px;
-}
-
-.card-head p {
-  margin: 6px 0 0;
-  color: #64748b;
-  font-size: 13px;
-  line-height: 1.6;
 }
 
 .pill-row {
@@ -981,51 +1030,12 @@ function formatMonthDay(isoDate: string) {
   height: 286px;
 }
 
-.ranking-list {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
+.chart-surface--role {
+  height: 318px;
 }
 
-.ranking-item {
-  padding: 14px 14px 12px;
-  border: 1px solid #edf2f7;
-  border-radius: 16px;
-  background: #fff;
-}
-
-.ranking-item__head,
-.ranking-item__meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.ranking-item__head strong {
-  color: #0f172a;
-  font-size: 14px;
-}
-
-.ranking-item__head span,
-.ranking-item__meta em {
-  color: #64748b;
-  font-size: 12px;
-  font-style: normal;
-}
-
-.ranking-bar {
-  height: 10px;
-  margin: 10px 0 8px;
-  border-radius: 999px;
-  overflow: hidden;
-  background: #eef2f7;
-}
-
-.ranking-bar span {
-  display: block;
-  height: 100%;
-  border-radius: 999px;
+.chart-surface--candidate {
+  height: 316px;
 }
 
 .task-grid {
@@ -1093,16 +1103,38 @@ function formatMonthDay(isoDate: string) {
   line-height: 1;
 }
 
-.task-card em {
-  min-height: 38px;
-  color: #64748b;
-  font-size: 12px;
-  line-height: 1.6;
-  font-style: normal;
-}
-
 .task-card__action {
   color: #0899a5;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.funnel-surface {
+  height: 316px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.funnel-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.funnel-svg__label,
+.funnel-svg__value {
+  fill: #fff;
+  font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+  text-anchor: middle;
+}
+
+.funnel-svg__label {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.funnel-svg__value {
   font-size: 12px;
   font-weight: 700;
 }
@@ -1132,12 +1164,12 @@ function formatMonthDay(isoDate: string) {
   }
 
   .viz-card--wide,
-  .overview-grid > .viz-card:not(.viz-card--wide) {
+  .viz-card--full,
+  .overview-grid > .viz-card:not(.viz-card--wide):not(.viz-card--full),
+  .overview-bottom > .viz-card:not(.viz-card--wide),
+  .candidate-card--wide,
+  .candidate-card--narrow {
     grid-column: span 12;
-  }
-
-  .overview-bottom {
-    grid-template-columns: 1fr;
   }
 }
 
@@ -1150,9 +1182,9 @@ function formatMonthDay(isoDate: string) {
     font-size: 24px;
   }
 
+  .stat-strip,
   .overview-hero__chips,
-  .task-grid,
-  .stat-strip {
+  .task-grid {
     grid-template-columns: 1fr;
   }
 

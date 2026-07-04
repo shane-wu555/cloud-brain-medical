@@ -3,8 +3,13 @@ package com.cloudbrain.doctor.controller;
 import com.cloudbrain.doctor.repository.DoctorCatalogRepository;
 import com.cloudbrain.doctor.service.ScheduleInsightService;
 import com.fasterxml.jackson.annotation.JsonAlias;
+import jakarta.annotation.PreDestroy;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Value;
@@ -25,11 +30,14 @@ public class ScheduleController {
     private static final Logger log=LoggerFactory.getLogger(ScheduleController.class);
     private static final int REPLAN_START_DAYS=7;
     private static final int REPLAN_DAYS=7;
+    private static final int MAX_AI_TASKS=100;
     private final DoctorCatalogRepository repository;
     private final ScheduleInsightService scheduleInsightService;
     private final RestClient appointmentClient;
     private final RestClient aiClient;
     private final String internalApiKey;
+    private final ExecutorService aiTaskExecutor=Executors.newFixedThreadPool(2);
+    private final Map<String,AiScheduleTask> aiTasks=new ConcurrentHashMap<>();
     public ScheduleController(DoctorCatalogRepository repository, ScheduleInsightService scheduleInsightService,
             @Value("${internal.api-key}") String internalApiKey,
             @Value("${services.appointment.base-url:http://localhost:8104}") String appointmentUrl,
@@ -40,6 +48,10 @@ public class ScheduleController {
         aiRequestFactory.setConnectTimeout(10000);
         aiRequestFactory.setReadTimeout(180000);
         this.aiClient=RestClient.builder().requestFactory(aiRequestFactory).baseUrl(aiUrl).build();
+    }
+    @PreDestroy
+    public void shutdown() {
+        aiTaskExecutor.shutdownNow();
     }
     @ExceptionHandler(IllegalArgumentException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
@@ -167,6 +179,37 @@ public class ScheduleController {
                 candidates.size(),demands.size(),events.size(),start,end);
         if(candidates.isEmpty()||demands.isEmpty()) return new AiScheduleResponse(null,List.of(),null,null,false,List.of(),insightBackground(insight));
         return requestAiSuggestions(new AiScheduleRequest(candidates,demands,insightBackground(insight)));
+    }
+    @PostMapping("/ai-replan-preview/jobs") @PreAuthorize("hasRole('ADMIN')")
+    public AiScheduleTask startAiReplanPreview(@RequestParam(name="departmentId", required=false) String departmentId,
+            @RequestParam(name="baseVisits", defaultValue="24") int baseVisits,
+            @RequestParam(name="weekdayPeak", defaultValue="true") boolean weekdayPeak,
+            @RequestParam(name="weekdayIncrease", defaultValue="35") int weekdayIncrease,
+            @RequestParam(name="morningPeak", defaultValue="true") boolean morningPeak,
+            @RequestParam(name="morningIncrease", defaultValue="25") int morningIncrease,
+            @RequestParam(name="force", defaultValue="false") boolean force) {
+        trimAiTasks();
+        String taskId="ai-schedule-task-"+UUID.randomUUID();
+        AiScheduleTask queued=AiScheduleTask.queued(taskId);
+        aiTasks.put(taskId, queued);
+        aiTaskExecutor.submit(() -> {
+            aiTasks.put(taskId, queued.running());
+            try {
+                AiScheduleResponse response=aiReplanPreview(departmentId,baseVisits,weekdayPeak,weekdayIncrease,morningPeak,morningIncrease,force);
+                aiTasks.put(taskId, queued.completed(response));
+                log.info("AI schedule async task completed: taskId={}, suggestions={}",taskId,response.suggestions().size());
+            } catch (Exception exception) {
+                log.warn("AI schedule async task failed: taskId={}, message={}",taskId,exception.getMessage(),exception);
+                aiTasks.put(taskId, queued.failed("AI 排班任务执行失败：" + exception.getMessage()));
+            }
+        });
+        return queued;
+    }
+    @GetMapping("/ai-replan-preview/jobs/{taskId}") @PreAuthorize("hasRole('ADMIN')")
+    public AiScheduleTask aiReplanPreviewTask(@PathVariable("taskId") String taskId) {
+        AiScheduleTask task=aiTasks.get(taskId);
+        if(task==null) throw new IllegalArgumentException("AI 排班任务不存在或已过期");
+        return task;
     }
     @PostMapping("/ai-suggestions/{suggestionId}/publish") @PreAuthorize("hasRole('ADMIN')")
     public ScheduleDto publishAiSuggestion(@PathVariable("suggestionId") String suggestionId,@RequestBody PublishAiScheduleRequest request) {
@@ -623,6 +666,15 @@ public class ScheduleController {
         if(morningPeak&&"上午".equals(period)) expected*=1+morningIncrease/100f;
         return Math.max(1,Math.round(expected));
     }
+    private void trimAiTasks() {
+        if(aiTasks.size()<MAX_AI_TASKS) return;
+        aiTasks.entrySet().stream()
+                .sorted(Comparator.comparing(entry -> entry.getValue().createdAt()))
+                .limit(Math.max(1,aiTasks.size()-MAX_AI_TASKS+1))
+                .map(Map.Entry::getKey)
+                .toList()
+                .forEach(aiTasks::remove);
+    }
     public record CreateScheduleRequest(String doctorId,String departmentId,String workDate,String period,int capacity) {}
     public record SuspendRequest(String reason) {}
     public record RescheduleRequest(String workDate,String period) {}
@@ -634,6 +686,21 @@ public class ScheduleController {
     public record DoctorUnavailableSlot(String date,String period,String type) {}
     public record AiScheduleDemand(String departmentId,String roomId,String roomName,String workDate,String period,int expectedVisits,Integer historicalVisits) {}
     public record AiScheduleResponse(String aiRecordId,List<AiScheduleSuggestion> suggestions,String provider,String model,boolean fallbackUsed,List<Map<String,Object>> knowledgeSources,String backgroundSummary) {}
+    public record AiScheduleTask(String taskId,String status,String message,LocalDateTime createdAt,LocalDateTime updatedAt,AiScheduleResponse result) {
+        public static AiScheduleTask queued(String taskId) {
+            LocalDateTime now=LocalDateTime.now();
+            return new AiScheduleTask(taskId,"QUEUED","AI 排班任务已提交，预计需要较长时间，请稍后查看通知。",now,now,null);
+        }
+        public AiScheduleTask running() {
+            return new AiScheduleTask(taskId,"RUNNING","AI 正在生成排班建议，管理员可先处理其他事项。",createdAt,LocalDateTime.now(),null);
+        }
+        public AiScheduleTask completed(AiScheduleResponse result) {
+            return new AiScheduleTask(taskId,"COMPLETED","AI 排班建议已生成。",createdAt,LocalDateTime.now(),result);
+        }
+        public AiScheduleTask failed(String message) {
+            return new AiScheduleTask(taskId,"FAILED",message,createdAt,LocalDateTime.now(),null);
+        }
+    }
     public record AiScheduleSuggestion(String suggestionId,String doctorId,String doctorName,String departmentId,String roomId,String roomName,String workDate,String period,int capacity,boolean requiresAdminConfirmation) {}
     public record PublishAiScheduleRequest(String aiRecordId,String doctorId,String doctorName,String departmentId,String roomId,String roomName,String workDate,String period,int capacity,boolean requiresAdminConfirmation) {}
     public record PublishAiScheduleBatchRequest(String aiRecordId,List<PublishAiScheduleRequest> suggestions) {}

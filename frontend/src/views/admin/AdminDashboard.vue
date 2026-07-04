@@ -97,6 +97,7 @@
                   刷新待确认重排建议
                 </el-button>
               </el-form>
+              <p v-if="aiTaskNotice" class="ai-task-notice">{{ aiTaskNotice }}</p>
               <p v-if="aiBackgroundSummary" class="ai-summary">{{ aiBackgroundSummary }}</p>
             </section>
 
@@ -632,7 +633,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import AdminOverviewVisuals from '../../components/AdminOverviewVisuals.vue';
@@ -643,7 +644,7 @@ import {
   createSchedule,
   deleteDoctorEvent,
   getAiScheduleSuggestions,
-  getAiReplanPreview,
+  getAiReplanPreviewJob,
   getDepartments,
   getDoctorEvents,
   getDoctors,
@@ -651,12 +652,14 @@ import {
   publishAiScheduleSuggestion,
   publishAiScheduleSuggestions,
   suspendSchedule,
+  startAiReplanPreviewJob,
   updateDoctor,
   updateDoctorEvent,
   type AiDoctorCandidate,
   type AiScheduleDemand,
   type AiScheduleResponse,
   type AiScheduleSuggestion,
+  type AiScheduleTask,
   type Department,
   type Doctor,
   type DoctorEvent,
@@ -741,6 +744,10 @@ const doctorEvents = ref<DoctorEvent[]>([]);
 const staffAccounts = ref<StaffAccount[]>([]);
 const allStaffAccounts = ref<StaffAccount[]>([]);
 const aiResponse = ref<AiScheduleResponse | null>(null);
+const aiTaskId = ref('');
+const aiTaskStatus = ref<AiScheduleTask['status'] | ''>('');
+const aiTaskMessage = ref('');
+const aiTaskPollTimer = ref<ReturnType<typeof window.setInterval> | null>(null);
 const publishedSuggestionIds = ref<string[]>([]);
 const collapsedScheduleDepartments = ref<string[]>([]);
 const aiScheduleBoardWeekOffset = ref(0);
@@ -905,6 +912,11 @@ const aiSourceLabel = computed(() => {
   return `${provider}${model}${aiResponse.value.fallbackUsed ? ' 兜底' : ''}`;
 });
 const aiBackgroundSummary = computed(() => aiResponse.value?.backgroundSummary || '');
+const aiTaskNotice = computed(() => {
+  if (!aiTaskStatus.value || aiTaskStatus.value === 'COMPLETED') return '';
+  if (aiTaskStatus.value === 'FAILED') return aiTaskMessage.value || 'AI 排班任务执行失败，请稍后重试。';
+  return aiTaskMessage.value || 'AI 正在生成排班建议，预计需要较长时间，您可以先处理其他事项。';
+});
 
 const pendingSuggestions = computed(() =>
   suggestions.value.filter((suggestion) => !isSuggestionPublished(suggestion.suggestionId))
@@ -990,6 +1002,11 @@ async function refreshAll() {
     if (needsAutomaticReplan()) {
       await loadAiReplanPreview(false, false);
     } else {
+      clearAiTaskPolling();
+      suggestionLoading.value = false;
+      aiTaskId.value = '';
+      aiTaskStatus.value = '';
+      aiTaskMessage.value = '';
       aiResponse.value = {
         aiRecordId: null,
         suggestions: [],
@@ -1065,11 +1082,12 @@ function resetDoctorEventsSearch() {
 }
 
 async function loadAiReplanPreview(showFeedback = false, force = showFeedback) {
+  clearAiTaskPolling();
   suggestionLoading.value = true;
   try {
     aiForm.startDate = addDays(todayIso(), REPLAN_WINDOW_START_OFFSET);
     aiForm.days = REPLAN_WINDOW_DAYS;
-    aiResponse.value = await getAiReplanPreview({
+    const task = await startAiReplanPreviewJob({
       departmentId: aiForm.departmentId || undefined,
       baseVisits: aiForm.baseVisits,
       weekdayPeak: aiForm.weekdayPeak,
@@ -1078,21 +1096,74 @@ async function loadAiReplanPreview(showFeedback = false, force = showFeedback) {
       morningIncrease: aiForm.morningIncrease,
       force
     });
-    publishedSuggestionIds.value = [];
+    applyAiTask(task);
     if (showFeedback) {
-      if (suggestions.value.length > 0) {
-        ElMessage.success(`已生成 ${suggestions.value.length} 条第 8-15 天待确认排班建议`);
-      } else {
-        ElMessage.warning('当前窗口暂无可用重排建议');
-      }
+      ElMessage.info('AI 排班任务已提交，预计需要较长时间，您可以先处理其他事项。');
     }
+    startAiTaskPolling(task.taskId, showFeedback);
   } catch (error) {
+    suggestionLoading.value = false;
+    aiTaskStatus.value = 'FAILED';
+    aiTaskMessage.value = errorMessage(error);
     if (showFeedback) {
       ElMessage.error(errorMessage(error));
     }
-  } finally {
-    suggestionLoading.value = false;
   }
+}
+
+function applyAiTask(task: AiScheduleTask) {
+  aiTaskId.value = task.taskId;
+  aiTaskStatus.value = task.status;
+  aiTaskMessage.value = task.message || '';
+}
+
+function clearAiTaskPolling() {
+  if (aiTaskPollTimer.value !== null) {
+    window.clearInterval(aiTaskPollTimer.value);
+    aiTaskPollTimer.value = null;
+  }
+}
+
+function startAiTaskPolling(taskId: string, notifyOnCompletion: boolean) {
+  const poll = async () => {
+    if (aiTaskId.value !== taskId) return;
+    try {
+      const task = await getAiReplanPreviewJob(taskId);
+      if (aiTaskId.value !== taskId) return;
+      applyAiTask(task);
+      if (task.status === 'COMPLETED') {
+        clearAiTaskPolling();
+        suggestionLoading.value = false;
+        aiResponse.value = task.result ?? null;
+        publishedSuggestionIds.value = [];
+        if (notifyOnCompletion) {
+          if (suggestions.value.length > 0) {
+            ElMessage.success(`AI 排班已完成，生成 ${suggestions.value.length} 条第 8-15 天待确认建议`);
+          } else {
+            ElMessage.warning('AI 排班已完成，当前窗口暂无可用重排建议');
+          }
+        }
+      } else if (task.status === 'FAILED') {
+        clearAiTaskPolling();
+        suggestionLoading.value = false;
+        if (notifyOnCompletion) {
+          ElMessage.error(task.message || 'AI 排班任务执行失败，请稍后重试');
+        }
+      }
+    } catch (error) {
+      clearAiTaskPolling();
+      suggestionLoading.value = false;
+      aiTaskStatus.value = 'FAILED';
+      aiTaskMessage.value = errorMessage(error);
+      if (notifyOnCompletion) {
+        ElMessage.error(errorMessage(error));
+      }
+    }
+  };
+  void poll();
+  aiTaskPollTimer.value = window.setInterval(() => {
+    void poll();
+  }, 3000);
 }
 
 function seedDefaults() {
@@ -1923,6 +1994,7 @@ function logout() {
 }
 
 onMounted(refreshAll);
+onUnmounted(clearAiTaskPolling);
 </script>
 
 <style scoped>
@@ -2252,6 +2324,17 @@ onMounted(refreshAll);
   padding-top: 10px;
   border-top: 1px solid #e5e7eb;
   color: #64748b;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.ai-task-notice {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border: 1px solid #bae6fd;
+  border-radius: 6px;
+  background: #f0f9ff;
+  color: #0369a1;
   font-size: 12px;
   line-height: 1.6;
 }

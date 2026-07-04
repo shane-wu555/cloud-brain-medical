@@ -317,6 +317,35 @@ public class DoctorCatalogRepository {
     }
 
     // ── 排班 ───────────────────────────────────────────────────────────
+    public DoctorOperationsStats doctorOperationsStats(LocalDate workDate) {
+        Integer activeDoctors = jdbc.queryForObject("""
+                select count(distinct s.staff_id)
+                from schedule s
+                join staff st on st.id = s.staff_id and st.active and st.role_type = 'OUTPATIENT_DOCTOR'
+                where s.work_date = ? and s.status <> 'SUSPENDED'
+                """, Integer.class, workDate);
+        Integer scheduledRooms = jdbc.queryForObject("""
+                select count(distinct r.id)
+                from schedule s
+                join outpatient_doctor od on od.staff_id = s.staff_id
+                join outpatient_room r on r.id = od.room_id and r.active
+                join staff st on st.id = s.staff_id and st.active and st.role_type = 'OUTPATIENT_DOCTOR'
+                where s.work_date = ? and s.status <> 'SUSPENDED'
+                """, Integer.class, workDate);
+        Integer totalRooms = jdbc.queryForObject("""
+                select count(distinct r.id)
+                from outpatient_room r
+                join outpatient_doctor od on od.room_id = r.id
+                join staff st on st.id = od.staff_id and st.active and st.role_type = 'OUTPATIENT_DOCTOR'
+                where r.active
+                """, Integer.class);
+        int doctors = activeDoctors == null ? 0 : activeDoctors;
+        int coveredRooms = scheduledRooms == null ? 0 : scheduledRooms;
+        int rooms = totalRooms == null ? 0 : totalRooms;
+        int coverageRate = rooms == 0 ? 0 : Math.max(0, Math.min(100, Math.round((float) coveredRooms * 100 / rooms)));
+        return new DoctorOperationsStats(doctors, coveredRooms, rooms, coverageRate);
+    }
+
     @Cacheable(cacheNames = "doctor:schedules", key = "'all:' + (#p0 == null ? '' : #p0) + ':' + (#p1 == null ? '' : #p1)")
     public List<Schedule> schedules(String doctorId, String departmentId) {
         StringBuilder sql = new StringBuilder("""
@@ -537,6 +566,7 @@ public class DoctorCatalogRepository {
             String departmentId, String departmentName, String specialty, String roleType,
             String roomId, String roomName) implements Serializable {}
     public record OutpatientRoom(String id, String departmentId, String name, String location) implements Serializable {}
+    public record DoctorOperationsStats(int activeDoctors, int scheduledRooms, int totalRooms, int roomCoverageRate) implements Serializable {}
     public record DoctorEvent(String id, String doctorId, String doctorName, String departmentName,
             String eventType, List<LocalDate> dates, List<String> periods, String note) implements Serializable {
         public DoctorEvent withDates(List<LocalDate> dates) {
