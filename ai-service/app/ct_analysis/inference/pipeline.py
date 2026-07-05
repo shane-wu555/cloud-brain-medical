@@ -15,6 +15,7 @@ from .classifier    import classify_volume
 from .detector      import detect_volume, top_abnormal_slices
 from .metal_classifier import classify_metal_artifact
 from .metal_segmentation import segment_metal_artifact
+from .lesion_segmentation import lesion_regions, segment_lesion
 
 log = logging.getLogger(__name__)
 
@@ -108,6 +109,25 @@ def _metal_seg_report_text(seg_result: dict) -> tuple[str, str]:
     return finding, advice
 
 
+def _lesion_seg_report_text(seg_result: dict) -> tuple[str, str]:
+    if not seg_result.get("enabled"):
+        return "", ""
+    if not seg_result.get("hasLesionRegion"):
+        return "病灶分割：未定位到明显疑似病灶区域。", ""
+
+    affected = int(seg_result.get("affectedSlices", 0))
+    total = int(seg_result.get("totalSlices", 0))
+    fg_ratio = float(seg_result.get("foregroundRatio", 0.0))
+    confidence = float(seg_result.get("confidence", 0.0))
+    finding = (
+        "病灶分割：已定位到疑似病灶区域，"
+        f"累及 {affected}/{total} 层，前景占比 {fg_ratio:.2%}，"
+        f"最高置信度 {confidence:.0%}。"
+    )
+    advice = "请结合病灶分割提示区域和原始薄层图像进行人工复核。"
+    return finding, advice
+
+
 def run(object_key: str, order_id: str, clinical_context: str = "") -> dict[str, Any]:
     """
     完整推理流程入口。
@@ -131,6 +151,7 @@ def run(object_key: str, order_id: str, clinical_context: str = "") -> dict[str,
     slice_probs = clf_result["slice_probs"]
     metal_result = classify_metal_artifact(slices)
     metal_seg_result = segment_metal_artifact(hu_volume, valid_indices)
+    lesion_seg_result = segment_lesion(hu_volume, valid_indices)
     log.info(f"[CT推理] 分类结果: {label} ({confidence:.2%})")
 
     # ── 3. 检测（仅异常时）────────────────────────────────
@@ -141,6 +162,15 @@ def run(object_key: str, order_id: str, clinical_context: str = "") -> dict[str,
         sorted_indices = valid_indices[top_slices] if top_slices else valid_indices[:5]
         detections = detect_volume(sorted_slices, sorted_indices)
         log.info(f"[CT推理] 检测框数量: {len(detections)}")
+
+    seg_regions = lesion_regions(lesion_seg_result, label=label if label != "normal" else "lesion")
+    if seg_regions:
+        existing_keys = {(item.get("sliceIndex"), tuple(item.get("bbox", []))) for item in detections}
+        for region in seg_regions:
+            key = (region.get("sliceIndex"), tuple(region.get("bbox", [])))
+            if key not in existing_keys:
+                detections.append(region)
+        detections = sorted(detections, key=lambda item: float(item.get("confidence", 0.0)), reverse=True)
 
     # ── 4. 生成报告字段 ───────────────────────────────────
     location, size = _bbox_to_location(detections)
@@ -153,14 +183,19 @@ def run(object_key: str, order_id: str, clinical_context: str = "") -> dict[str,
     risk_advice = RISK_ADVICE[label]
     metal_finding, metal_advice = _metal_report_text(metal_result)
     metal_seg_finding, metal_seg_advice = _metal_seg_report_text(metal_seg_result)
+    lesion_seg_finding, lesion_seg_advice = _lesion_seg_report_text(lesion_seg_result)
     if metal_finding:
         findings = f"{findings} {metal_finding}"
     if metal_seg_finding:
         findings = f"{findings} {metal_seg_finding}"
+    if lesion_seg_finding:
+        findings = f"{findings} {lesion_seg_finding}"
     if metal_advice:
         risk_advice = f"{risk_advice} {metal_advice}"
     if metal_seg_advice:
         risk_advice = f"{risk_advice} {metal_seg_advice}"
+    if lesion_seg_advice:
+        risk_advice = f"{risk_advice} {lesion_seg_advice}"
 
     if clinical_context:
         risk_advice += f"  临床背景：{clinical_context}"
@@ -173,6 +208,7 @@ def run(object_key: str, order_id: str, clinical_context: str = "") -> dict[str,
         "label":          label,
         "metalArtifact":  metal_result,
         "metalArtifactSegmentation": metal_seg_result,
+        "lesionSegmentation": lesion_seg_result,
         "abnormalRegions": detections,
         "modelVersion":   model_version,
     }
