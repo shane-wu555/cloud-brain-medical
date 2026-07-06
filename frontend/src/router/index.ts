@@ -12,7 +12,8 @@ export const router = createRouter({
     { path: '/doctor/disposal', component: () => import('../views/disposal/DisposalWorkbench.vue'), meta: { roles: ['DISPOSAL_DOCTOR'] } },
     { path: '/doctor/pharmacy', component: () => import('../views/pharmacy/PharmacyWorkbench.vue'), meta: { roles: ['PHARMACY_STAFF'] } },
     { path: '/cashier', component: () => import('../views/cashier/CashierWorkbench.vue'), meta: { roles: ['CASHIER'] } },
-    { path: '/admin', component: () => import('../views/admin/AdminDashboard.vue'), meta: { roles: ['ADMIN'] } }
+    { path: '/admin', component: () => import('../views/admin/AdminDashboard.vue'), meta: { roles: ['ADMIN'] } },
+    { path: '/admin/audit', component: () => import('../views/admin/AdminAuditPage.vue'), meta: { roles: ['ADMIN'] } }
   ]
 });
 

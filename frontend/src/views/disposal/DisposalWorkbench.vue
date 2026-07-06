@@ -435,6 +435,18 @@ onMounted(loadOrders);
 
 .nav__right {
   font-size: 13px;
+  font-family: inherit;
+  line-height: 1;
+}
+
+.nav__right > span,
+.nav__right :deep(.el-button),
+.my-entry {
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  font: inherit;
+  line-height: 1;
 }
 
 .nav__logout {
@@ -812,7 +824,6 @@ onMounted(loadOrders);
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.12);
   color: #fff;
-  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;

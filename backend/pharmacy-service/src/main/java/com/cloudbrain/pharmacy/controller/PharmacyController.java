@@ -59,8 +59,9 @@ public class PharmacyController {
     @PreAuthorize("hasAnyRole('PATIENT','OUTPATIENT_DOCTOR','PHARMACY_STAFF','CASHIER','ADMIN')")
     public List<Prescription> prescriptions(@RequestParam(name = "patientId", required = false) String patientId,
                                             @RequestParam(name = "status", required = false) String status,
+                                            @RequestParam(name = "view", required = false) String view,
                                             JwtAuthenticationToken auth) {
-        return service.list(patientId, status, auth.getToken().getSubject(), auth.getToken().getClaimAsString("role"));
+        return service.list(patientId, status, view, auth.getToken().getSubject(), auth.getToken().getClaimAsString("role"));
     }
 
     @GetMapping("/prescriptions/{id}")

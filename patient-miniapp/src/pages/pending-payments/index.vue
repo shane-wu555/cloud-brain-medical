@@ -510,8 +510,8 @@ async function load() {
       request<PaymentOrder[]>({ url: `/payments?${patientQuery}`, method: 'GET' }),
       request<RefundOrder[]>({ url: `/refunds?${patientQuery}`, method: 'GET' }),
       request<Appointment[]>({ url: `/appointments?${patientQuery}`, method: 'GET' }),
-      request<MedicalOrder[]>({ url: `/medical-orders?${patientQuery}`, method: 'GET' }),
-      request<Prescription[]>({ url: `/prescriptions?${patientQuery}`, method: 'GET' })
+      request<MedicalOrder[]>({ url: `/medical-orders?${patientQuery}&view=PAYMENT_RECORD`, method: 'GET' }),
+      request<Prescription[]>({ url: `/prescriptions?${patientQuery}&view=PAYMENT_RECORD`, method: 'GET' })
     ]);
 
     paymentRecords.value = paymentsResult.status === 'fulfilled' ? paymentsResult.value : [];
@@ -534,8 +534,8 @@ async function load() {
   const [appointmentsResult, paymentsResult, medicalOrdersResult, prescriptionsResult] = await Promise.allSettled([
     request<Appointment[]>({ url: `/appointments?status=PENDING_PAYMENT&${patientQuery}`, method: 'GET' }),
     request<PaymentOrder[]>({ url: `/payments?businessType=APPOINTMENT&status=PENDING&${patientQuery}`, method: 'GET' }),
-    request<MedicalOrder[]>({ url: `/medical-orders?status=PENDING_PAYMENT&${patientQuery}`, method: 'GET' }),
-    request<Prescription[]>({ url: `/prescriptions?${patientQuery}`, method: 'GET' })
+    request<MedicalOrder[]>({ url: `/medical-orders?status=PENDING_PAYMENT&${patientQuery}&view=OUTPATIENT_PAYMENT`, method: 'GET' }),
+    request<Prescription[]>({ url: `/prescriptions?${patientQuery}&view=OUTPATIENT_PAYMENT`, method: 'GET' })
   ]);
 
   const appointments = unwrapResult(appointmentsResult, [], '挂号费');

@@ -41,6 +41,7 @@ interface Appointment {
 
 const auth = useAuthStore();
 const appointments = ref<Appointment[]>([]);
+const REVISIT_TIME_HINT = '\u5f53\u524d\u975e\u95e8\u8bca\u65f6\u95f4\uff0c\u8bf7\u4e8e08:00-12:00\u621614:00-17:30\u5185\u590d\u8bca\u7b7e\u5230';
 const visibleAppointments = computed(() =>
   [...appointments.value].sort((a, b) => appointmentSortTime(b).localeCompare(appointmentSortTime(a)))
 );
@@ -130,6 +131,16 @@ function canRevisit(item: Appointment) {
   return item.status === 'FINISHED' && item.visitDate === todayStr();
 }
 
+function isWithinOutpatientHours(date = new Date()) {
+  const minutes = date.getHours() * 60 + date.getMinutes();
+  const morningStart = 8 * 60;
+  const morningEnd = 12 * 60;
+  const afternoonStart = 14 * 60;
+  const afternoonEnd = 17 * 60 + 30;
+  return (minutes >= morningStart && minutes <= morningEnd)
+    || (minutes >= afternoonStart && minutes <= afternoonEnd);
+}
+
 function cancelLabel(item: Appointment) {
   return item.paymentStatus === 'PAID' ? '取消并退费' : '取消';
 }
@@ -164,6 +175,10 @@ async function cancel(item: Appointment) {
 
 async function revisit(item: Appointment) {
   try {
+    if (!isWithinOutpatientHours()) {
+      uni.showToast({ title: REVISIT_TIME_HINT, icon: 'none', duration: 2500 });
+      return;
+    }
     await request({ url: `/appointments/${item.id}/revisit`, method: 'POST' });
     uni.showToast({ title: '已加入复诊队列，请等候叫号', icon: 'none', duration: 2500 });
     const patient = auth.requireBoundPatient();

@@ -156,7 +156,7 @@
                   </div>
                   <div v-for="o in currentOrders" :key="o.id" class="med-doc__check-item"
                        :class="o.status === 'COMPLETED' ? 'med-doc__check-item--done' : 'med-doc__check-item--pending'">
-                    <span class="check-tag">{{ { CHECK:'检查', LAB:'检验', DISPOSAL:'处置' }[o.orderType] ?? o.orderType }}</span>
+                    <span class="check-tag">{{ reportTypeLabel(o.orderType) }}</span>
                     <span>{{ o.itemName }}</span>
                     <span v-if="o.status === 'COMPLETED'" class="check-done-mark">✓</span>
                   </div>
@@ -297,7 +297,9 @@
               <el-table-column prop="code" label="编码" width="160" />
               <el-table-column prop="name" label="项目" min-width="120" />
               <el-table-column label="分类" width="80">
-                <template #default="{ row }">{{ ({ CHECK:'检查', LAB:'检验', DISPOSAL:'处置' } as Record<string,string>)[row.category] ?? row.category }}</template>
+                <template #default="{ row }">
+                  {{ reportTypeLabel(row.category) }}
+                </template>
               </el-table-column>
               <el-table-column prop="price" label="价格" width="90" />
             </el-table>
@@ -308,7 +310,7 @@
             <el-table :data="formalReports" row-class-name="report-row">
               <el-table-column label="类型" width="80">
                 <template #default="{ row }">
-                  {{ ({ CHECK:'检查', LAB:'检验', DISPOSAL:'处置' } as Record<string,string>)[row.reportType] ?? row.reportType }}
+                  {{ reportTypeLabel(row.reportType) }}
                 </template>
               </el-table-column>
               <el-table-column prop="conclusion" label="结论" />
@@ -1269,7 +1271,10 @@ watch(mainTab, (tab) => {
   flex-shrink: 0;
 }
 .wks-nav__title { font-size: 16px; font-weight: 600; letter-spacing: 0.5px; }
-.wks-nav__right { display: flex; align-items: center; gap: 20px; font-size: 13px; }
+.wks-nav__right { display: flex; align-items: center; gap: 20px; font-size: 13px; font-family: inherit; line-height: 1; }
+.wks-nav__right > span,
+.wks-nav__right :deep(.el-button),
+.my-entry { height: 32px; display: inline-flex; align-items: center; font: inherit; line-height: 1; }
 .wks-nav__info { opacity: 0.9; }
 .wks-nav__date { opacity: 0.8; }
 
@@ -1869,7 +1874,6 @@ watch(mainTab, (tab) => {
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.12);
   color: #fff;
-  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;

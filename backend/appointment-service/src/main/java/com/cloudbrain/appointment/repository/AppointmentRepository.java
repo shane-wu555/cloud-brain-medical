@@ -8,6 +8,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -17,6 +18,7 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public class AppointmentRepository {
+    private static final DateTimeFormatter BUSINESS_NO_DATE = DateTimeFormatter.BASIC_ISO_DATE;
     private final JdbcTemplate jdbcTemplate;
     private final RowMapper<Appointment> rowMapper = new AppointmentRowMapper();
 
@@ -58,18 +60,20 @@ public class AppointmentRepository {
     }
 
     public Appointment save(Appointment appointment) {
+        ensureBusinessNo(appointment);
         jdbcTemplate.update("""
                 insert into appointment (
                     id, slot_id, patient_id, patient_name, doctor_id, doctor_name, department_id, department_name,
-                    visit_date, period, start_time, source, status, payment_status, payment_method, triage_summary, risk_level,
+                    visit_date, period, start_time, source, status, payment_status, payment_method, business_no, triage_summary, risk_level,
                     recommended_department_id, queue_number, missed_count, paid_at, cancelled_at, lock_expires_at
                 )
-                values (?::uuid, ?, ?::uuid, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                values (?::uuid, ?, ?::uuid, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                         case when ? = 'PENDING_PAYMENT' then now() + interval '15 minutes' else null end)
                 on conflict (id) do update set
                     status = excluded.status,
                     payment_status = excluded.payment_status,
                     payment_method = excluded.payment_method,
+                    business_no = coalesce(appointment.business_no, excluded.business_no),
                     queue_number = excluded.queue_number,
                     missed_count = excluded.missed_count,
                     paid_at = excluded.paid_at,
@@ -90,6 +94,7 @@ public class AppointmentRepository {
                 appointment.getStatus().name(),
                 appointment.getPaymentStatus().name(),
                 appointment.getPaymentMethod(),
+                appointment.getBusinessNo(),
                 appointment.getTriageSummary(),
                 appointment.getRiskLevel(),
                 appointment.getRecommendedDepartmentId(),
@@ -101,6 +106,16 @@ public class AppointmentRepository {
             appointment.restoreBusinessNo(jdbcTemplate.queryForObject(
                 "select business_no from appointment where id=?::uuid",String.class,appointment.getId()));
         return appointment;
+    }
+
+    private void ensureBusinessNo(Appointment appointment) {
+        if (appointment.getBusinessNo() != null && !appointment.getBusinessNo().isBlank()) {
+            return;
+        }
+        Long sequence = jdbcTemplate.queryForObject("select nextval('appt_business_no_seq')", Long.class);
+        long value = sequence == null ? 0L : sequence;
+        String businessNo = "AP" + appointment.getVisitDate().format(BUSINESS_NO_DATE) + String.format("%06d", value);
+        appointment.restoreBusinessNo(businessNo);
     }
 
     public int size() {

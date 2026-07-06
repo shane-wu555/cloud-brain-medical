@@ -40,6 +40,7 @@ public class MedicalOrderController {
             @RequestParam(name = "status", required = false) String status,
             @RequestParam(name = "patientId", required = false) String patientId,
             @RequestParam(name = "appointmentId", required = false) String appointmentId,
+            @RequestParam(name = "view", required = false) String view,
             JwtAuthenticationToken authentication) {
         if ("PATIENT".equals(authentication.getToken().getClaimAsString("role"))) {
             String accountId = authentication.getToken().getSubject();
@@ -51,7 +52,7 @@ public class MedicalOrderController {
                 throw new AccessDeniedException("患者只能查看自己账号名下就诊人的医技申请");
             }
         }
-        return service.listAuthorized(type, status, patientId, appointmentId, authentication.getToken().getSubject(),
+        return service.listAuthorized(type, status, patientId, appointmentId, view, authentication.getToken().getSubject(),
                 authentication.getToken().getClaimAsString("role"));
     }
 

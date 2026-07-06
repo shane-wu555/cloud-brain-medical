@@ -104,7 +104,7 @@ export async function stockInDrug(id: string, payload: { quantity: number; reaso
   return data;
 }
 
-export async function getPrescriptions(params: { patientId?: string; status?: string } = {}) {
+export async function getPrescriptions(params: { patientId?: string; status?: string; view?: string } = {}) {
   const { data } = await http.get<Prescription[]>('/prescriptions', { params });
   return data;
 }

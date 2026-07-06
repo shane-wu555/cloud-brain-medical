@@ -4,6 +4,11 @@ server:
 spring:
   application:
     name: medical-order-service
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
   datasource:
     url: ${MEDICAL_ORDER_DB_URL:jdbc:postgresql://localhost:5432/cloud_brain_medical?currentSchema=medical_order}
     username: ${DB_USERNAME:cloudbrain}
@@ -45,3 +50,7 @@ storage:
     access-key: ${MINIO_ACCESS_KEY:minioadmin}
     secret-key: ${MINIO_SECRET_KEY:minioadmin}
     bucket: ${MINIO_MEDICAL_BUCKET:medical-imaging}
+
+audit:
+  exchange: ${AUDIT_EXCHANGE:audit.events}
+  routing-key: ${AUDIT_ROUTING_KEY:audit.event}

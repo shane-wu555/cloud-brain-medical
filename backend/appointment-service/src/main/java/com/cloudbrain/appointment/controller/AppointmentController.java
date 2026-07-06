@@ -5,6 +5,8 @@ import com.cloudbrain.appointment.entity.SlotInventory;
 import com.cloudbrain.appointment.service.AppointmentService;
 import com.cloudbrain.appointment.service.PatientVerificationClient;
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Map;
 import org.springframework.security.access.AccessDeniedException;
@@ -22,6 +24,11 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/appointments")
 public class AppointmentController {
+    private static final LocalTime OUTPATIENT_MORNING_START = LocalTime.of(8, 0);
+    private static final LocalTime OUTPATIENT_MORNING_END = LocalTime.of(12, 0);
+    private static final LocalTime OUTPATIENT_AFTERNOON_START = LocalTime.of(14, 0);
+    private static final LocalTime OUTPATIENT_AFTERNOON_END = LocalTime.of(17, 30);
+
     private final AppointmentService appointmentService;
     private final PatientVerificationClient patientVerificationClient;
 
@@ -117,6 +124,9 @@ public class AppointmentController {
         if (!patientVerificationClient.owns(accountId, appointment.getPatientId())) {
             throw new AccessDeniedException("患者只能操作自己账号名下就诊人的挂号记录");
         }
+        if (appointment.getVisitDate().isEqual(currentDate()) && !isWithinOutpatientHours(currentTime())) {
+            throw new IllegalStateException("\u5f53\u524d\u975e\u95e8\u8bca\u65f6\u95f4\uff0c\u8bf7\u4e8e08:00-12:00\u621614:00-17:30\u5185\u590d\u8bca\u7b7e\u5230");
+        }
         return appointmentService.enterRevisit(id);
     }
 
@@ -166,5 +176,22 @@ public class AppointmentController {
     }
 
     public record PayRequest(String paymentMethod, BigDecimal amount, String operatorId) {
+    }
+
+    LocalDate currentDate() {
+        return LocalDate.now();
+    }
+
+    LocalTime currentTime() {
+        return LocalTime.now();
+    }
+
+    private boolean isWithinOutpatientHours(LocalTime time) {
+        return isWithinWindow(time, OUTPATIENT_MORNING_START, OUTPATIENT_MORNING_END)
+                || isWithinWindow(time, OUTPATIENT_AFTERNOON_START, OUTPATIENT_AFTERNOON_END);
+    }
+
+    private boolean isWithinWindow(LocalTime time, LocalTime startInclusive, LocalTime endInclusive) {
+        return !time.isBefore(startInclusive) && !time.isAfter(endInclusive);
     }
 }

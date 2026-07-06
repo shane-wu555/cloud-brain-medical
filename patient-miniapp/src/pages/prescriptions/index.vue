@@ -160,7 +160,11 @@ async function load() {
     uni.navigateTo({ url: '/pages/real-name/index' });
     return;
   }
-  prescriptions.value = await request<Prescription[]>({ url: `/prescriptions?patientId=${encodeURIComponent(patient.id)}`, method: 'GET' });
+  const view = mode.value === 'arrangement' ? 'DISPENSE_ARRANGEMENT' : 'DISPENSE_RECORD';
+  prescriptions.value = await request<Prescription[]>({
+    url: `/prescriptions?patientId=${encodeURIComponent(patient.id)}&view=${view}`,
+    method: 'GET'
+  });
 }
 
 function goToPendingPayments() {
