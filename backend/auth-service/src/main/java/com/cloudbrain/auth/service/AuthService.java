@@ -2,8 +2,8 @@ package com.cloudbrain.auth.service;
 
 import com.cloudbrain.auth.controller.AuthController;
 import com.cloudbrain.auth.entity.UserAccount;
-import com.cloudbrain.auth.repository.UserAccountRepository;
 import com.cloudbrain.auth.repository.AuthAuditRepository;
+import com.cloudbrain.auth.repository.UserAccountRepository;
 import com.cloudbrain.auth.repository.VerificationCodeRepository;
 import com.cloudbrain.auth.sms.SmsSender;
 import java.security.SecureRandom;
@@ -11,16 +11,18 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-import org.springframework.beans.factory.annotation.Value;
 
 @Service
 public class AuthService {
     private static final Logger log = LoggerFactory.getLogger(AuthService.class);
+
     private final UserAccountRepository repository;
     private final PasswordEncoder passwordEncoder;
     private final TokenService tokenService;
@@ -31,7 +33,10 @@ public class AuthService {
     private final boolean exposeVerificationCode;
     private final SecureRandom random = new SecureRandom();
 
-    public AuthService(UserAccountRepository repository, PasswordEncoder passwordEncoder, TokenService tokenService,
+    public AuthService(
+            UserAccountRepository repository,
+            PasswordEncoder passwordEncoder,
+            TokenService tokenService,
             AuthAuditRepository auditRepository,
             VerificationCodeRepository verificationCodes,
             SmsSender smsSender,
@@ -48,17 +53,12 @@ public class AuthService {
     }
 
     public Map<String, Object> register(AuthController.RegisterRequest request, ClientInfo client) {
-        if (request.password() == null
-                || request.password().length() < 8
-                || request.password().length() > 72
-                || !request.password().matches(".*[A-Za-z].*")
-                || !request.password().matches(".*\\d.*")) {
-            throw new IllegalArgumentException("密码必须为 8-72 位且同时包含字母和数字");
-        }
+        validatePassword(request.password());
         verifyCode(request.phone(), "REGISTER", request.smsCode());
         if (repository.existsByUsername(request.phone()) || repository.findByPhone(request.phone()).isPresent()) {
             throw new IllegalArgumentException("手机号已注册");
         }
+
         UserAccount account = new UserAccount(
                 "patient-" + UUID.randomUUID(),
                 request.phone(),
@@ -70,18 +70,27 @@ public class AuthService {
                 false,
                 null);
         repository.save(account);
-        auditRepository.record("REGISTER", request.phone(), account.getId(), true, null, client.ip(), client.userAgent());
+        auditRepository.record(
+                "REGISTER",
+                request.phone(),
+                request.name(),
+                account.getId(),
+                account.getRole(),
+                true,
+                null,
+                client.ip(),
+                client.userAgent());
         return issueLogin(account);
     }
 
     public Map<String, Object> login(AuthController.LoginRequest request, ClientInfo client) {
-        // 工号优先（医护人员）；降级用 username（admin 统一账号）
         UserAccount account = repository.findByEmployeeNo(request.username())
                 .or(() -> repository.findByUsername(request.username()))
                 .orElse(null);
         boolean passwordMatched = account != null && passwordEncoder.matches(request.password(), account.getPassword());
         if (account == null || !passwordMatched) {
-            log.warn("Login rejected: username={}, accountFound={}, passwordMatched={}, passwordLength={}, hashPrefix={}",
+            log.warn(
+                    "Login rejected: username={}, accountFound={}, passwordMatched={}, passwordLength={}, hashPrefix={}",
                     request.username(),
                     account != null,
                     passwordMatched,
@@ -89,38 +98,82 @@ public class AuthService {
                     account == null || account.getPassword() == null
                             ? null
                             : account.getPassword().substring(0, Math.min(12, account.getPassword().length())));
-            auditRepository.record("LOGIN", request.username(), account == null ? null : account.getId(), false,
-                    "INVALID_CREDENTIALS", client.ip(), client.userAgent());
+            auditRepository.record(
+                    "LOGIN",
+                    request.username(),
+                    account == null ? null : account.getName(),
+                    account == null ? null : account.getId(),
+                    account == null ? null : account.getRole(),
+                    false,
+                    "INVALID_CREDENTIALS",
+                    client.ip(),
+                    client.userAgent());
             throw new IllegalArgumentException("账号或密码错误");
         }
         if (!account.isActive()) {
-            auditRepository.record("LOGIN", request.username(), account.getId(), false,
-                    "ACCOUNT_DISABLED", client.ip(), client.userAgent());
+            auditRepository.record(
+                    "LOGIN",
+                    request.username(),
+                    account.getName(),
+                    account.getId(),
+                    account.getRole(),
+                    false,
+                    "ACCOUNT_DISABLED",
+                    client.ip(),
+                    client.userAgent());
             throw new IllegalArgumentException("账号已停用，请联系管理员");
         }
+
         log.info("Login accepted: username={}, userId={}, role={}",
                 request.username(), account.getId(), account.getRole());
         Map<String, Object> result = issueLogin(account);
-        auditRepository.record("LOGIN", request.username(), account.getId(), true, null, client.ip(), client.userAgent());
+        auditRepository.record(
+                "LOGIN",
+                request.username(),
+                account.getName(),
+                account.getId(),
+                account.getRole(),
+                true,
+                null,
+                client.ip(),
+                client.userAgent());
         return result;
     }
 
     public Map<String, Object> sendCode(AuthController.SendCodeRequest request, ClientInfo client) {
         String purpose = normalizePurpose(request.purpose());
-        if ("REGISTER".equals(purpose) && repository.findByPhone(request.phone()).isPresent()) {
+        Optional<UserAccount> existingAccount = repository.findByPhone(request.phone());
+        if ("REGISTER".equals(purpose) && existingAccount.isPresent()) {
             throw new IllegalArgumentException("手机号已注册");
         }
-        if (!"REGISTER".equals(purpose) && repository.findByPhone(request.phone()).isEmpty()) {
+        if (!"REGISTER".equals(purpose) && existingAccount.isEmpty()) {
             throw new IllegalArgumentException("手机号尚未注册");
         }
+
         String code = String.format("%06d", random.nextInt(1_000_000));
-        verificationCodes.create(request.phone(), purpose, passwordEncoder.encode(code),
+        verificationCodes.create(
+                request.phone(),
+                purpose,
+                passwordEncoder.encode(code),
                 Instant.now().plusSeconds(verificationCodeTtlSeconds));
         smsSender.sendVerificationCode(request.phone(), purpose, code);
-        auditRepository.record("SEND_SMS_CODE", request.phone(), null, true, null, client.ip(), client.userAgent());
-        java.util.HashMap<String, Object> response = new java.util.HashMap<>();
+        auditRepository.record(
+                "SEND_SMS_CODE",
+                request.phone(),
+                existingAccount.map(UserAccount::getName).orElse(null),
+                existingAccount.map(UserAccount::getId).orElse(null),
+                existingAccount.map(UserAccount::getRole).orElse(null),
+                true,
+                null,
+                client.ip(),
+                client.userAgent(),
+                Map.of("purpose", purpose));
+
+        Map<String, Object> response = new HashMap<>();
         response.put("expiresIn", verificationCodeTtlSeconds);
-        if (exposeVerificationCode && !smsSender.isLive()) response.put("devCode", code);
+        if (exposeVerificationCode && !smsSender.isLive()) {
+            response.put("devCode", code);
+        }
         return response;
     }
 
@@ -129,7 +182,16 @@ public class AuthService {
         UserAccount account = repository.findByPhone(request.phone())
                 .orElseThrow(() -> new IllegalArgumentException("手机号尚未注册"));
         Map<String, Object> result = issueLogin(account);
-        auditRepository.record("SMS_LOGIN", request.phone(), account.getId(), true, null, client.ip(), client.userAgent());
+        auditRepository.record(
+                "SMS_LOGIN",
+                request.phone(),
+                account.getName(),
+                account.getId(),
+                account.getRole(),
+                true,
+                null,
+                client.ip(),
+                client.userAgent());
         return result;
     }
 
@@ -139,7 +201,16 @@ public class AuthService {
         UserAccount account = repository.findByPhone(request.phone())
                 .orElseThrow(() -> new IllegalArgumentException("手机号尚未注册"));
         repository.updatePassword(account.getId(), passwordEncoder.encode(request.newPassword()));
-        auditRepository.record("RESET_PASSWORD", request.phone(), account.getId(), true, null, client.ip(), client.userAgent());
+        auditRepository.record(
+                "RESET_PASSWORD",
+                request.phone(),
+                account.getName(),
+                account.getId(),
+                account.getRole(),
+                true,
+                null,
+                client.ip(),
+                client.userAgent());
     }
 
     private void verifyCode(String phone, String purpose, String code) {
@@ -161,7 +232,7 @@ public class AuthService {
     private void validatePassword(String password) {
         if (password == null || password.length() < 8 || password.length() > 72
                 || !password.matches(".*[A-Za-z].*") || !password.matches(".*\\d.*")) {
-            throw new IllegalArgumentException("密码必须为 8-72 位且同时包含字母和数字");
+            throw new IllegalArgumentException("密码必须为 8-72 位，且同时包含字母和数字");
         }
     }
 

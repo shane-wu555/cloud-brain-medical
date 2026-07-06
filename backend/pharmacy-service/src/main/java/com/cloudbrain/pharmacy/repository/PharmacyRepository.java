@@ -147,6 +147,24 @@ public class PharmacyRepository {
         return jdbc.query(sql.toString(), (rs, row) -> findPrescription(rs.getString("id")), args.toArray());
     }
 
+    public List<Prescription> listByStatuses(String patientId, List<PrescriptionStatus> statuses) {
+        StringBuilder sql = new StringBuilder("select * from prescription where 1 = 1");
+        List<Object> args = new ArrayList<>();
+        if (patientId != null && !patientId.isBlank()) {
+            sql.append(" and patient_id = ?::uuid");
+            args.add(patientId);
+        }
+        if (statuses != null && !statuses.isEmpty()) {
+            sql.append(" and status in (");
+            sql.append("?,".repeat(statuses.size()));
+            sql.setLength(sql.length() - 1);
+            sql.append(")");
+            statuses.forEach(status -> args.add(status.name()));
+        }
+        sql.append(" order by created_at desc");
+        return jdbc.query(sql.toString(), (rs, row) -> findPrescription(rs.getString("id")), args.toArray());
+    }
+
     public boolean markPaid(String id, String patientId, String paymentOrderId) {
         return jdbc.update("""
                 update prescription

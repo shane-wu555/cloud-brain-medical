@@ -14,9 +14,11 @@ import com.cloudbrain.auth.repository.AuthAuditRepository;
 import com.cloudbrain.auth.repository.UserAccountRepository;
 import com.cloudbrain.auth.repository.VerificationCodeRepository;
 import com.cloudbrain.auth.sms.SmsSender;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -43,23 +45,33 @@ class AuthServiceTest {
     @Test
     void registerHashesPasswordAndAuditsRegistration() {
         when(repository.existsByUsername("13800000000")).thenReturn(false);
-        when(verificationCodes.latestActive("13800000000", "REGISTER")).thenReturn(java.util.Optional.of(
-                new VerificationCodeRepository.VerificationCode(java.util.UUID.randomUUID(),
-                        new BCryptPasswordEncoder().encode("123456"), java.time.Instant.now().plusSeconds(300))));
+        when(verificationCodes.latestActive("13800000000", "REGISTER")).thenReturn(Optional.of(
+                new VerificationCodeRepository.VerificationCode(
+                        UUID.randomUUID(),
+                        new BCryptPasswordEncoder().encode("123456"),
+                        Instant.now().plusSeconds(300))));
         when(verificationCodes.consume(any())).thenReturn(true);
         when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(tokenService.issue(any())).thenReturn("signed-token");
 
         Map<String, Object> result = service.register(
-                new AuthController.RegisterRequest("13800000000", "abc12345", "患者", "123456"),
+                new AuthController.RegisterRequest("13800000000", "abc12345", "测试患者", "123456"),
                 new AuthService.ClientInfo("127.0.0.1", "test"));
 
         assertThat(result.get("token")).isEqualTo("signed-token");
         verify(repository).save(org.mockito.ArgumentMatchers.argThat(account ->
                 !account.getPassword().equals("abc12345")
                         && new BCryptPasswordEncoder().matches("abc12345", account.getPassword())));
-        verify(auditRepository).record(eq("REGISTER"), eq("13800000000"), any(), eq(true),
-                eq(null), eq("127.0.0.1"), eq("test"));
+        verify(auditRepository).record(
+                eq("REGISTER"),
+                eq("13800000000"),
+                eq("测试患者"),
+                any(),
+                eq("PATIENT"),
+                eq(true),
+                eq(null),
+                eq("127.0.0.1"),
+                eq("test"));
     }
 
     @Test
@@ -99,13 +111,28 @@ class AuthServiceTest {
                 .hasMessage("账号或密码错误");
 
         verify(tokenService, never()).issue(any());
-        verify(auditRepository).record("LOGIN", "00010001", "00010001", false,
-                "INVALID_CREDENTIALS", "10.0.0.2", "test");
+        verify(auditRepository).record(
+                "LOGIN",
+                "00010001",
+                "张医生",
+                "00010001",
+                "OUTPATIENT_DOCTOR",
+                false,
+                "INVALID_CREDENTIALS",
+                "10.0.0.2",
+                "test");
     }
 
     private UserAccount account(String encodedPassword) {
-        // 新设计：员工 id = username = employee_no（工号）
-        return new UserAccount("00010001", "00010001", encodedPassword, "13700000101", "张医生",
-                "OUTPATIENT_DOCTOR", List.of("medical-record:write"), true, "00010001");
+        return new UserAccount(
+                "00010001",
+                "00010001",
+                encodedPassword,
+                "13700000101",
+                "张医生",
+                "OUTPATIENT_DOCTOR",
+                List.of("medical-record:write"),
+                true,
+                "00010001");
     }
 }

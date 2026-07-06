@@ -8,6 +8,7 @@
       <div class="admin-nav__right">
         <span>{{ auth.user?.name }} 管理员</span>
         <span>{{ today }} {{ dayOfWeek }}</span>
+        <button class="nav-entry" type="button" @click="router.push('/admin/audit')">审计</button>
         <el-button size="small" text class="nav-logout" @click="logout">退出</el-button>
       </div>
     </header>
@@ -2047,10 +2048,40 @@ onUnmounted(clearAiTaskPolling);
 .admin-nav__right {
   gap: 20px;
   font-size: 13px;
+  font-family: inherit;
+  line-height: 1;
+}
+
+.admin-nav__right > span,
+.admin-nav__right :deep(.el-button),
+.nav-entry {
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  font: inherit;
+  line-height: 1;
 }
 
 .nav-logout {
   color: rgb(255 255 255 / 88%);
+}
+
+.nav-entry {
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.38);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.nav-entry:hover,
+.nav-entry--active {
+  border-color: #fff;
+  background: #fff;
+  color: #0899a5;
 }
 
 .admin-body {

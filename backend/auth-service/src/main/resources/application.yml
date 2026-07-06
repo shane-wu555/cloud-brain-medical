@@ -7,6 +7,11 @@ internal:
 spring:
   application:
     name: auth-service
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
   datasource:
     url: ${AUTH_DB_URL:jdbc:postgresql://localhost:5432/cloud_brain_medical?currentSchema=auth}
     username: ${DB_USERNAME:cloudbrain}
@@ -58,3 +63,7 @@ sms:
     scheme-name-login: ${ALIYUN_SMS_SCHEME_NAME_LOGIN:LOGIN}
     scheme-name-register: ${ALIYUN_SMS_SCHEME_NAME_REGISTER:REGISTER}
     scheme-name-reset-password: ${ALIYUN_SMS_SCHEME_NAME_RESET_PASSWORD:RESET_PASSWORD}
+
+audit:
+  exchange: ${AUDIT_EXCHANGE:audit.events}
+  routing-key: ${AUDIT_ROUTING_KEY:audit.event}

@@ -806,6 +806,17 @@ onMounted(async () => {
 .pharmacy-nav__right {
   gap: 20px;
   font-size: 13px;
+  font-family: inherit;
+  line-height: 1;
+}
+
+.pharmacy-nav__right > span,
+.pharmacy-nav__right :deep(.el-button) {
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  font: inherit;
+  line-height: 1;
 }
 
 .nav-logout {

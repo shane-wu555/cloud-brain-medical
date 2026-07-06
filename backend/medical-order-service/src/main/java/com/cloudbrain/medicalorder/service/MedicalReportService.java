@@ -1,5 +1,6 @@
 package com.cloudbrain.medicalorder.service;
 
+import com.cloudbrain.medicalorder.audit.AuditPublisher;
 import com.cloudbrain.medicalorder.domain.AiMedicalTask;
 import com.cloudbrain.medicalorder.domain.MedicalAttachment;
 import com.cloudbrain.medicalorder.domain.MedicalOrder;
@@ -26,6 +27,7 @@ public class MedicalReportService {
     private final ObjectMapper mapper;
     private final ClinicalWorkflowClient workflow;
     private final PatientAccessClient patientAccessClient;
+    private final AuditPublisher auditPublisher;
 
     public MedicalReportService(
             MedicalReportRepository reports,
@@ -35,7 +37,8 @@ public class MedicalReportService {
             AiCtClient ai,
             ObjectMapper mapper,
             ClinicalWorkflowClient workflow,
-            PatientAccessClient patientAccessClient) {
+            PatientAccessClient patientAccessClient,
+            AuditPublisher auditPublisher) {
         this.reports = reports;
         this.orders = orders;
         this.orderService = orderService;
@@ -44,18 +47,21 @@ public class MedicalReportService {
         this.mapper = mapper;
         this.workflow = workflow;
         this.patientAccessClient = patientAccessClient;
+        this.auditPublisher = auditPublisher;
     }
 
     public MedicalAttachment upload(String orderId, MultipartFile file, String actor) {
         MedicalOrder order = order(orderId);
         checkExecutor(order, actor);
-        if (!Set.of("CHECK", "LAB").contains(order.orderType())) throw new IllegalArgumentException("仅检查或检验医嘱支持附件");
+        if (!Set.of("CHECK", "LAB").contains(order.orderType())) {
+            throw new IllegalArgumentException("Attachments are only supported for check and lab orders");
+        }
         try {
             String key = "orders/" + orderId + "/" + UUID.randomUUID() + "-" + file.getOriginalFilename();
             String bucket = storage.put(key, file.getInputStream(), file.getSize(), file.getContentType());
             return reports.attachment(orderId, key, file.getOriginalFilename(), file.getContentType(), file.getSize(), bucket, actor);
-        } catch (java.io.IOException e) {
-            throw new IllegalStateException("读取上传文件失败", e);
+        } catch (java.io.IOException error) {
+            throw new IllegalStateException("Failed to read uploaded file", error);
         }
     }
 
@@ -63,31 +69,42 @@ public class MedicalReportService {
         MedicalOrder order = order(orderId);
         checkExecutor(order, actor);
         MedicalAttachment attachment = reports.attachments(orderId).stream()
-                .filter(a -> a.id().equals(attachmentId))
+                .filter(candidate -> candidate.id().equals(attachmentId))
                 .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("影像附件不存在"));
+                .orElseThrow(() -> new IllegalArgumentException("Attachment does not exist"));
         Map<String, Object> response = ai.submit(orderId, attachment.objectKey());
         return reports.createTask(orderId, (String) response.get("taskId"));
     }
 
     @SuppressWarnings("unchecked")
     public AiMedicalTask refresh(String externalId, String actor) {
-        AiMedicalTask task = reports.taskByExternal(externalId).orElseThrow(() -> new IllegalArgumentException("AI 任务不存在"));
+        AiMedicalTask task = reports.taskByExternal(externalId)
+                .orElseThrow(() -> new IllegalArgumentException("AI task does not exist"));
         checkExecutor(order(task.medicalOrderId()), actor);
         Map<String, Object> result = ai.task(externalId);
         String status = (String) result.get("status");
         String output;
         try {
             output = mapper.writeValueAsString(result.getOrDefault("result", Map.of()));
-        } catch (Exception e) {
+        } catch (Exception error) {
             output = "{}";
         }
-        AiMedicalTask updated = reports.updateTask(externalId, status, (String) result.get("modelVersion"), output, (String) result.get("error"));
+        AiMedicalTask updated = reports.updateTask(
+                externalId,
+                status,
+                (String) result.get("modelVersion"),
+                output,
+                (String) result.get("error"));
         if ("COMPLETED".equals(status) && reports.reportByOrder(task.medicalOrderId()).isEmpty()) {
             Map<String, Object> data = (Map<String, Object>) result.getOrDefault("result", Map.of());
-            reports.saveDraft(task.medicalOrderId(), "CHECK", (String) data.getOrDefault("findings", ""),
-                    (String) data.getOrDefault("conclusion", ""), (String) data.getOrDefault("riskAdvice", ""),
-                    "AI", updated.id());
+            reports.saveDraft(
+                    task.medicalOrderId(),
+                    "CHECK",
+                    (String) data.getOrDefault("findings", ""),
+                    (String) data.getOrDefault("conclusion", ""),
+                    (String) data.getOrDefault("riskAdvice", ""),
+                    "AI",
+                    updated.id());
         }
         return updated;
     }
@@ -99,27 +116,68 @@ public class MedicalReportService {
     }
 
     @Transactional
-    public MedicalReport confirm(String orderId, String findings, String conclusion, String advice, String actor, String role) {
+    public MedicalReport confirm(
+            String orderId,
+            String findings,
+            String conclusion,
+            String advice,
+            String actor,
+            String role) {
         MedicalOrder order = order(orderId);
         validateRole(order, role);
         checkExecutor(order, actor);
-        MedicalReport draft = reports.reportByOrder(orderId).orElseThrow(() -> new IllegalArgumentException("请先生成或保存报告草稿"));
+        MedicalReport draft = reports.reportByOrder(orderId)
+                .orElseThrow(() -> new IllegalArgumentException("Draft report does not exist"));
         String finalFindings = blank(findings) ? draft.findings() : findings;
         String finalConclusion = blank(conclusion) ? draft.conclusion() : conclusion;
         String finalAdvice = blank(advice) ? draft.advice() : advice;
-        if (blank(finalConclusion)) throw new IllegalArgumentException("报告结论不能为空");
-        MedicalOrder orderForPublish = order;
-        if (!"COMPLETED".equals(order.status())) {
-            if (Set.of("WAITING", "CALLED").contains(order.status())) {
-                orderForPublish = orderService.start(orderId, actor, role);
-            }
+        if (blank(finalConclusion)) {
+            throw new IllegalArgumentException("Report conclusion cannot be blank");
         }
+
+        MedicalOrder orderForPublish = order;
+        if (!"COMPLETED".equals(order.status()) && Set.of("WAITING", "CALLED").contains(order.status())) {
+            orderForPublish = orderService.start(orderId, actor, role);
+        }
+
         MedicalReport report = reports.confirm(orderId, finalFindings, finalConclusion, finalAdvice, actor);
         String source = report.createdByType();
         if (!"COMPLETED".equals(orderForPublish.status())) {
-            orderForPublish = orderService.complete(orderId, actor, role, finalConclusion, source, "AI".equals(source) ? report.aiTaskId() : null);
+            orderForPublish = orderService.complete(
+                    orderId,
+                    actor,
+                    role,
+                    finalConclusion,
+                    source,
+                    "AI".equals(source) ? report.aiTaskId() : null);
         }
         workflow.publish(orderForPublish, report);
+        auditPublisher.publish(
+                "MEDICAL_REPORT_CONFIRM",
+                "MEDICAL_REPORT",
+                report.id(),
+                orderForPublish.patientId(),
+                orderForPublish.id(),
+                actor,
+                role,
+                Map.of(
+                        "reportType", report.reportType(),
+                        "source", source,
+                        "status", report.status()));
+        if ("AI".equals(source)) {
+            auditPublisher.publish(
+                    "AI_RESULT_CONFIRMED",
+                    "MEDICAL_REPORT",
+                    report.id(),
+                    orderForPublish.patientId(),
+                    orderForPublish.id(),
+                    actor,
+                    role,
+                    Map.of(
+                            "aiTaskId", report.aiTaskId(),
+                            "adoptionStatus", report.modifiedFromAi() ? "MODIFIED" : "ADOPTED",
+                            "reportType", report.reportType()));
+        }
         return report;
     }
 
@@ -127,66 +185,126 @@ public class MedicalReportService {
         MedicalOrder order = order(orderId);
         validateRole(order, role);
         checkExecutor(order, actor);
-        if (reason == null || reason.isBlank()) throw new IllegalArgumentException("驳回原因不能为空");
-        return reports.reject(orderId, actor, reason);
+        if (blank(reason)) {
+            throw new IllegalArgumentException("Rejection reason cannot be blank");
+        }
+        MedicalReport report = reports.reject(orderId, actor, reason);
+        auditPublisher.publish(
+                "MEDICAL_REPORT_REJECT",
+                "MEDICAL_REPORT",
+                report.id(),
+                order.patientId(),
+                order.id(),
+                actor,
+                role,
+                Map.of("reason", reason, "reportType", report.reportType()));
+        return report;
     }
 
     public List<MedicalReport> list(String patientId, String actor, String role) {
         String scopedPatientId = patientId;
         if ("PATIENT".equals(role)) {
-            if (scopedPatientId == null || scopedPatientId.isBlank()) scopedPatientId = patientAccessClient.boundPatientId(actor);
-            if (scopedPatientId == null || scopedPatientId.isBlank()) throw new AccessDeniedException("请先添加并绑定就诊人");
-            if (!patientAccessClient.owns(actor, scopedPatientId)) throw new AccessDeniedException("无权查看该就诊人的报告");
+            if (blank(scopedPatientId)) {
+                scopedPatientId = patientAccessClient.boundPatientId(actor);
+            }
+            if (blank(scopedPatientId)) {
+                throw new AccessDeniedException("Patient account is not bound to a patient profile");
+            }
+            if (!patientAccessClient.owns(actor, scopedPatientId)) {
+                throw new AccessDeniedException("Cannot access another patient's reports");
+            }
         }
+
         String finalPatientId = scopedPatientId;
-        return reports.reports().stream().filter(r -> {
-            MedicalOrder o = order(r.medicalOrderId());
-            if ("PATIENT".equals(role)) return "CONFIRMED".equals(r.status()) && o.patientId().equals(finalPatientId);
-            if ("OUTPATIENT_DOCTOR".equals(role)) return "CONFIRMED".equals(r.status()) && o.orderingDoctorId().equals(actor);
-            if (Set.of("CHECK_DOCTOR", "LAB_DOCTOR", "DISPOSAL_DOCTOR").contains(role)) return canAccessWorkspace(o, actor);
+        List<MedicalReport> visible = reports.reports().stream().filter(report -> {
+            MedicalOrder medicalOrder = order(report.medicalOrderId());
+            if ("PATIENT".equals(role)) {
+                return "CONFIRMED".equals(report.status()) && medicalOrder.patientId().equals(finalPatientId);
+            }
+            if ("OUTPATIENT_DOCTOR".equals(role)) {
+                return "CONFIRMED".equals(report.status()) && medicalOrder.orderingDoctorId().equals(actor);
+            }
+            if (Set.of("CHECK_DOCTOR", "LAB_DOCTOR", "DISPOSAL_DOCTOR").contains(role)) {
+                return canAccessWorkspace(medicalOrder, actor);
+            }
             return false;
         }).toList();
+
+        auditPublisher.publish(
+                "MEDICAL_REPORT_LIST_VIEW",
+                "MEDICAL_REPORT",
+                null,
+                finalPatientId,
+                null,
+                actor,
+                role,
+                Map.of(
+                        "accessScope", "LIST",
+                        "resultCount", visible.size()));
+        return visible;
     }
 
     public List<MedicalAttachment> attachments(String orderId, String actor, String role) {
-        MedicalOrder o = order(orderId);
-        boolean allowed = ("PATIENT".equals(role) && patientAccessClient.owns(actor, o.patientId()))
-                || ("OUTPATIENT_DOCTOR".equals(role) && o.orderingDoctorId().equals(actor))
-                || (Set.of("CHECK_DOCTOR", "LAB_DOCTOR", "DISPOSAL_DOCTOR").contains(role) && canAccessWorkspace(o, actor));
-        if (!allowed) throw new AccessDeniedException("无权查看附件");
+        MedicalOrder order = order(orderId);
+        boolean allowed = ("PATIENT".equals(role) && patientAccessClient.owns(actor, order.patientId()))
+                || ("OUTPATIENT_DOCTOR".equals(role) && order.orderingDoctorId().equals(actor))
+                || (Set.of("CHECK_DOCTOR", "LAB_DOCTOR", "DISPOSAL_DOCTOR").contains(role) && canAccessWorkspace(order, actor));
+        if (!allowed) {
+            throw new AccessDeniedException("Cannot access attachment");
+        }
         return reports.attachments(orderId);
     }
 
     public AttachmentDownload attachmentContent(String orderId, String attachmentId, String actor, String role) {
+        MedicalOrder medicalOrder = order(orderId);
         MedicalAttachment attachment = attachments(orderId, actor, role).stream()
-                .filter(a -> a.id().equals(attachmentId))
+                .filter(candidate -> candidate.id().equals(attachmentId))
                 .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("附件不存在"));
+                .orElseThrow(() -> new IllegalArgumentException("Attachment does not exist"));
+        auditPublisher.publish(
+                "MEDICAL_ATTACHMENT_DOWNLOAD",
+                "MEDICAL_ATTACHMENT",
+                attachment.id(),
+                medicalOrder.patientId(),
+                medicalOrder.id(),
+                actor,
+                role,
+                Map.of(
+                        "contentType", attachment.contentType() == null ? "" : attachment.contentType(),
+                        "originalName", attachment.originalName() == null ? "" : attachment.originalName()));
         return new AttachmentDownload(attachment, storage.get(attachment.objectKey()));
     }
 
     private MedicalOrder order(String id) {
-        return orders.findById(id).orElseThrow(() -> new IllegalArgumentException("医技申请不存在"));
+        return orders.findById(id).orElseThrow(() -> new IllegalArgumentException("Medical order does not exist"));
     }
 
-    private void checkExecutor(MedicalOrder o, String actor) {
-        if (!canAccessWorkspace(o, actor)) throw new AccessDeniedException("只能处理分配给自己执行房间的医技单");
+    private void checkExecutor(MedicalOrder order, String actor) {
+        if (!canAccessWorkspace(order, actor)) {
+            throw new AccessDeniedException("Actor cannot access this medical order workspace");
+        }
     }
 
-    private boolean canAccessWorkspace(MedicalOrder o, String actor) {
+    private boolean canAccessWorkspace(MedicalOrder order, String actor) {
         return orders.staffRoom(actor)
-                .map(sr -> sr.roomId().equals(o.roomId()))
+                .map(staffRoom -> staffRoom.roomId().equals(order.roomId()))
                 .orElse(false);
     }
 
-    private void validateRole(MedicalOrder o, String role) {
-        String expected = Map.of("CHECK", "CHECK_DOCTOR", "LAB", "LAB_DOCTOR", "DISPOSAL", "DISPOSAL_DOCTOR").get(o.orderType());
-        if (!expected.equals(role)) throw new AccessDeniedException("角色与报告类型不匹配");
+    private void validateRole(MedicalOrder order, String role) {
+        String expectedRole = Map.of(
+                "CHECK", "CHECK_DOCTOR",
+                "LAB", "LAB_DOCTOR",
+                "DISPOSAL", "DISPOSAL_DOCTOR").get(order.orderType());
+        if (!expectedRole.equals(role)) {
+            throw new AccessDeniedException("Role does not match medical report type");
+        }
     }
 
     private boolean blank(String value) {
         return value == null || value.isBlank();
     }
 
-    public record AttachmentDownload(MedicalAttachment attachment, java.io.InputStream stream) {}
+    public record AttachmentDownload(MedicalAttachment attachment, java.io.InputStream stream) {
+    }
 }

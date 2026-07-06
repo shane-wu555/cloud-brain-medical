@@ -794,30 +794,86 @@ function switchPage(page: PageKey) {
   if (page === 'registration') {
     loadRegistrationData();
   } else {
-    loadAllData();
+    void loadCurrentPageData();
   }
 }
 
-async function loadAllData() {
+async function loadCurrentPageData() {
+  if (currentPage.value === 'payments') {
+    await loadPaymentsPage();
+    return;
+  }
+  if (currentPage.value === 'appointmentRecords') {
+    await loadAppointmentRecordsPage();
+    return;
+  }
+  if (currentPage.value === 'paymentRecords') {
+    await loadPaymentRecordsPage();
+    return;
+  }
+  if (currentPage.value === 'drugReturnRefunds') {
+    await loadDrugReturnRefundPage();
+  }
+}
+
+async function loadPaymentsPage() {
   loadingAll.value = true;
   try {
-    const [appointmentsResult, prescriptionsResult, medicalOrdersResult, paymentsResult, drugReturnsResult, doctorsResult, schedulesResult] = await Promise.allSettled([
+    const [appointmentsResult, prescriptionsResult, medicalOrdersResult] = await Promise.allSettled([
+      getAppointments(),
+      getPrescriptions(),
+      getMedicalOrders()
+    ]);
+    appointments.value = unwrap(appointmentsResult, [], '挂号记录');
+    prescriptions.value = unwrap(prescriptionsResult, [], '处方');
+    medicalOrders.value = unwrap(medicalOrdersResult, [], '检查检验处置医嘱');
+  } finally {
+    loadingAll.value = false;
+  }
+}
+
+async function loadAppointmentRecordsPage() {
+  loadingAll.value = true;
+  try {
+    const [appointmentsResult, doctorsResult, schedulesResult] = await Promise.allSettled([
+      getAppointments(),
+      getDoctors(),
+      getSchedules()
+    ]);
+    appointments.value = unwrap(appointmentsResult, [], '挂号记录');
+    doctors.value = unwrap(doctorsResult, doctors.value, '医生列表');
+    schedules.value = unwrap(schedulesResult, schedules.value, '排班列表');
+    await syncPatientProfiles();
+  } finally {
+    loadingAll.value = false;
+  }
+}
+
+async function loadPaymentRecordsPage() {
+  loadingAll.value = true;
+  try {
+    const [appointmentsResult, prescriptionsResult, medicalOrdersResult, paymentsResult] = await Promise.allSettled([
       getAppointments(),
       getPrescriptions(),
       getMedicalOrders(),
-      getPayments(),
-      getDrugReturns({ status: 'RETURN_PENDING_REFUND' }),
-      getDoctors(),
-      getSchedules()
+      getPayments()
     ]);
     appointments.value = unwrap(appointmentsResult, [], '挂号记录');
     prescriptions.value = unwrap(prescriptionsResult, [], '处方');
     medicalOrders.value = unwrap(medicalOrdersResult, [], '检查检验处置医嘱');
     paymentRecords.value = unwrap(paymentsResult, [], '缴费记录');
-    drugReturns.value = unwrap(drugReturnsResult, [], '退药单');
-    doctors.value = unwrap(doctorsResult, doctors.value, '医生列表');
-    schedules.value = unwrap(schedulesResult, schedules.value, '排班列表');
     await syncPatientProfiles();
+  } finally {
+    loadingAll.value = false;
+  }
+}
+
+async function loadDrugReturnRefundPage() {
+  loadingAll.value = true;
+  try {
+    drugReturns.value = await getDrugReturns({ status: 'RETURN_PENDING_REFUND' });
+  } catch (error) {
+    handleRequestFailure(error, '退药单加载失败');
   } finally {
     loadingAll.value = false;
   }
@@ -1080,7 +1136,7 @@ async function handleQrPaymentSuccess(payment: PaymentOrder, paidItem: PendingFe
   qrDialog.status = 'PAID';
   qrDialog.paymentId = payment.id;
   stopQrStatusPolling();
-  await loadAllData();
+  await loadPaymentsPage();
   if (paidItem.businessType === 'MEDICAL_ORDER') {
     const executor = medicalOrderExecutor(paidItem.businessId);
     ElMessage.success(executor ? `缴费成功，分配至：${executor}` : '缴费成功');
@@ -1285,7 +1341,7 @@ async function register() {
       registrationFee: registrationFee(option.schedule.doctorId)
     });
     ElMessage.success('挂号并收款成功');
-    await Promise.all([loadSchedules(), loadAllData()]);
+    await loadSchedules();
   } catch (error) {
     ElMessage.error(errorMessage(error, '线下挂号失败'));
   } finally {
@@ -1298,7 +1354,7 @@ async function refund(row: Appointment) {
     await ElMessageBox.confirm(`确认退号并处理退款？${row.businessNo}`, '退号确认', { type: 'warning' });
     await cancelAppointment(row.id);
     ElMessage.success('退号成功，退款记录已生成');
-    await Promise.all([loadSchedules(), loadAllData()]);
+    await Promise.all([loadSchedules(), loadAppointmentRecordsPage()]);
   } catch (error) {
     if (error !== 'cancel') ElMessage.error(errorMessage(error, '退号失败'));
   }
@@ -1316,7 +1372,7 @@ async function refundDrug(row: DrugReturnOrder) {
       reason: `退药单 ${row.returnNo}`
     });
     ElMessage.success('退费完成，退药状态已同步');
-    await loadAllData();
+    await loadDrugReturnRefundPage();
   } catch (error) {
     if (error !== 'cancel') ElMessage.error(errorMessage(error, '退药退费失败'));
   } finally {
@@ -1563,7 +1619,7 @@ onMounted(async () => {
   nowTimer = window.setInterval(() => {
     nowTimestamp.value = Date.now();
   }, 60_000);
-  await loadAllData();
+  await loadCurrentPageData();
 });
 
 onBeforeUnmount(() => {
@@ -1620,6 +1676,17 @@ onBeforeUnmount(() => {
 .cashier-nav__right {
   gap: 20px;
   font-size: 13px;
+  font-family: inherit;
+  line-height: 1;
+}
+
+.cashier-nav__right > span,
+.cashier-nav__right :deep(.el-button) {
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  font: inherit;
+  line-height: 1;
 }
 
 .nav-logout {

@@ -4,6 +4,11 @@ server:
 spring:
   application:
     name: audit-service
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
   datasource:
     url: ${AUDIT_DB_URL:jdbc:postgresql://localhost:5432/cloud_brain_medical?currentSchema=audit}
     username: ${DB_USERNAME:cloudbrain}
@@ -23,3 +28,8 @@ security:
 
 internal:
   api-key: ${INTERNAL_API_KEY:cloud-brain-medical-internal-development-key}
+
+audit:
+  exchange: ${AUDIT_EXCHANGE:audit.events}
+  routing-key: ${AUDIT_ROUTING_KEY:audit.event}
+  queue: ${AUDIT_QUEUE:audit.log.persist}

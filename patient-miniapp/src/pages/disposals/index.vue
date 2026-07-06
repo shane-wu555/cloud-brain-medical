@@ -171,8 +171,9 @@ async function load() {
     return;
   }
   const patientQuery = `patientId=${encodeURIComponent(patient.id)}`;
+  const view = mode.value === 'arrangement' ? 'DISPOSAL_ARRANGEMENT' : 'DISPOSAL_RECORD';
   const [orderList, appointmentList] = await Promise.all([
-    request<MedicalOrder[]>({ url: `/medical-orders?type=DISPOSAL&${patientQuery}`, method: 'GET' }),
+    request<MedicalOrder[]>({ url: `/medical-orders?type=DISPOSAL&${patientQuery}&view=${view}`, method: 'GET' }),
     request<Appointment[]>({ url: `/appointments?${patientQuery}`, method: 'GET' })
   ]);
   orders.value = orderList;

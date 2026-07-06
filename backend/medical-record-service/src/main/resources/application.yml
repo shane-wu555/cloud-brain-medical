@@ -4,6 +4,11 @@ server:
 spring:
   application:
     name: medical-record-service
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
   datasource:
     url: ${MEDICAL_RECORD_DB_URL:jdbc:postgresql://localhost:5432/cloud_brain_medical?currentSchema=medical_record}
     username: ${DB_USERNAME:cloudbrain}
@@ -34,3 +39,7 @@ security:
 services:
   patient:
     base-url: ${PATIENT_SERVICE_URL:http://localhost:8102}
+
+audit:
+  exchange: ${AUDIT_EXCHANGE:audit.events}
+  routing-key: ${AUDIT_ROUTING_KEY:audit.event}

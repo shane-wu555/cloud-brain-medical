@@ -2,8 +2,10 @@ package com.cloudbrain.medicalorder.service;
 
 import com.cloudbrain.medicalorder.controller.MedicalOrderController;
 import com.cloudbrain.medicalorder.domain.MedicalOrder;
+import com.cloudbrain.medicalorder.audit.AuditPublisher;
 import com.cloudbrain.medicalorder.repository.MedicalOrderRepository;
 import java.math.BigDecimal;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -20,10 +22,12 @@ public class MedicalOrderService {
 
     private final MedicalOrderRepository repository;
     private final AiTriageClient triageClient;
+    private final AuditPublisher auditPublisher;
 
-    public MedicalOrderService(MedicalOrderRepository repository, AiTriageClient triageClient) {
+    public MedicalOrderService(MedicalOrderRepository repository, AiTriageClient triageClient, AuditPublisher auditPublisher) {
         this.repository = repository;
         this.triageClient = triageClient;
+        this.auditPublisher = auditPublisher;
     }
 
     @Transactional
@@ -56,7 +60,7 @@ public class MedicalOrderService {
     }
 
     public List<MedicalOrder> listAuthorized(String type, String status, String patientId,
-            String appointmentId, String actorId, String role) {
+            String appointmentId, String view, String actorId, String role) {
         String forcedType = switch (role) {
             case "CHECK_DOCTOR"    -> "CHECK";
             case "LAB_DOCTOR"     -> "LAB";
@@ -65,13 +69,16 @@ public class MedicalOrderService {
         };
         List<MedicalOrder> orders = list(forcedType, status, patientId, appointmentId);
         if (TECH_ROLES.contains(role)) {
-            return repository.staffRoom(actorId)
-                    .map(sr -> orders.stream().filter(o -> sr.roomId().equals(o.roomId())).toList())
+            List<MedicalOrder> queriedOrders = orders;
+            orders = repository.staffRoom(actorId)
+                    .map(sr -> queriedOrders.stream().filter(o -> sr.roomId().equals(o.roomId())).toList())
                     .orElse(List.of());
+        } else if ("OUTPATIENT_DOCTOR".equals(role)) {
+            orders = orders.stream().filter(o -> actorId.equals(o.orderingDoctorId())).toList();
         }
-        if ("OUTPATIENT_DOCTOR".equals(role)) {
-            return orders.stream().filter(o -> actorId.equals(o.orderingDoctorId())).toList();
-        }
+        String normalizedView = normalizeView(view);
+        orders = filterByView(orders, normalizedView);
+        auditListView(forcedType, status, patientId, appointmentId, normalizedView, actorId, role, orders);
         return orders;
     }
 
@@ -174,6 +181,67 @@ public class MedicalOrderService {
             throw new IllegalArgumentException("orderType 必须为 CHECK、LAB 或 DISPOSAL");
         }
         return type;
+    }
+
+    private static List<MedicalOrder> filterByView(List<MedicalOrder> orders, String view) {
+        return switch (view) {
+            case "DISPOSAL_ARRANGEMENT" -> orders.stream()
+                    .filter(order -> "UNPAID".equals(order.paymentStatus())
+                            || !Set.of("COMPLETED", "MISSED").contains(order.status()))
+                    .toList();
+            case "DISPOSAL_RECORD" -> orders.stream()
+                    .filter(order -> Set.of("COMPLETED", "MISSED").contains(order.status()))
+                    .toList();
+            default -> orders;
+        };
+    }
+
+    private void auditListView(String type, String status, String patientId, String appointmentId,
+            String view, String actorId, String role, List<MedicalOrder> orders) {
+        int resultCount = orders.size();
+        long disposalCount = orders.stream().filter(order -> "DISPOSAL".equals(order.orderType())).count();
+        Map<String, Object> details = new LinkedHashMap<>();
+        details.put("accessScope", "LIST");
+        if (type != null && !type.isBlank()) {
+            details.put("typeFilter", type);
+        }
+        if (status != null && !status.isBlank()) {
+            details.put("statusFilter", status);
+        }
+        if (appointmentId != null && !appointmentId.isBlank()) {
+            details.put("appointmentId", appointmentId);
+        }
+        if (!view.isBlank()) {
+            details.put("view", view);
+            details.put("auditSummary", auditSummary(type, view));
+        }
+        if (Set.of("OUTPATIENT_PAYMENT", "PAYMENT_RECORD").contains(view) && disposalCount > 0) {
+            details.put("relatedDisposalCount", disposalCount);
+        }
+        details.put("resultCount", resultCount);
+        auditPublisher.publish(
+                "MEDICAL_ORDER_LIST_VIEW",
+                "MEDICAL_ORDER",
+                null,
+                patientId,
+                appointmentId,
+                actorId,
+                role,
+                details);
+    }
+
+    private static String auditSummary(String type, String view) {
+        return switch (view) {
+            case "DISPOSAL_ARRANGEMENT" -> "查看了待处置安排";
+            case "DISPOSAL_RECORD" -> "查看了处置记录";
+            case "OUTPATIENT_PAYMENT" -> "查看了门诊缴费项目（含处置信息）";
+            case "PAYMENT_RECORD" -> "查看了缴费退费记录（含处置信息）";
+            default -> "DISPOSAL".equals(type) ? "查看了处置列表" : "查看了医技医嘱列表";
+        };
+    }
+
+    private static String normalizeView(String value) {
+        return value == null || value.isBlank() ? "" : value.trim().toUpperCase();
     }
 
     private void require(String value, String field) {

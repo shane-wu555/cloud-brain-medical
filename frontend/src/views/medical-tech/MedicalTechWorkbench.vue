@@ -1870,7 +1870,10 @@ onMounted(async () => {
   font-size: 20px; font-weight: 900; line-height: 1; flex-shrink: 0;
 }
 .wks-nav__title { font-size: 16px; font-weight: 600; }
-.wks-nav__right { display: flex; align-items: center; gap: 20px; font-size: 13px; }
+.wks-nav__right { display: flex; align-items: center; gap: 20px; font-size: 13px; font-family: inherit; line-height: 1; }
+.wks-nav__right > span,
+.wks-nav__right :deep(.el-button),
+.my-entry { height: 32px; display: inline-flex; align-items: center; font: inherit; line-height: 1; }
 .wks-nav__info { opacity: 0.9; }
 .wks-nav__date { opacity: 0.8; }
 
@@ -2810,7 +2813,6 @@ onMounted(async () => {
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.12);
   color: #fff;
-  font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
