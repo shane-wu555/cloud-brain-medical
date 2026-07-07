@@ -57,7 +57,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue';
+import { ref, watch } from 'vue';
 import { request } from '../../api/http';
 
 interface Department {
@@ -74,14 +74,18 @@ interface Doctor {
   specialty: string;
 }
 
+interface SearchResponse {
+  departments: Array<Record<string, unknown>>;
+  doctors: Array<Record<string, unknown>>;
+}
+
 const keyword = ref('');
-const departments = ref<Department[]>([]);
-const doctors = ref<Doctor[]>([]);
 const departmentResults = ref<Department[]>([]);
 const doctorResults = ref<Doctor[]>([]);
 const loading = ref(false);
 const searched = ref(false);
-const EXCLUDED_PATIENT_DEPARTMENT_NAMES = ['检查科', '检验科', '处置科', '药房', '系统管理', '收费处'];
+let searchTimer: ReturnType<typeof setTimeout> | undefined;
+let searchSequence = 0;
 
 function normalizeText(value: unknown) {
   if (typeof value === 'string') {
@@ -106,13 +110,13 @@ function toDepartment(item: Record<string, unknown>): Department {
   };
 }
 
-function toDoctor(item: Record<string, unknown>, department: Department): Doctor {
+function toDoctor(item: Record<string, unknown>): Doctor {
   return {
     id: normalizeText(item.id),
     name: normalizeText(item.name),
     title: normalizeText(item.title),
-    departmentId: normalizeText(item.departmentId) || department.id,
-    departmentName: department.name,
+    departmentId: normalizeText(item.departmentId),
+    departmentName: normalizeText(item.departmentName),
     specialty: normalizeText(item.specialty)
   };
 }
@@ -150,19 +154,6 @@ function doctorLabelNodes(doctor: Doctor) {
   return `${highlight(doctor.name)} ${escapeHtml(title)} ${escapeHtml(dept)}`;
 }
 
-function normalizeSearchText(value: string) {
-  return value.normalize('NFKC').toLocaleLowerCase().replace(/\s+/g, '');
-}
-
-function matches(value: string, query: string) {
-  return normalizeSearchText(value).includes(normalizeSearchText(query));
-}
-
-function isPatientSelectableDepartment(department: Department) {
-  const departmentName = normalizeSearchText(department.name);
-  return !EXCLUDED_PATIENT_DEPARTMENT_NAMES.some((name) => departmentName.includes(normalizeSearchText(name)));
-}
-
 function onKeywordInput(event: { detail: { value?: string } }) {
   const value = event.detail.value ?? '';
   if (keyword.value !== value) {
@@ -176,24 +167,63 @@ function onKeywordBlur(event: { detail: { value?: string } }) {
     keyword.value = value;
   }
   searched.value = !!keyword.value.trim();
-  applySearch();
+  scheduleSearch();
 }
 
-function applySearch() {
+function clearSearchResults() {
+  departmentResults.value = [];
+  doctorResults.value = [];
+}
+
+function scheduleSearch() {
+  if (searchTimer) {
+    clearTimeout(searchTimer);
+  }
+  searchTimer = setTimeout(() => {
+    runSearch();
+  }, 250);
+}
+
+async function runSearch() {
+  if (searchTimer) {
+    clearTimeout(searchTimer);
+    searchTimer = undefined;
+  }
   const query = keyword.value.trim();
   if (!query) {
-    departmentResults.value = [];
-    doctorResults.value = [];
+    searched.value = false;
+    loading.value = false;
+    clearSearchResults();
     return;
   }
 
-  departmentResults.value = departments.value.filter((item) => matches(item.name, query));
-  doctorResults.value = doctors.value.filter((item) => matches(item.name, query));
-}
-
-function runSearch() {
   searched.value = true;
-  applySearch();
+  loading.value = true;
+  const sequence = ++searchSequence;
+  try {
+    const response = await request<SearchResponse>({
+      url: `/catalog/patient-search?keyword=${encodeURIComponent(query)}&limit=20`,
+      method: 'GET'
+    });
+    if (sequence !== searchSequence) {
+      return;
+    }
+    departmentResults.value = (response.departments ?? [])
+      .map(toDepartment)
+      .filter((item) => item.id && item.name);
+    doctorResults.value = (response.doctors ?? [])
+      .map(toDoctor)
+      .filter((item) => item.id && item.name && item.departmentId);
+  } catch (error) {
+    if (sequence === searchSequence) {
+      clearSearchResults();
+      uni.showToast({ title: (error as Error).message, icon: 'none' });
+    }
+  } finally {
+    if (sequence === searchSequence) {
+      loading.value = false;
+    }
+  }
 }
 
 function runSearchFromAction() {
@@ -206,7 +236,16 @@ function runSearchFromConfirm() {
 
 watch(keyword, (value) => {
   searched.value = !!value.trim();
-  applySearch();
+  if (!value.trim()) {
+    if (searchTimer) {
+      clearTimeout(searchTimer);
+    }
+    searchSequence++;
+    loading.value = false;
+    clearSearchResults();
+    return;
+  }
+  scheduleSearch();
 });
 
 function goDepartment(department: Department) {
@@ -220,39 +259,6 @@ function goDoctor(doctor: Doctor) {
     url: `/pages/booking/index?departmentId=${encodeURIComponent(doctor.departmentId)}&doctorId=${encodeURIComponent(doctor.id)}&from=doctorSearch`
   });
 }
-
-async function loadSearchData() {
-  loading.value = true;
-  try {
-    const departmentList = await request<Record<string, unknown>[]>({ url: '/departments', method: 'GET' });
-    departments.value = departmentList
-      .map(toDepartment)
-      .filter((item) => item.id && item.name && isPatientSelectableDepartment(item));
-    applySearch();
-
-    const doctorGroups = await Promise.allSettled(
-      departments.value.map(async (department) => {
-        const doctorList = await request<Record<string, unknown>[]>({
-          url: `/doctors?departmentId=${department.id}`,
-          method: 'GET'
-        });
-        return doctorList.map((item) => toDoctor(item, department));
-      })
-    );
-    doctors.value = doctorGroups
-      .filter((result): result is PromiseFulfilledResult<Doctor[]> => result.status === 'fulfilled')
-      .flatMap((result) => result.value)
-      .filter((item) => item.id && item.name);
-    applySearch();
-  } catch (error) {
-    uni.showToast({ title: (error as Error).message, icon: 'none' });
-  } finally {
-    loading.value = false;
-    applySearch();
-  }
-}
-
-onMounted(loadSearchData);
 </script>
 
 <style scoped>

@@ -6,6 +6,7 @@ import com.cloudbrain.pharmacy.repository.PharmacyRepository;
 import com.cloudbrain.pharmacy.service.InventoryDemandForecastService;
 import com.cloudbrain.pharmacy.service.PharmacyService;
 import java.util.List;
+import java.util.Map;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -32,6 +33,12 @@ public class PharmacyController {
     public List<PharmacyRepository.Drug> drugs(@RequestParam(name = "keyword", required = false) String keyword,
                                                @RequestParam(name = "storageCondition", required = false) String storageCondition) {
         return service.drugs(keyword, storageCondition);
+    }
+
+    @PostMapping("/drugs/search-index/reindex")
+    @PreAuthorize("hasAnyRole('PHARMACY_STAFF','ADMIN')")
+    public Map<String, Integer> reindexDrugSearch() {
+        return Map.of("indexed", service.reindexDrugSearchIndex());
     }
 
     @PostMapping("/drugs/{id}/stock-in")

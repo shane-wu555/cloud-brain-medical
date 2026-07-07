@@ -242,8 +242,8 @@
             <div class="rx-section-hdr" style="margin-top:16px">
               <span>手动开处方</span>
             </div>
-            <el-input v-model="drugKeyword" clearable placeholder="搜索药品名称或规格" style="margin-bottom:10px" />
-            <el-table :data="filteredDrugs" size="small" :max-height="220">
+            <el-input v-model="drugKeyword" clearable placeholder="搜索药品名称或规格" style="margin-bottom:10px" @keyup.enter="loadDrugCatalog" @clear="loadDrugCatalog" />
+            <el-table :data="filteredDrugs" v-loading="loadingDrugs" size="small" :max-height="220">
               <el-table-column prop="drugName" label="药品" />
               <el-table-column prop="specification" label="规格" width="120" />
               <el-table-column prop="unitPrice" label="单价(元)" width="90" />
@@ -556,6 +556,8 @@ const reportDialogVisible = ref(false);
 const selectedReport = ref<MedicalReport>();
 const selectedLabResults = ref<LaboratoryResultItem[]>([]);
 const drugKeyword = ref('');
+const loadingDrugs = ref(false);
+let drugSearchTimer: number | undefined;
 type RxDraftItem = {
   drugId: string;
   drugName: string;
@@ -651,8 +653,7 @@ const filteredItems = computed(() => {
 });
 
 const filteredDrugs = computed(() => {
-  const kw = drugKeyword.value.trim().toLowerCase();
-  return kw ? drugs.value.filter(d => (d.drugName + d.specification).toLowerCase().includes(kw)) : drugs.value;
+  return drugs.value;
 });
 
 function parseDailyTimes(frequency?: string) {
@@ -708,6 +709,17 @@ function matchDrugForSuggestion(suggestion: Pick<AiDrugSuggestion, 'drugName' | 
   return drugs.value.find(d => d.drugName === name && (!spec || d.specification === spec))
     ?? drugs.value.find(d => d.drugName === name)
     ?? drugs.value.find(d => d.drugName.includes(name) || name.includes(d.drugName));
+}
+
+async function loadDrugCatalog() {
+  loadingDrugs.value = true;
+  try {
+    drugs.value = await getDrugs({ keyword: drugKeyword.value.trim() || undefined });
+  } catch {
+    ElMessage.warning('药品检索暂不可用');
+  } finally {
+    loadingDrugs.value = false;
+  }
 }
 
 function rxStatusLabel(status: string) {
@@ -1214,10 +1226,16 @@ onMounted(async () => {
   await loadQueue();
   records.value = await getMedicalRecords({});
   medicalItems.value = (await getMedicalItems()).filter(item => item.category !== 'DRUG');
-  getDrugs().then(list => { drugs.value = list; }).catch(() => {});
+  void loadDrugCatalog();
 });
 
 watch(recordForm, () => { if (!loadingRecord) dirty.value = true; }, { deep: true });
+watch(drugKeyword, () => {
+  if (drugSearchTimer) window.clearTimeout(drugSearchTimer);
+  drugSearchTimer = window.setTimeout(() => {
+    void loadDrugCatalog();
+  }, 300);
+});
 watch(mainTab, (tab) => {
   if (tab === 'rx') loadPrescriptions();
   if (tab === 'orders' && !medicalItems.value.length) {

@@ -9,14 +9,25 @@
             <view class="patient-name">{{ patient.name }}</view>
             <view class="muted">{{ idTypeLabel(patient.idType) }} {{ patient.idNumber }}</view>
             <view class="muted">{{ genderLabel(patient.gender) }} · {{ patient.birthDate || '未填出生日期' }}</view>
+            <view :class="['insurance-status', patient.medicalInsuranceBound && 'insurance-status--bound']">
+              {{ patient.medicalInsuranceBound ? patient.medicalInsuranceNo || '已绑定医保电子凭证' : '未绑定医保卡' }}
+            </view>
           </view>
-          <text
-            class="mini-action"
-            :disabled="auth.boundPatient?.id === patient.id"
-            @tap="bind(patient.id)"
-          >
-            {{ auth.boundPatient?.id === patient.id ? '已绑定' : '绑定' }}
-          </text>
+          <view class="patient-actions">
+            <text
+              class="mini-action"
+              :disabled="auth.boundPatient?.id === patient.id"
+              @tap="bind(patient.id)"
+            >
+              {{ auth.boundPatient?.id === patient.id ? '已绑定' : '绑定' }}
+            </text>
+            <text
+              :class="['mini-action', 'insurance-action', patient.medicalInsuranceBound && 'insurance-action--done']"
+              @tap="bindInsurance(patient.id)"
+            >
+              {{ patient.medicalInsuranceBound ? '已认证' : '微信医保认证' }}
+            </text>
+          </view>
         </view>
       </view>
 
@@ -59,6 +70,10 @@
       <button class="submit-button" :disabled="loading" @tap="submit()">
         {{ loading ? '提交中...' : '添加就诊人' }}
       </button>
+    </view>
+
+    <view class="logout-section">
+      <button class="submit-button logout-button" @tap="confirmLogout()">退出登录</button>
     </view>
   </view>
 </template>
@@ -199,6 +214,36 @@ function buildBirthDate() {
   return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
+function bindInsurance(patientId: string) {
+  try {
+    const patient = auth.patients.find((item) => item.id === patientId);
+    if (patient?.medicalInsuranceBound) {
+      uni.showToast({ title: '该就诊人已完成医保认证', icon: 'none' });
+      return;
+    }
+    auth.bindMedicalInsurance(patientId);
+    uni.showToast({ title: '微信医保认证成功', icon: 'success' });
+  } catch (error) {
+    uni.showToast({ title: (error as Error).message, icon: 'none' });
+  }
+}
+
+function confirmLogout() {
+  uni.showModal({
+    title: '退出登录',
+    content: '确定要退出当前账号吗？',
+    confirmText: '退出',
+    success(result) {
+      if (!result.confirm) {
+        return;
+      }
+
+      auth.logout();
+      uni.reLaunch({ url: '/pages/login/index' });
+    }
+  });
+}
+
 function fillBirthDateFromIdCard() {
   const idNumber = form.idNumber.trim().toUpperCase();
   if (form.idType !== 'ID_CARD' || !/^\d{17}[\dX]$/.test(idNumber)) {
@@ -262,6 +307,14 @@ function fillBirthDateFromIdCard() {
   border-bottom: 1px solid #e2e8f0;
 }
 
+.patient-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12rpx;
+  flex-shrink: 0;
+}
+
 .patient-name {
   color: #0f172a;
   font-size: 32rpx;
@@ -278,6 +331,33 @@ function fillBirthDateFromIdCard() {
   font-size: 24rpx;
   font-weight: 700;
   text-align: center;
+}
+
+.insurance-action {
+  min-width: 176rpx;
+  background: #ecfdf5;
+  color: #0f766e;
+}
+
+.insurance-action--done {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.insurance-status {
+  display: inline-block;
+  margin-top: 10rpx;
+  padding: 6rpx 14rpx;
+  border-radius: 999rpx;
+  background: #fff7ed;
+  color: #c2410c;
+  font-size: 23rpx;
+  font-weight: 700;
+}
+
+.insurance-status--bound {
+  background: #dcfce7;
+  color: #166534;
 }
 
 .empty {
@@ -367,5 +447,16 @@ function fillBirthDateFromIdCard() {
   font-size: 32rpx;
   font-weight: 800;
   line-height: 86rpx;
+}
+
+.logout-section {
+  padding: 0 30rpx 42rpx;
+}
+
+.logout-button {
+  margin: 10rpx 0 0;
+  background: #fff5f5;
+  color: #dc2626;
+  border: 1px solid #fecaca;
 }
 </style>

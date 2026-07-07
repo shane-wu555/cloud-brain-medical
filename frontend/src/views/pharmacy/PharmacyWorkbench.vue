@@ -277,6 +277,8 @@
 
           <div class="query-bar">
             <el-input v-model="drugKeyword" clearable placeholder="药品名称或编码" @keyup.enter="loadDrugs" @clear="loadDrugs" />
+            <el-button type="primary" :loading="loadingDrugs" @click="loadDrugs">搜索</el-button>
+            <el-button @click="resetDrugSearch">重置</el-button>
             <el-select v-model="drugStorageCondition" placeholder="存储条件" @change="loadDrugs">
               <el-option
                 v-for="option in storageConditionOptions"
@@ -285,8 +287,6 @@
                 :value="option.value"
               />
             </el-select>
-            <el-button type="primary" :loading="loadingDrugs" @click="loadDrugs">搜索</el-button>
-            <el-button @click="resetDrugSearch">重置</el-button>
           </div>
 
           <section class="work-card">

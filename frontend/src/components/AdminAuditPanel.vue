@@ -8,6 +8,15 @@
     </div>
 
     <div class="query-panel">
+      <el-input
+        v-model.trim="filters.keyword"
+        clearable
+        class="keyword-input"
+        placeholder="关键词搜索"
+        @keyup.enter="loadLogs"
+      />
+      <el-button type="primary" :loading="loading" @click="loadLogs">搜索</el-button>
+      <el-button @click="resetFilters">重置</el-button>
       <el-select v-model="filters.service" clearable filterable placeholder="服务">
         <el-option v-for="item in serviceOptions" :key="item.value" :label="item.label" :value="item.value" />
       </el-select>
@@ -17,7 +26,6 @@
       <el-select v-model="filters.resourceType" clearable filterable placeholder="资源类型">
         <el-option v-for="item in resourceOptions" :key="item.value" :label="item.label" :value="item.value" />
       </el-select>
-      <el-input v-model.trim="filters.userId" clearable placeholder="操作人 ID" />
       <el-date-picker
         v-model="timeRange"
         class="time-range"
@@ -27,9 +35,6 @@
         start-placeholder="开始时间"
         end-placeholder="结束时间"
       />
-      <el-input-number v-model="filters.limit" :min="20" :max="500" :step="20" controls-position="right" />
-      <el-button type="primary" :loading="loading" @click="loadLogs">查询</el-button>
-      <el-button @click="resetFilters">重置</el-button>
     </div>
 
     <section class="audit-card">
@@ -136,8 +141,7 @@ const filters = reactive({
   service: '',
   action: '',
   resourceType: '',
-  userId: '',
-  limit: 120
+  keyword: ''
 });
 
 const serviceLabelMap: Record<string, string> = {
@@ -359,10 +363,9 @@ async function loadLogs() {
       service: filters.service || undefined,
       action: filters.action || undefined,
       resourceType: filters.resourceType || undefined,
-      userId: filters.userId || undefined,
+      keyword: filters.keyword || undefined,
       from: from || undefined,
-      to: to || undefined,
-      limit: filters.limit
+      to: to || undefined
     });
     loadedOnce.value = true;
     lastLoadedAt.value = formatDateTime(new Date().toISOString());
@@ -378,8 +381,7 @@ function resetFilters() {
   filters.service = '';
   filters.action = '';
   filters.resourceType = '';
-  filters.userId = '';
-  filters.limit = 120;
+  filters.keyword = '';
   timeRange.value = [];
   void loadLogs();
 }
@@ -657,9 +659,12 @@ function errorMessage(error: unknown): string {
 }
 
 .query-panel :deep(.el-select),
-.query-panel :deep(.el-input),
-.query-panel :deep(.el-input-number) {
+.query-panel :deep(.el-input) {
   width: 170px;
+}
+
+.keyword-input {
+  width: 280px;
 }
 
 .time-range {
@@ -802,7 +807,7 @@ function errorMessage(error: unknown): string {
 
   .query-panel :deep(.el-select),
   .query-panel :deep(.el-input),
-  .query-panel :deep(.el-input-number),
+  .keyword-input,
   .time-range {
     width: 100%;
   }

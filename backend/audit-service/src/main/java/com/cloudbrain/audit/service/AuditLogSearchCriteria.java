@@ -10,6 +10,7 @@ public record AuditLogSearchCriteria(
         String userId,
         String patientId,
         String businessId,
+        String keyword,
         Instant from,
         Instant to,
         int limit) {

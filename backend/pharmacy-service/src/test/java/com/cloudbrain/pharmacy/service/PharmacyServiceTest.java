@@ -28,7 +28,8 @@ class PharmacyServiceTest {
     private final PharmacyRepository repository = mock(PharmacyRepository.class);
     private final PatientAccessClient patientAccessClient = mock(PatientAccessClient.class);
     private final AuditPublisher auditPublisher = mock(AuditPublisher.class);
-    private final PharmacyService service = new PharmacyService(repository, patientAccessClient, auditPublisher);
+    private final DrugSearchIndexService drugSearchIndexService = mock(DrugSearchIndexService.class);
+    private final PharmacyService service = new PharmacyService(repository, patientAccessClient, auditPublisher, drugSearchIndexService);
 
     @Test
     void unpaidPrescriptionCannotBeDispensed() {

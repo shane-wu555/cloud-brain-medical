@@ -22,18 +22,31 @@ public class PharmacyService {
     private final PharmacyRepository repository;
     private final PatientAccessClient patientAccessClient;
     private final AuditPublisher auditPublisher;
+    private final DrugSearchIndexService drugSearchIndexService;
 
     public PharmacyService(
             PharmacyRepository repository,
             PatientAccessClient patientAccessClient,
-            AuditPublisher auditPublisher) {
+            AuditPublisher auditPublisher,
+            DrugSearchIndexService drugSearchIndexService) {
         this.repository = repository;
         this.patientAccessClient = patientAccessClient;
         this.auditPublisher = auditPublisher;
+        this.drugSearchIndexService = drugSearchIndexService;
     }
 
     public List<PharmacyRepository.Drug> drugs(String keyword, String storageCondition) {
+        if (!blank(keyword)) {
+            var matchedIds = drugSearchIndexService.searchDrugIds(keyword, storageCondition, 100);
+            if (matchedIds.isPresent() && !matchedIds.get().isEmpty()) {
+                return repository.drugsByIds(matchedIds.get());
+            }
+        }
         return repository.drugs(keyword, storageCondition);
+    }
+
+    public int reindexDrugSearchIndex() {
+        return drugSearchIndexService.reindex(repository.drugs(null, null));
     }
 
     @Transactional
@@ -44,6 +57,7 @@ public class PharmacyService {
         String reason = blank(request.reason()) ? "stock-in" : request.reason().trim();
         repository.addStock(drugId, request.quantity(), operatorId, reason);
         PharmacyRepository.Drug drug = repository.drug(drugId);
+        drugSearchIndexService.index(drug);
         auditPublisher.publish(
                 "DRUG_STOCK_IN",
                 "DRUG",
