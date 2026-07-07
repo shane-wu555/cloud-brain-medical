@@ -25,9 +25,9 @@ export interface AuditLogQuery {
   userId?: string;
   patientId?: string;
   businessId?: string;
+  keyword?: string;
   from?: string;
   to?: string;
-  limit?: number;
 }
 
 export async function getAuditLogs(params: AuditLogQuery) {

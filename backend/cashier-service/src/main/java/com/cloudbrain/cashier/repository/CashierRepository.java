@@ -35,7 +35,11 @@ public class CashierRepository {
                 insert into payment
                     (id,business_type,business_id,patient_id,amount,method,status,operator_id)
                 values (?::uuid,?,?,?::uuid,?,?,'PENDING',?)
-                on conflict (business_type,business_id) do nothing
+                on conflict (business_type,business_id) do update set
+                    amount = excluded.amount,
+                    method = excluded.method,
+                    operator_id = excluded.operator_id
+                where payment.status = 'PENDING'
                 """,UUID.randomUUID().toString(),type,businessId,patientId,amount,method,operatorId);
         return findByBusiness(type,businessId);
     }

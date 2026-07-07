@@ -79,6 +79,67 @@ public class DoctorCatalogRepository {
                 rs.getString("room_id"), rs.getString("room_name")), args.toArray());
     }
 
+    public PatientSearchResult patientSearch(String keyword, int limit) {
+        String query = keyword == null ? "" : keyword.trim();
+        if (query.isBlank()) {
+            return new PatientSearchResult(List.of(), List.of());
+        }
+        int safeLimit = Math.max(1, Math.min(limit, 50));
+        String pattern = "%" + escapeLikePattern(query) + "%";
+        return new PatientSearchResult(searchPatientDepartments(pattern, safeLimit), searchPatientDoctors(pattern, safeLimit));
+    }
+
+    private List<Department> searchPatientDepartments(String pattern, int limit) {
+        return jdbc.query("""
+                select distinct d.id, d.name, d.description
+                from department d
+                join staff s on s.department_id = d.id
+                where d.active and s.active and s.role_type = 'OUTPATIENT_DOCTOR'
+                  and (
+                    d.name ilike ? escape '!'
+                    or (d.description is not null and d.description ilike ? escape '!')
+                  )
+                order by d.name
+                limit ?
+                """, (rs, row) -> new Department(rs.getString("id"), rs.getString("name"), rs.getString("description")),
+                pattern, pattern, limit);
+    }
+
+    private List<Doctor> searchPatientDoctors(String pattern, int limit) {
+        return jdbc.query("""
+                select s.id, s.employee_no, s.name, s.title, s.department_id, p.name as dept_name,
+                       s.specialty, s.role_type, r.id as room_id, r.name as room_name
+                from staff s
+                join department p on p.id = s.department_id
+                left join outpatient_doctor od on od.staff_id = s.id
+                left join outpatient_room r on r.id = od.room_id and r.active
+                where s.active and s.role_type = 'OUTPATIENT_DOCTOR' and p.active
+                  and (
+                    s.name ilike ? escape '!'
+                    or (s.title is not null and s.title ilike ? escape '!')
+                    or (s.specialty is not null and s.specialty ilike ? escape '!')
+                    or p.name ilike ? escape '!'
+                  )
+                order by
+                  case
+                    when s.name ilike ? escape '!' then 0
+                    when p.name ilike ? escape '!' then 1
+                    else 2
+                  end,
+                  s.name
+                limit ?
+                """, (rs, row) -> new Doctor(
+                rs.getString("id"), rs.getString("employee_no"), rs.getString("name"),
+                rs.getString("title"), rs.getString("department_id"), rs.getString("dept_name"),
+                rs.getString("specialty"), rs.getString("role_type"),
+                rs.getString("room_id"), rs.getString("room_name")),
+                pattern, pattern, pattern, pattern, pattern, pattern, limit);
+    }
+
+    private String escapeLikePattern(String value) {
+        return value.replace("!", "!!").replace("%", "!%").replace("_", "!_");
+    }
+
     @CacheEvict(cacheNames = {
             "doctor:schedulingDepartments",
             "doctor:doctors",
@@ -565,6 +626,7 @@ public class DoctorCatalogRepository {
     public record Doctor(String id, String employeeNo, String name, String title,
             String departmentId, String departmentName, String specialty, String roleType,
             String roomId, String roomName) implements Serializable {}
+    public record PatientSearchResult(List<Department> departments, List<Doctor> doctors) implements Serializable {}
     public record OutpatientRoom(String id, String departmentId, String name, String location) implements Serializable {}
     public record DoctorOperationsStats(int activeDoctors, int scheduledRooms, int totalRooms, int roomCoverageRate) implements Serializable {}
     public record DoctorEvent(String id, String doctorId, String doctorName, String departmentName,

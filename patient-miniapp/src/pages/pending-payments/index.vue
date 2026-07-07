@@ -12,6 +12,7 @@
           <view class="item-title">{{ paymentRecordTitle(item) }}</view>
           <view class="item-desc">{{ paymentRecordDescription(item) }}</view>
           <view v-if="paymentRecordNote(item)" class="muted">{{ paymentRecordNote(item) }}</view>
+          <view v-if="isInsurancePayment(item)" class="insurance-badge">医保支付</view>
           <view class="muted">{{ financialRecordTimeText(item) }}</view>
         </view>
         <view class="item-actions">
@@ -32,6 +33,10 @@
       <view class="card summary-card">
         <view class="summary-label">待缴总金额</view>
         <view class="summary-value">¥{{ amountText(totalAmount) }}</view>
+      </view>
+      <view class="card summary-card">
+        <view class="summary-label">医保参考自付</view>
+        <view class="summary-value insurance-value">¥{{ amountText(totalInsuranceAmount) }}</view>
       </view>
       <view class="card summary-card">
         <view class="summary-label">待缴项目数</view>
@@ -66,7 +71,8 @@
         </view>
         <view class="item-actions">
           <view class="amount">¥{{ amountText(item.amount) }}</view>
-          <button class="button mini-pay" @click="pay(item)">去缴费</button>
+          <view class="insurance-price">医保参考 ¥{{ amountText(item.insuranceAmount) }}</view>
+          <button class="button mini-pay" @click="openPaymentDialog(item)">去缴费</button>
         </view>
       </view>
     </view>
@@ -84,7 +90,8 @@
         </view>
         <view class="item-actions">
           <view class="amount">¥{{ amountText(item.amount) }}</view>
-          <button class="button mini-pay" @click="pay(item)">去缴费</button>
+          <view class="insurance-price">医保参考 ¥{{ amountText(item.insuranceAmount) }}</view>
+          <button class="button mini-pay" @click="openPaymentDialog(item)">去缴费</button>
         </view>
       </view>
     </view>
@@ -102,7 +109,8 @@
         </view>
         <view class="item-actions">
           <view class="amount">¥{{ amountText(item.amount) }}</view>
-          <button class="button mini-pay" @click="pay(item)">去缴费</button>
+          <view class="insurance-price">医保参考 ¥{{ amountText(item.insuranceAmount) }}</view>
+          <button class="button mini-pay" @click="openPaymentDialog(item)">去缴费</button>
         </view>
       </view>
     </view>
@@ -120,7 +128,8 @@
         </view>
         <view class="item-actions">
           <view class="amount">¥{{ amountText(item.amount) }}</view>
-          <button class="button mini-pay" @click="pay(item)">去缴费</button>
+          <view class="insurance-price">医保参考 ¥{{ amountText(item.insuranceAmount) }}</view>
+          <button class="button mini-pay" @click="openPaymentDialog(item)">去缴费</button>
         </view>
       </view>
     </view>
@@ -138,12 +147,47 @@
         </view>
         <view class="item-actions">
           <view class="amount">¥{{ amountText(item.amount) }}</view>
-          <button class="button mini-pay" @click="pay(item)">去缴费</button>
+          <view class="insurance-price">医保参考 ¥{{ amountText(item.insuranceAmount) }}</view>
+          <button class="button mini-pay" @click="openPaymentDialog(item)">去缴费</button>
         </view>
       </view>
     </view>
 
     <view v-if="!totalCount" class="card muted">暂无待缴费项目</view>
+    </view>
+
+    <view v-if="paymentDialogVisible && selectedPaymentItem" class="payment-mask">
+      <view class="payment-dialog" @tap.stop>
+        <view class="dialog-title">选择支付方式</view>
+        <view class="dialog-subtitle">{{ selectedPaymentItem.title }}</view>
+        <view class="dialog-amount">
+          <text>{{ dialogPaymentMethod === 'MEDICAL_INSURANCE' ? '医保参考自付' : '应付金额' }}</text>
+          <strong>¥{{ amountText(dialogPayAmount) }}</strong>
+        </view>
+        <view class="method-list">
+          <view
+            :class="['method-button', dialogPaymentMethod === 'WECHAT' && 'method-button--active']"
+            @tap.stop="dialogPaymentMethod = 'WECHAT'"
+          >
+            微信支付
+          </view>
+          <view
+            :class="['method-button', dialogPaymentMethod === 'MEDICAL_INSURANCE' && 'method-button--active', !insuranceBound && 'method-button--disabled']"
+            @tap.stop="selectDialogInsurancePayment()"
+          >
+            医保卡支付
+          </view>
+        </view>
+        <view v-if="!insuranceBound" class="insurance-tip">
+          医保卡需要先前往就诊人管理页面完成微信医保认证。
+          <text class="insurance-link" @tap.stop="goInsuranceBinding()">去绑定认证</text>
+        </view>
+        <view v-else class="insurance-tip insurance-tip--ok">当前就诊人已完成医保认证。</view>
+        <view class="dialog-actions">
+          <button class="dialog-cancel" @tap.stop="closePaymentDialog()">取消</button>
+          <button class="dialog-confirm" @tap.stop="confirmPayment()">确认缴费</button>
+        </view>
+      </view>
     </view>
   </view>
 </template>
@@ -173,6 +217,7 @@ interface PaymentOrder {
   businessId: string;
   amount: number;
   status: string;
+  paymentMethod?: string;
   createdAt?: string;
   paidAt?: string;
 }
@@ -232,6 +277,7 @@ interface PendingItem {
   description: string;
   note?: string;
   amount: number;
+  insuranceAmount: number;
   sortTime: string;
 }
 
@@ -246,6 +292,9 @@ const recordMedicalOrders = ref<MedicalOrder[]>([]);
 const recordPrescriptions = ref<Prescription[]>([]);
 const loadWarning = ref('');
 const mode = ref<'pending' | 'record'>('pending');
+const paymentDialogVisible = ref(false);
+const selectedPaymentItem = ref<PendingItem | null>(null);
+const dialogPaymentMethod = ref<'WECHAT' | 'MEDICAL_INSURANCE'>('WECHAT');
 const registeredAppointmentStatuses = new Set(['WAITING', 'CALLED', 'IN_VISIT', 'REVISIT_WAITING']);
 
 const checkItems = computed(() => medicalOrderItems.value.filter((item) => item.feeType === 'CHECK'));
@@ -259,7 +308,16 @@ const totalAmount = computed(() =>
   [...registrationItems.value, ...medicalOrderItems.value, ...prescriptionItems.value]
     .reduce((sum, item) => sum + Number(item.amount ?? 0), 0)
 );
+const totalInsuranceAmount = computed(() =>
+  [...registrationItems.value, ...medicalOrderItems.value, ...prescriptionItems.value]
+    .reduce((sum, item) => sum + Number(item.insuranceAmount ?? 0), 0)
+);
 const totalCount = computed(() => registrationItems.value.length + medicalOrderItems.value.length + prescriptionItems.value.length);
+const insuranceBound = computed(() => auth.isMedicalInsuranceBound(auth.boundPatient?.id));
+const dialogPayAmount = computed(() => {
+  if (!selectedPaymentItem.value) return 0;
+  return payableAmount(selectedPaymentItem.value, dialogPaymentMethod.value);
+});
 
 const sortedFinancialRecords = computed(() =>
   [
@@ -293,6 +351,46 @@ function summarizeCategory(key: string, label: string, items: PendingItem[]) {
 
 function amountText(value: number) {
   return Number(value ?? 0).toFixed(2);
+}
+
+function insuranceAmount(item: Pick<PendingItem, 'feeType' | 'amount'>) {
+  const ratio = item.feeType === 'REGISTRATION' ? 0.7 : 0.6;
+  const value = Math.max(0.01, Number(item.amount ?? 0) * ratio);
+  return Math.round(value * 100) / 100;
+}
+
+function payableAmount(item: PendingItem, method: 'WECHAT' | 'MEDICAL_INSURANCE') {
+  return method === 'MEDICAL_INSURANCE' ? item.insuranceAmount : item.amount;
+}
+
+function openPaymentDialog(item: PendingItem) {
+  selectedPaymentItem.value = item;
+  dialogPaymentMethod.value = 'WECHAT';
+  paymentDialogVisible.value = true;
+}
+
+function closePaymentDialog() {
+  paymentDialogVisible.value = false;
+  selectedPaymentItem.value = null;
+  dialogPaymentMethod.value = 'WECHAT';
+}
+
+function selectDialogInsurancePayment() {
+  if (!insuranceBound.value) {
+    uni.showToast({ title: '请先前往就诊人管理绑定认证', icon: 'none' });
+    return;
+  }
+  dialogPaymentMethod.value = 'MEDICAL_INSURANCE';
+}
+
+function goInsuranceBinding() {
+  closePaymentDialog();
+  uni.navigateTo({ url: '/pages/real-name/index' });
+}
+
+async function confirmPayment() {
+  if (!selectedPaymentItem.value) return;
+  await pay(selectedPaymentItem.value, dialogPaymentMethod.value);
 }
 
 function businessTypeLabel(type: string) {
@@ -361,19 +459,33 @@ function paymentRecordNote(item: FinancialRecord) {
   if (item.kind === 'refund') {
     return item.operatorId ? `退费操作员：${item.operatorId}` : '';
   }
+  const methodText = item.paymentMethod ? `支付方式：${paymentMethodLabel(item.paymentMethod)}；` : '';
   if (item.businessType === 'APPOINTMENT') {
     const appointment = recordAppointmentMap.value.get(item.businessId);
-    return appointment ? `挂号状态：${appointmentStatusLabel(appointment)}` : '';
+    return appointment ? `${methodText}挂号状态：${appointmentStatusLabel(appointment)}` : methodText;
   }
   if (item.businessType === 'MEDICAL_ORDER') {
     const order = recordMedicalOrderMap.value.get(item.businessId);
-    return order ? `项目状态：${medicalOrderStatusLabel(order.status, order.paymentStatus)}` : '';
+    return order ? `${methodText}项目状态：${medicalOrderStatusLabel(order.status, order.paymentStatus)}` : methodText;
   }
   if (item.businessType === 'PRESCRIPTION') {
     const prescription = recordPrescriptionMap.value.get(item.businessId);
-    return prescription ? `处方状态：${prescriptionStatusLabel(prescription.status)}` : '';
+    return prescription ? `${methodText}处方状态：${prescriptionStatusLabel(prescription.status)}` : methodText;
   }
-  return '';
+  return methodText;
+}
+
+function isInsurancePayment(item: FinancialRecord) {
+  return item.kind === 'payment' && item.paymentMethod?.includes('MEDICAL_INSURANCE');
+}
+
+function paymentMethodLabel(method?: string) {
+  return {
+    WECHAT: '微信支付',
+    WECHAT_TEST: '微信支付',
+    MEDICAL_INSURANCE: '医保卡支付',
+    MEDICAL_INSURANCE_TEST: '医保卡支付'
+  }[method ?? ''] ?? (method || '模拟支付');
 }
 
 function paymentStatusLabel(status: string) {
@@ -559,6 +671,10 @@ async function load() {
       description: `${item.visitDate} ${item.period}`,
       note: `当前状态：${appointmentStatusLabel(item)}，挂号后需完成缴费才能正常就诊`,
       amount: paymentByBusinessId.get(item.id)?.amount ?? 0.01,
+      insuranceAmount: insuranceAmount({
+        feeType: 'REGISTRATION',
+        amount: paymentByBusinessId.get(item.id)?.amount ?? 0.01
+      }),
       sortTime: pendingAppointmentSortTime(item)
     }))
     .sort((left, right) => right.sortTime.localeCompare(left.sortTime));
@@ -573,6 +689,7 @@ async function load() {
       description: `${orderTypeLabel(item.orderType)} · ${urgencyLabel(item.urgency)}`,
       note: `当前状态：${medicalOrderStatusLabel(item.status, item.paymentStatus)}`,
       amount: item.amount,
+      insuranceAmount: insuranceAmount({ feeType: item.orderType, amount: item.amount }),
       sortTime: item.createdAt || ''
     }))
     .sort((left, right) => right.sortTime.localeCompare(left.sortTime));
@@ -587,6 +704,7 @@ async function load() {
       description: item.diagnosis || '待医生确认诊断',
       note: `当前状态：${prescriptionStatusLabel(item.status)}`,
       amount: item.totalAmount,
+      insuranceAmount: insuranceAmount({ feeType: 'DRUG', amount: item.totalAmount }),
       sortTime: item.confirmedAt || item.createdAt || ''
     }))
     .sort((left, right) => right.sortTime.localeCompare(left.sortTime));
@@ -601,7 +719,7 @@ async function load() {
   }
 }
 
-async function pay(item: PendingItem) {
+async function pay(item: PendingItem, method: 'WECHAT' | 'MEDICAL_INSURANCE') {
   let patient;
   try {
     patient = auth.requireBoundPatient();
@@ -611,6 +729,11 @@ async function pay(item: PendingItem) {
     return;
   }
   try {
+    if (method === 'MEDICAL_INSURANCE' && !insuranceBound.value) {
+      uni.showToast({ title: '请先前往就诊人管理绑定认证', icon: 'none' });
+      return;
+    }
+    const channelTradePrefix = method === 'MEDICAL_INSURANCE' ? 'mi' : 'wx';
     await request({
       url: '/payments/orders',
       method: 'POST',
@@ -618,8 +741,8 @@ async function pay(item: PendingItem) {
         businessType: item.businessType,
         businessId: item.businessId,
         patientId: patient.id,
-        amount: item.amount,
-        paymentMethod: 'WECHAT_TEST'
+        amount: payableAmount(item, method),
+        paymentMethod: `${method}_TEST`
       }
     });
     await request({
@@ -629,11 +752,12 @@ async function pay(item: PendingItem) {
         businessType: item.businessType,
         businessId: item.businessId,
         patientId: patient.id,
-        channel: 'WECHAT',
-        channelTradeNo: `wx-${item.businessType.toLowerCase()}-${item.businessId}-${Date.now()}`
+        channel: method,
+        channelTradeNo: `${channelTradePrefix}-${item.businessType.toLowerCase()}-${item.businessId}-${Date.now()}`
       }
     });
-    uni.showToast({ title: '缴费成功', icon: 'success' });
+    uni.showToast({ title: method === 'MEDICAL_INSURANCE' ? '医保缴费成功' : '缴费成功', icon: 'success' });
+    closePaymentDialog();
     await load();
   } catch (error) {
     uni.showToast({ title: (error as Error).message, icon: 'none' });
@@ -646,7 +770,7 @@ onShow(load);
 <style scoped>
 .summary-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 20rpx;
   margin-bottom: 20rpx;
 }
@@ -677,6 +801,137 @@ onShow(load);
   color: #0f766e;
   font-size: 42rpx;
   font-weight: 700;
+}
+
+.insurance-value {
+  color: #15803d;
+}
+
+.method-button {
+  flex: 1;
+  min-width: 0;
+  height: 64rpx;
+  padding: 0 18rpx;
+  border: 1px solid #dbe6ef;
+  border-radius: 12rpx;
+  background: #f8fafc;
+  color: #334155;
+  font-size: 24rpx;
+  font-weight: 700;
+  line-height: 64rpx;
+  text-align: center;
+}
+
+.method-button--active {
+  border-color: #0f766e;
+  background: #ecfdf5;
+  color: #0f766e;
+}
+
+.method-button--disabled {
+  color: #94a3b8;
+  background: #f1f5f9;
+}
+
+.payment-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 24rpx;
+  background: rgba(15, 23, 42, 0.42);
+}
+
+.payment-dialog {
+  width: 100%;
+  padding: 30rpx;
+  border-radius: 24rpx;
+  background: #fff;
+  box-shadow: 0 24rpx 60rpx rgba(15, 23, 42, 0.2);
+}
+
+.dialog-title {
+  color: #0f172a;
+  font-size: 34rpx;
+  font-weight: 800;
+}
+
+.dialog-subtitle {
+  margin-top: 8rpx;
+  color: #64748b;
+  font-size: 26rpx;
+}
+
+.dialog-amount {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 24rpx;
+  padding: 20rpx;
+  border-radius: 16rpx;
+  background: #f8fafc;
+}
+
+.dialog-amount text {
+  color: #64748b;
+  font-size: 26rpx;
+}
+
+.dialog-amount strong {
+  color: #b45309;
+  font-size: 42rpx;
+}
+
+.method-list {
+  display: flex;
+  gap: 16rpx;
+  margin-top: 24rpx;
+}
+
+.insurance-tip {
+  margin-top: 18rpx;
+  color: #c2410c;
+  font-size: 25rpx;
+  line-height: 1.6;
+}
+
+.insurance-tip--ok {
+  color: #15803d;
+}
+
+.insurance-link {
+  margin-left: 10rpx;
+  color: #0f766e;
+  font-weight: 800;
+}
+
+.dialog-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16rpx;
+  margin-top: 28rpx;
+}
+
+.dialog-cancel,
+.dialog-confirm {
+  height: 76rpx;
+  margin: 0;
+  border-radius: 12rpx;
+  font-size: 28rpx;
+  font-weight: 800;
+  line-height: 76rpx;
+}
+
+.dialog-cancel {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.dialog-confirm {
+  background: #0f766e;
+  color: #fff;
 }
 
 .section-head {
@@ -763,6 +1018,22 @@ onShow(load);
 .amount {
   color: #b45309;
   font-size: 30rpx;
+  font-weight: 700;
+}
+
+.insurance-price {
+  color: #15803d;
+  font-size: 23rpx;
+  font-weight: 700;
+}
+
+.insurance-badge {
+  align-self: flex-start;
+  padding: 5rpx 14rpx;
+  border-radius: 999rpx;
+  background: #dcfce7;
+  color: #166534;
+  font-size: 22rpx;
   font-weight: 700;
 }
 

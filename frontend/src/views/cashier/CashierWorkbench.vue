@@ -69,6 +69,11 @@
                 <strong class="amount">￥{{ amountText(row.amount) }}</strong>
               </template>
             </el-table-column>
+            <el-table-column label="医保参考" width="130" align="right">
+              <template #default="{ row }">
+                <span class="insurance-amount">￥{{ amountText(row.insuranceAmount) }}</span>
+              </template>
+            </el-table-column>
             <el-table-column label="操作" width="100" fixed="right">
               <template #default="{ row }">
                 <el-button type="primary" link :loading="qrPreparingKey === row.businessKey" @click="openQr(row)">
@@ -169,6 +174,7 @@
                 <div>
                   <span>挂号费</span>
                   <strong>￥{{ selectedRegistrationFeeText }}</strong>
+                  <em>医保参考 ￥{{ selectedRegistrationInsuranceFeeText }}</em>
                 </div>
                 <el-button type="primary" :loading="registering" :disabled="!canRegister" @click="register">
                   挂号并收费
@@ -292,6 +298,12 @@
             <el-table-column label="方式" width="130">
               <template #default="{ row }">{{ paymentMethodLabel(row.paymentMethod) }}</template>
             </el-table-column>
+            <el-table-column label="医保" width="90">
+              <template #default="{ row }">
+                <el-tag v-if="isInsurancePayment(row)" type="success" effect="plain" size="small">是</el-tag>
+                <span v-else class="muted-cell">否</span>
+              </template>
+            </el-table-column>
             <el-table-column label="状态" width="100">
               <template #default="{ row }">
                 <el-tag :type="paymentTagType(row.status)" effect="plain" size="small">{{ paymentOrderStatusLabel(row.status) }}</el-tag>
@@ -356,7 +368,8 @@
         <div class="qr-meta">
           <strong>{{ qrDialog.item.patientName }} · {{ feeTypeLabel(qrDialog.item.feeType) }}</strong>
           <span>{{ qrDialog.item.title }}</span>
-          <em>￥{{ amountText(qrDialog.item.amount) }}</em>
+          <em>￥{{ amountText(currentQrAmount) }}</em>
+          <span v-if="qrDialog.channel === 'MEDICAL_INSURANCE'" class="qr-meta__insurance">医保支付参考价</span>
         </div>
         <div class="qr-channel-picker">
           <button
@@ -365,7 +378,7 @@
             type="button"
             :class="['qr-channel-button', qrDialog.channel === option.value && 'qr-channel-button--active']"
             :disabled="qrDialog.status === 'PAID'"
-            @click="qrDialog.channel = option.value"
+            @click="changeQrChannel(option.value)"
           >
             <strong>{{ option.action }}</strong>
             <span>{{ option.label }}</span>
@@ -470,6 +483,7 @@ interface PendingFeeItem {
   title: string;
   description: string;
   amount: number;
+  insuranceAmount: number;
   sortTime: string;
 }
 
@@ -625,6 +639,7 @@ const slotRoomNameMap = computed(() => {
 });
 const selectedRegistrationFee = computed(() => selectedScheduleOption.value ? registrationFee(selectedScheduleOption.value.schedule.doctorId) : 15);
 const selectedRegistrationFeeText = computed(() => amountText(selectedRegistrationFee.value));
+const selectedRegistrationInsuranceFeeText = computed(() => amountText(insuranceAmount('REGISTRATION', selectedRegistrationFee.value)));
 const canRegister = computed(() => Boolean(canConfirmPatient.value && selectedScheduleOption.value && selectedScheduleOption.value.slot.available > 0));
 
 const appointmentMap = computed(() => new Map(appointments.value.map(item => [item.id, item])));
@@ -651,6 +666,7 @@ const pendingItems = computed<PendingFeeItem[]>(() => {
       title: `${item.departmentName} · ${item.doctorName}`,
       description: `${item.visitDate} ${normalizeStartTime(item.startTime) || item.period} · ${item.businessNo}`,
       amount: Number(pendingPaymentMap.value.get(`APPOINTMENT:${item.id}`)?.amount ?? registrationFee(item.doctorId)),
+      insuranceAmount: insuranceAmount('REGISTRATION', Number(pendingPaymentMap.value.get(`APPOINTMENT:${item.id}`)?.amount ?? registrationFee(item.doctorId))),
       sortTime: `${item.visitDate} ${normalizeStartTime(item.startTime) || '00:00'}`
     }));
 
@@ -666,6 +682,7 @@ const pendingItems = computed<PendingFeeItem[]>(() => {
       title: item.itemName,
       description: `${feeTypeLabel(item.orderType as FeeType)} · ${urgencyLabel(item.urgency)}${item.bodyPart ? ` · ${item.bodyPart}` : ''}`,
       amount: Number(item.amount ?? 0),
+      insuranceAmount: insuranceAmount(item.orderType as FeeType, Number(item.amount ?? 0)),
       sortTime: item.id
     }));
 
@@ -681,6 +698,7 @@ const pendingItems = computed<PendingFeeItem[]>(() => {
       title: item.prescriptionNo || '处方药费',
       description: prescriptionDescription(item),
       amount: Number(item.totalAmount ?? 0),
+      insuranceAmount: insuranceAmount('DRUG', Number(item.totalAmount ?? 0)),
       sortTime: item.id
     }));
 
@@ -741,6 +759,10 @@ const filteredDrugReturns = computed(() => {
 const currentQrChannel = computed(
   () => paymentChannelOptions.find(item => item.value === qrDialog.channel) ?? paymentChannelOptions[0]
 );
+const currentQrAmount = computed(() => {
+  if (!qrDialog.item) return 0;
+  return qrDialog.channel === 'MEDICAL_INSURANCE' ? qrDialog.item.insuranceAmount : qrDialog.item.amount;
+});
 
 const configuredScanBaseUrl = (import.meta.env.VITE_PAYMENT_SCAN_BASE_URL ?? '').trim().replace(/\/+$/, '');
 
@@ -1066,17 +1088,18 @@ function matchesPatientSearch(patientId: string, patientName: string, text: stri
 async function openQr(item: PendingFeeItem) {
   qrPreparingKey.value = item.businessKey;
   try {
+    const channel = defaultQrChannel();
     const payment = await createPaymentOrder({
       businessType: item.businessType,
       businessId: item.businessId,
       patientId: item.patientId,
-      amount: item.amount,
-      paymentMethod: `${defaultQrChannel()}_TEST`
+      amount: channel === 'MEDICAL_INSURANCE' ? item.insuranceAmount : item.amount,
+      paymentMethod: `${channel}_TEST`
     });
     qrDialog.item = item;
     qrDialog.checking = false;
     qrDialog.paymentId = payment.id;
-    qrDialog.channel = defaultQrChannel();
+    qrDialog.channel = channel;
     qrDialog.status = 'PENDING';
     qrDialog.visible = true;
     void loadQrSvg();
@@ -1094,6 +1117,28 @@ async function openQr(item: PendingFeeItem) {
 
 function defaultQrChannel(): PaymentChannel {
   return 'WECHAT';
+}
+
+async function changeQrChannel(channel: PaymentChannel) {
+  if (qrDialog.status === 'PAID' || !qrDialog.item) return;
+  if (qrDialog.channel === channel) return;
+  const item = qrDialog.item;
+  try {
+    qrDialog.qrLoading = true;
+    const payment = await createPaymentOrder({
+      businessType: item.businessType,
+      businessId: item.businessId,
+      patientId: item.patientId,
+      amount: channel === 'MEDICAL_INSURANCE' ? item.insuranceAmount : item.amount,
+      paymentMethod: `${channel}_TEST`
+    });
+    qrDialog.paymentId = payment.id;
+    qrDialog.channel = channel;
+  } catch (error) {
+    ElMessage.error(errorMessage(error, '切换支付方式失败'));
+  } finally {
+    qrDialog.qrLoading = false;
+  }
 }
 
 function startQrStatusPolling() {
@@ -1411,7 +1456,7 @@ function summarize(key: FeeType, label: string) {
 
 function scheduleLabel(item: ScheduleOption) {
   const dept = departments.value.find(department => department.id === item.schedule.departmentId)?.name ?? '';
-  return `${dept} · ${item.schedule.doctorName} · ${item.schedule.workDate} ${item.schedule.period} ${item.slot.startTime.slice(0, 5)} · ￥${registrationFeeText(item.schedule.doctorId)} · 剩余 ${item.slot.available}`;
+  return `${dept} · ${item.schedule.doctorName} · ${item.schedule.workDate} ${item.schedule.period} ${item.slot.startTime.slice(0, 5)} · ￥${registrationFeeText(item.schedule.doctorId)} · 医保参考￥${amountText(insuranceAmount('REGISTRATION', registrationFee(item.schedule.doctorId)))} · 剩余 ${item.slot.available}`;
 }
 
 function isSeniorDoctorTitle(title: string) {
@@ -1425,6 +1470,12 @@ function registrationFee(doctorId: string) {
 
 function registrationFeeText(doctorId: string) {
   return amountText(registrationFee(doctorId));
+}
+
+function insuranceAmount(feeType: FeeType, amount: number) {
+  const ratio = feeType === 'REGISTRATION' ? 0.7 : 0.6;
+  const value = Math.max(0.01, Number(amount ?? 0) * ratio);
+  return Math.round(value * 100) / 100;
 }
 
 function normalizeStartTime(value: Appointment['startTime']) {
@@ -1499,6 +1550,10 @@ function paymentMethodLabel(method?: string) {
     CASH: '现金',
     CARD: '银行卡'
   }[method ?? ''] ?? (method || '-');
+}
+
+function isInsurancePayment(item: PaymentOrder) {
+  return item.paymentMethod?.includes('MEDICAL_INSURANCE') ?? false;
 }
 
 function urgencyLabel(value: string) {
@@ -1837,6 +1892,15 @@ onBeforeUnmount(() => {
   font-style: normal;
 }
 
+.registration-footer em {
+  display: block;
+  margin-top: 4px;
+  color: #15803d;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 700;
+}
+
 .registration-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -1913,6 +1977,11 @@ onBeforeUnmount(() => {
   color: #b45309;
 }
 
+.insurance-amount {
+  color: #15803d;
+  font-weight: 700;
+}
+
 .muted-cell {
   color: #94a3b8;
 }
@@ -1941,6 +2010,11 @@ onBeforeUnmount(() => {
   font-size: 22px;
   font-weight: 700;
   font-style: normal;
+}
+
+.qr-meta__insurance {
+  color: #15803d !important;
+  font-weight: 700;
 }
 
 .qr-channel-picker {

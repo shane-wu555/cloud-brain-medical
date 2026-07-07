@@ -13,6 +13,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -26,7 +27,7 @@ public class PharmacyRepository {
     }
 
     public List<Drug> drugs(String keyword, String storageCondition) {
-        String like = keyword == null || keyword.isBlank() ? null : "%" + keyword.trim() + "%";
+        String like = keyword == null || keyword.isBlank() ? null : "%" + keyword.trim().toLowerCase() + "%";
         StringBuilder sql = new StringBuilder("""
                 select d.*, s.quantity, s.warning_threshold
                 from drug d
@@ -35,7 +36,18 @@ public class PharmacyRepository {
                 """);
         List<Object> args = new ArrayList<>();
         if (like != null) {
-            sql.append(" and (d.drug_name like ? or d.code like ?)");
+            sql.append("""
+                    and (
+                        lower(d.drug_name) like ?
+                        or lower(d.code) like ?
+                        or lower(d.specification) like ?
+                        or lower(d.dosage_form) like ?
+                        or lower(d.storage_condition) like ?
+                    )
+                    """);
+            args.add(like);
+            args.add(like);
+            args.add(like);
             args.add(like);
             args.add(like);
         }
@@ -45,6 +57,32 @@ public class PharmacyRepository {
         }
         sql.append(" order by case when s.quantity <= s.warning_threshold then 0 else 1 end, d.dosage_form, d.drug_name, d.code");
         return jdbc.query(sql.toString(), (rs, row) -> drug(rs), args.toArray());
+    }
+
+    public List<Drug> drugsByIds(List<String> drugIds) {
+        List<String> ids = drugIds.stream()
+                .filter(id -> id != null && !id.isBlank())
+                .distinct()
+                .toList();
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        String placeholders = ids.stream()
+                .map(id -> "?::uuid")
+                .collect(java.util.stream.Collectors.joining(","));
+        List<Drug> rows = jdbc.query("""
+                select d.*, s.quantity, s.warning_threshold
+                from drug d
+                join drug_stock s on s.drug_id = d.id
+                where d.id in (""" + placeholders + """
+                ) and d.active = true
+                """, (rs, row) -> drug(rs), ids.toArray());
+        Map<String, Drug> byId = new java.util.LinkedHashMap<>();
+        rows.forEach(drug -> byId.put(drug.id(), drug));
+        return ids.stream()
+                .map(byId::get)
+                .filter(java.util.Objects::nonNull)
+                .toList();
     }
 
     public Drug drug(String drugId) {

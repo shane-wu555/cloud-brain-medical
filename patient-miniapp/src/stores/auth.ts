@@ -20,6 +20,8 @@ export interface PatientProfile {
   idNumber: string;
   gender: string;
   birthDate?: string;
+  medicalInsuranceBound?: boolean;
+  medicalInsuranceNo?: string;
 }
 
 interface PatientAccountState {
@@ -45,12 +47,17 @@ function mergeUser(user: PatientUser): PatientUser {
   };
 }
 
+function patientStorageKey(accountId?: string) {
+  return `bound_patient_${accountId || 'anonymous'}`;
+}
+
 export const useAuthStore = defineStore('auth', {
   state: () => ({
     token: '',
     user: null as PatientUser | null,
     patients: [] as PatientProfile[],
-    boundPatient: null as PatientProfile | null
+    boundPatient: null as PatientProfile | null,
+    insuranceBindings: {} as Record<string, string>
   }),
   getters: {
     hasBoundPatient: (state) => !!state.boundPatient,
@@ -62,9 +69,27 @@ export const useAuthStore = defineStore('auth', {
       this.user = uni.getStorageSync('current_user') || null;
       this.patients = uni.getStorageSync('patient_profiles') || [];
       this.boundPatient = uni.getStorageSync('bound_patient') || null;
+      this.insuranceBindings = uni.getStorageSync('medical_insurance_bindings') || {};
       if (this.user) {
         this.user = mergeUser(this.user);
         uni.setStorageSync('current_user', this.user);
+      }
+      this.applyInsuranceBindings();
+    },
+    logout() {
+      const accountId = this.user?.id;
+      this.token = '';
+      this.user = null;
+      this.patients = [];
+      this.boundPatient = null;
+      this.insuranceBindings = {};
+      uni.removeStorageSync('access_token');
+      uni.removeStorageSync('current_user');
+      uni.removeStorageSync('patient_profiles');
+      uni.removeStorageSync('bound_patient');
+      uni.removeStorageSync('medical_insurance_bindings');
+      if (accountId) {
+        uni.removeStorageSync(patientStorageKey(accountId));
       }
     },
     async login(username: string, password: string) {
@@ -123,9 +148,19 @@ export const useAuthStore = defineStore('auth', {
     async loadProfile() {
       const state = await request<PatientAccountState>({ url: '/patients/me', method: 'GET' });
       this.patients = state.patients || state.profiles || [];
-      this.boundPatient = state.boundPatient || state.bound || null;
+      const scopedBoundPatient = this.user?.id ? uni.getStorageSync(patientStorageKey(this.user.id)) : null;
+      const storedBoundPatient = scopedBoundPatient || uni.getStorageSync('bound_patient') || null;
+      const serverBoundPatient = state.boundPatient || state.bound || null;
+      const preferredBoundPatient = storedBoundPatient && this.patients.some((patient) => patient.id === storedBoundPatient.id)
+        ? storedBoundPatient
+        : serverBoundPatient;
+      this.boundPatient = preferredBoundPatient;
+      this.applyInsuranceBindings();
       uni.setStorageSync('patient_profiles', this.patients);
       uni.setStorageSync('bound_patient', this.boundPatient);
+      if (this.user?.id && this.boundPatient) {
+        uni.setStorageSync(patientStorageKey(this.user.id), this.boundPatient);
+      }
       return state;
     },
     async addPatient(payload: AddPatientPayload) {
@@ -143,9 +178,50 @@ export const useAuthStore = defineStore('auth', {
         method: 'PUT',
         data: { patientId }
       });
-      this.boundPatient = profile;
+      const localProfile = this.patients.find((patient) => patient.id === patientId) || profile;
+      this.boundPatient = {
+        ...localProfile,
+        medicalInsuranceBound: Boolean(this.insuranceBindings[patientId]),
+        medicalInsuranceNo: this.insuranceBindings[patientId]
+      };
+      uni.setStorageSync('bound_patient', this.boundPatient);
+      if (this.user?.id) {
+        uni.setStorageSync(patientStorageKey(this.user.id), this.boundPatient);
+      }
       await this.loadProfile();
-      return profile;
+      return this.boundPatient;
+    },
+    bindMedicalInsurance(patientId: string) {
+      const patient = this.patients.find((item) => item.id === patientId);
+      if (!patient) {
+        throw new Error('请先选择就诊人');
+      }
+      const tail = patient.idNumber ? patient.idNumber.slice(-6).replace(/\D/g, '') : patient.id.slice(-6);
+      this.insuranceBindings = {
+        ...this.insuranceBindings,
+        [patientId]: `医保电子凭证 ${tail || '已认证'}`
+      };
+      uni.setStorageSync('medical_insurance_bindings', this.insuranceBindings);
+      this.applyInsuranceBindings();
+      return this.boundPatient;
+    },
+    isMedicalInsuranceBound(patientId?: string) {
+      return Boolean(patientId && this.insuranceBindings[patientId]);
+    },
+    applyInsuranceBindings() {
+      this.patients = this.patients.map((patient) => ({
+        ...patient,
+        medicalInsuranceBound: Boolean(this.insuranceBindings[patient.id]),
+        medicalInsuranceNo: this.insuranceBindings[patient.id]
+      }));
+      if (this.boundPatient) {
+        const bound = this.patients.find((patient) => patient.id === this.boundPatient?.id);
+        this.boundPatient = bound || {
+          ...this.boundPatient,
+          medicalInsuranceBound: Boolean(this.insuranceBindings[this.boundPatient.id]),
+          medicalInsuranceNo: this.insuranceBindings[this.boundPatient.id]
+        };
+      }
     },
     requireBoundPatient() {
       if (!this.boundPatient) {

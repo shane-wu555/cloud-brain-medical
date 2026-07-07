@@ -33,3 +33,9 @@ audit:
   exchange: ${AUDIT_EXCHANGE:audit.events}
   routing-key: ${AUDIT_ROUTING_KEY:audit.event}
   queue: ${AUDIT_QUEUE:audit.log.persist}
+
+search:
+  elasticsearch:
+    enabled: ${ELASTICSEARCH_ENABLED:true}
+    base-url: ${ELASTICSEARCH_BASE_URL:http://localhost:9200}
+    audit-index: ${AUDIT_ELASTICSEARCH_INDEX:cloudbrain-audit-log}
