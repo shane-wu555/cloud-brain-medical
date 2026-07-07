@@ -39,7 +39,7 @@ function handleBack() {
 <style scoped>
 .patient-nav-bar {
   padding-top: var(--status-bar-height);
-  background: #48a4f5;
+  background: linear-gradient(135deg, #0cbdcc 0%, #0899a5 100%);
   color: #fff;
 }
 
@@ -66,7 +66,7 @@ function handleBack() {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 36rpx;
-  font-weight: 800;
+  font-weight: 700;
   line-height: 1.2;
 }
 

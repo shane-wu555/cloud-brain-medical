@@ -7,9 +7,17 @@ onLaunch(() => useAuthStore().restore());
 
 <style>
 page {
-  background: #f2f7ff;
+  background: #eef8f8;
   color: #1f2937;
-  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-family: Inter, "PingFang SC", "HarmonyOS Sans SC", "MiSans", "Noto Sans CJK SC", "Source Han Sans SC", system-ui, -apple-system, BlinkMacSystemFont, "Microsoft YaHei", sans-serif;
+}
+
+view,
+text,
+input,
+textarea,
+button {
+  font-family: Inter, "PingFang SC", "HarmonyOS Sans SC", "MiSans", "Noto Sans CJK SC", "Source Han Sans SC", system-ui, -apple-system, BlinkMacSystemFont, "Microsoft YaHei", sans-serif;
 }
 
 .page {
@@ -21,20 +29,21 @@ page {
 .card {
   margin-bottom: 24rpx;
   padding: 30rpx;
+  border: 1px solid rgba(219, 231, 240, 0.8);
   border-radius: 18rpx;
   background: #fff;
-  box-shadow: 0 10rpx 30rpx rgba(31, 84, 140, 0.08);
+  box-shadow: 0 10rpx 30rpx rgba(8, 153, 165, 0.08);
 }
 
 .title {
-  color: #172033;
+  color: #0d3d5c;
   font-size: 44rpx;
-  font-weight: 800;
+  font-weight: 700;
   line-height: 1.25;
 }
 
 .muted {
-  color: #718096;
+  color: #64748b;
   font-size: 27rpx;
   line-height: 1.55;
 }
@@ -42,25 +51,27 @@ page {
 .button {
   height: 78rpx;
   margin-top: 22rpx;
-  border-radius: 12rpx;
-  background: linear-gradient(135deg, #4aa5ff 0%, #2f80ed 100%);
+  border-radius: 14rpx;
+  background: linear-gradient(135deg, #0cbdcc 0%, #0899a5 100%);
   color: #fff;
   font-size: 30rpx;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 78rpx;
+  box-shadow: 0 12rpx 28rpx rgba(12, 189, 204, 0.24);
 }
 
 .button[disabled] {
   background: #cbd5e1;
   color: #fff;
+  box-shadow: none;
 }
 
 .input {
   margin-top: 16rpx;
   padding: 22rpx 24rpx;
-  border: 1px solid #d9e6f6;
-  border-radius: 12rpx;
-  background: #f8fbff;
+  border: 1px solid #ccecef;
+  border-radius: 14rpx;
+  background: #f7fdfd;
   color: #1f2937;
   font-size: 30rpx;
 }

@@ -4,7 +4,7 @@
 
 <style>
 :root {
-  font-family: Inter, "Microsoft YaHei", system-ui, sans-serif;
+  font-family: Inter, "PingFang SC", "HarmonyOS Sans SC", "MiSans", "Noto Sans CJK SC", "Source Han Sans SC", system-ui, -apple-system, BlinkMacSystemFont, "Microsoft YaHei", sans-serif;
   color: #1f2937;
   background: #f5f7fb;
 }
