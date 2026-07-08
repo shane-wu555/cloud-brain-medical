@@ -245,7 +245,9 @@ const visibleSchedules = computed(() =>
 );
 const availableDates = computed(() => Array.from(new Set(visibleSchedules.value.map((item) => item.workDate))).sort());
 const doctorMap = computed(() => new Map(doctors.value.map((item) => [item.id, item])));
-const displaySchedules = computed(() => visibleSchedules.value.map(withSlotPeriod));
+const displaySchedules = computed(() =>
+  focusedDoctorId.value ? visibleSchedules.value.map(withSlotPeriod) : aggregateSchedules(visibleSchedules.value)
+);
 const filteredSchedules = computed(() =>
   displaySchedules.value
     .filter((item) => !selectedDate.value || item.workDate === selectedDate.value)
@@ -374,6 +376,40 @@ function withSlotPeriod(schedule: Schedule): Schedule {
     ...schedule,
     timeSlots: schedule.timeSlots.map((slot) => ({ ...slot, period: slot.period || schedule.period }))
   };
+}
+
+function aggregateSchedules(items: Schedule[]) {
+  const groups = new Map<string, Schedule[]>();
+  items.forEach((item) => {
+    const key = `${item.doctorId}|${item.departmentId}|${item.workDate}`;
+    groups.set(key, [...(groups.get(key) || []), item]);
+  });
+
+  return Array.from(groups.values()).flatMap((group) => {
+    const morning = group.find((item) => item.period === '上午');
+    const afternoon = group.find((item) => item.period === '下午');
+    const others = group.filter((item) => item.period !== '上午' && item.period !== '下午').map(withSlotPeriod);
+    if (!morning || !afternoon) {
+      return [...group.filter((item) => item.period === '上午' || item.period === '下午').map(withSlotPeriod), ...others];
+    }
+    const timeSlots = [...morning.timeSlots, ...afternoon.timeSlots]
+      .map((slot) => ({
+        ...slot,
+        period: slot.period || (slot.startTime >= '12:00' ? '下午' : '上午')
+      }))
+      .sort((a, b) => a.startTime.localeCompare(b.startTime));
+    const combined: Schedule = {
+      ...morning,
+      id: `${morning.id}__${afternoon.id}`,
+      period: '全天',
+      capacity: morning.capacity + afternoon.capacity,
+      booked: morning.booked + afternoon.booked,
+      locked: morning.locked + afternoon.locked,
+      available: morning.available + afternoon.available,
+      timeSlots
+    };
+    return [combined, ...others];
+  });
 }
 
 function optionIndexById(options: Array<{ id: string }>, value: string) {
