@@ -92,7 +92,14 @@
             <h3>分时段热力图</h3>
           </div>
         </div>
-        <div ref="heatmapChartRef" class="chart-surface chart-surface--candidate"></div>
+        <div class="heatmap-panel chart-surface--candidate">
+          <div ref="heatmapChartRef" class="chart-surface chart-surface--heatmap"></div>
+          <div class="heatmap-legend" aria-hidden="true">
+            <span>低利用率</span>
+            <i></i>
+            <span>高利用率</span>
+          </div>
+        </div>
       </section>
     </div>
 
@@ -600,7 +607,7 @@ function renderHeatmapChart() {
           ].join('<br/>');
         }
       },
-      grid: { left: 10, right: 10, top: 12, bottom: 46, containLabel: true },
+      grid: { left: 10, right: 10, top: 12, bottom: 28, containLabel: true },
       xAxis: {
         type: 'category',
         data: scheduleTrend.value.map((item) => item.label),
@@ -618,16 +625,12 @@ function renderHeatmapChart() {
         axisLabel: { color: '#334155', fontWeight: 600 }
       },
       visualMap: {
+        type: 'continuous',
+        show: false,
         min: 0,
         max: 100,
         calculable: false,
-        orient: 'horizontal',
-        left: 'center',
-        bottom: 0,
-        itemWidth: 120,
-        itemHeight: 12,
-        text: ['高', '低'],
-        textStyle: { color: '#64748b' },
+        seriesIndex: 0,
         inRange: {
           color: ['#eff6ff', '#60a5fa', '#14b8a6', '#f59e0b', '#ef4444']
         }
@@ -983,6 +986,8 @@ function formatMonthDay(isoDate: string) {
 }
 
 .viz-card--tasks {
+  display: flex;
+  flex-direction: column;
   background:
     radial-gradient(circle at top right, rgb(15 118 110 / 10%), transparent 34%),
     linear-gradient(180deg, #fff, #f7fffc);
@@ -1038,10 +1043,43 @@ function formatMonthDay(isoDate: string) {
   height: 316px;
 }
 
+.heatmap-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.chart-surface--heatmap {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+}
+
+.heatmap-legend {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 20px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.heatmap-legend i {
+  width: min(220px, 42%);
+  height: 10px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #eff6ff, #60a5fa, #14b8a6, #f59e0b, #ef4444);
+  box-shadow: inset 0 0 0 1px rgb(15 23 42 / 8%);
+}
+
 .task-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  flex: 1;
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: 14px 12px;
 }
 
 .task-card {
@@ -1052,7 +1090,9 @@ function formatMonthDay(isoDate: string) {
   border-radius: 18px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 0;
   text-align: left;
   background: #fff;
   cursor: pointer;
@@ -1130,12 +1170,12 @@ function formatMonthDay(isoDate: string) {
 }
 
 .funnel-svg__label {
-  font-size: 13px;
+  font-size: 16px;
   font-weight: 700;
 }
 
 .funnel-svg__value {
-  font-size: 12px;
+  font-size: 15px;
   font-weight: 700;
 }
 
@@ -1186,6 +1226,10 @@ function formatMonthDay(isoDate: string) {
   .overview-hero__chips,
   .task-grid {
     grid-template-columns: 1fr;
+  }
+
+  .task-grid {
+    grid-template-rows: none;
   }
 
   .pill-row {

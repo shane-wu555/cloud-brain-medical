@@ -265,7 +265,7 @@ function fillBirthDateFromIdCard() {
 <style scoped>
 .patient-page {
   padding-top: 0;
-  background: #f6f8fb;
+  background: var(--patient-theme-page-bg);
 }
 
 .form-card {
@@ -281,7 +281,7 @@ function fillBirthDateFromIdCard() {
   align-items: center;
   gap: 14rpx;
   padding: 30rpx 0 18rpx;
-  color: #2f80ed;
+  color: var(--patient-theme-strong);
   font-size: 34rpx;
   font-weight: 800;
 }
@@ -290,7 +290,7 @@ function fillBirthDateFromIdCard() {
   width: 8rpx;
   height: 36rpx;
   border-radius: 999rpx;
-  background: #2f80ed;
+  background: var(--patient-theme-strong);
 }
 
 .patient-list {
@@ -326,8 +326,8 @@ function fillBirthDateFromIdCard() {
   min-width: 120rpx;
   padding: 14rpx 20rpx;
   border-radius: 999rpx;
-  background: #eef6ff;
-  color: #2f80ed;
+  background: var(--patient-theme-soft);
+  color: var(--patient-theme-strong);
   font-size: 24rpx;
   font-weight: 700;
   text-align: center;
@@ -421,7 +421,7 @@ function fillBirthDateFromIdCard() {
   width: 76rpx;
   height: 64rpx;
   border-radius: 10rpx;
-  background: #f8fbff;
+  background: var(--patient-theme-softest);
   color: #1f2937;
   font-size: 30rpx;
   text-align: center;
@@ -442,7 +442,7 @@ function fillBirthDateFromIdCard() {
   height: 86rpx;
   margin: 34rpx 0 30rpx;
   border-radius: 12rpx;
-  background: linear-gradient(135deg, #4aa5ff 0%, #2f80ed 100%);
+  background: linear-gradient(135deg, var(--patient-theme) 0%, var(--patient-theme-strong) 100%);
   color: #fff;
   font-size: 32rpx;
   font-weight: 800;

@@ -104,7 +104,15 @@ export async function stockInDrug(id: string, payload: { quantity: number; reaso
   return data;
 }
 
-export async function getPrescriptions(params: { patientId?: string; status?: string; view?: string } = {}) {
+export async function getPrescriptions(params: {
+  patientId?: string;
+  status?: string;
+  view?: string;
+  patientName?: string;
+  prescriptionNo?: string;
+  page?: number;
+  size?: number;
+} = {}) {
   const { data } = await http.get<Prescription[]>('/prescriptions', { params });
   return data;
 }
@@ -150,7 +158,15 @@ export async function createDrugReturn(prescriptionId: string, payload: {
   return data;
 }
 
-export async function getDrugReturns(params: { patientId?: string; status?: string } = {}) {
+export async function getDrugReturns(params: {
+  patientId?: string;
+  status?: string;
+  patientName?: string;
+  prescriptionNo?: string;
+  returnNo?: string;
+  page?: number;
+  size?: number;
+} = {}) {
   const { data } = await http.get<DrugReturnOrder[]>('/drug-returns', { params });
   return data;
 }

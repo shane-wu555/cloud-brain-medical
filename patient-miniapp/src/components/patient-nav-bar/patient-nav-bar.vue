@@ -39,7 +39,7 @@ function handleBack() {
 <style scoped>
 .patient-nav-bar {
   padding-top: var(--status-bar-height);
-  background: linear-gradient(135deg, #0cbdcc 0%, #0899a5 100%);
+  background: linear-gradient(135deg, var(--patient-theme) 0%, var(--patient-theme-strong) 100%);
   color: #fff;
 }
 

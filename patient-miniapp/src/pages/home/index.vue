@@ -8,7 +8,7 @@
       </view>
     </view>
 
-    <swiper class="banner-swiper" :indicator-dots="true" :autoplay="false" indicator-color="rgba(255, 255, 255, 0.72)" indicator-active-color="#48a4f5">
+    <swiper class="banner-swiper" :indicator-dots="true" :autoplay="false" indicator-color="rgba(255, 255, 255, 0.72)" indicator-active-color="#0899a5">
       <swiper-item>
         <image class="banner-image" src="/static/banners/home-banner.png" mode="aspectFill" />
       </swiper-item>
@@ -94,7 +94,7 @@ const serviceGroups = [
   {
     title: '门诊',
     items: [
-      { name: '我的挂号', icon: 'calendar-days', iconBg: 'linear-gradient(135deg, #5bbcff 0%, #2f80ed 100%)', url: '/pages/appointments/index' },
+      { name: '我的挂号', icon: 'calendar-days', iconBg: 'linear-gradient(135deg, #0cbdcc 0%, #0899a5 100%)', url: '/pages/appointments/index' },
       { name: '待处置安排', icon: 'syringe', iconBg: 'linear-gradient(135deg, #ff9b7a 0%, #ff5c35 100%)', url: '/pages/disposals/index?mode=arrangement' },
       { name: '待检查/检验安排', icon: 'microscope', iconBg: 'linear-gradient(135deg, #ffc928 0%, #ff9f1c 100%)', url: '/pages/medical-orders/index?mode=arrangement' },
       { name: '待取药安排', icon: 'pill-bottle', iconBg: 'linear-gradient(135deg, #34d399 0%, #10b981 100%)', url: '/pages/prescriptions/index?mode=arrangement' }
@@ -104,7 +104,7 @@ const serviceGroups = [
     title: '记录',
     items: [
       { name: '检查检验报告', icon: 'microscope', iconBg: 'linear-gradient(135deg, #ffc928 0%, #ff9f1c 100%)', url: '/pages/medical-orders/index?mode=report' },
-      { name: '电子病历', icon: 'clipboard-list', iconBg: 'linear-gradient(135deg, #5bbcff 0%, #2f80ed 100%)', url: '/pages/medical-records/index' },
+      { name: '电子病历', icon: 'clipboard-list', iconBg: 'linear-gradient(135deg, #0cbdcc 0%, #0899a5 100%)', url: '/pages/medical-records/index' },
       { name: '缴费退费记录', icon: 'wallet-cards', iconBg: 'linear-gradient(135deg, #2dd4bf 0%, #0ea5e9 100%)', url: '/pages/pending-payments/index?mode=record' },
       { name: '处置记录', icon: 'syringe', iconBg: 'linear-gradient(135deg, #ff9b7a 0%, #ff5c35 100%)', url: '/pages/disposals/index?mode=record' },
       { name: '取药退药记录', icon: 'pill-bottle', iconBg: 'linear-gradient(135deg, #34d399 0%, #10b981 100%)', url: '/pages/prescriptions/index?mode=record' }
@@ -140,7 +140,7 @@ function go(url: string) {
 <style scoped>
 .home-page {
   padding-top: 0;
-  background: linear-gradient(180deg, #48a4f5 0, #48a4f5 256rpx, #f2f7ff 256rpx, #f2f7ff 100%);
+  background: linear-gradient(180deg, #0cbdcc 0, #0899a5 256rpx, #eef8f8 256rpx, #eef8f8 100%);
 }
 
 .top-band {
@@ -208,7 +208,7 @@ function go(url: string) {
 }
 
 .patient-card.bound {
-  background: linear-gradient(135deg, #1677ff 0%, #28d2c0 100%);
+  background: linear-gradient(135deg, var(--patient-theme) 0%, var(--patient-theme-strong) 100%);
 }
 
 .patient-card.unbound {
@@ -324,7 +324,7 @@ function go(url: string) {
 .service-panel {
   overflow: hidden;
   padding: 0 0 22rpx;
-  border: 2rpx solid #dbeafe;
+  border: 2rpx solid var(--patient-theme-border);
   border-radius: 22rpx;
   background: #fff;
   box-shadow: 0 16rpx 38rpx rgba(31, 84, 140, 0.12);
@@ -336,7 +336,7 @@ function go(url: string) {
   min-height: 86rpx;
   padding: 0;
   margin-bottom: 30rpx;
-  background: #48a4f5;
+  background: var(--patient-theme-strong);
 }
 
 .tab-item {
@@ -355,7 +355,7 @@ function go(url: string) {
 
 .tab-item.active {
   background: #fff;
-  color: #48a4f5;
+  color: var(--patient-theme-strong);
   box-shadow: none;
 }
 
@@ -394,7 +394,7 @@ function go(url: string) {
   width: 92rpx;
   height: 92rpx;
   border-radius: 24rpx;
-  background: #eef6ff;
+  background: var(--patient-theme-soft);
   box-shadow: inset 0 -8rpx 14rpx rgba(47, 128, 237, 0.08), 0 8rpx 18rpx rgba(47, 128, 237, 0.08);
 }
 

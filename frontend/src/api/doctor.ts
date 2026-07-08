@@ -123,8 +123,8 @@ export async function getDepartments() {
   return (await http.get<Department[]>('/departments')).data;
 }
 
-export async function getDoctors(departmentId?: string) {
-  return (await http.get<Doctor[]>('/doctors', { params: { departmentId } })).data;
+export async function getDoctors(params: { departmentId?: string; includeAllRoles?: boolean } = {}) {
+  return (await http.get<Doctor[]>('/doctors', { params })).data;
 }
 
 export async function getDoctor(id: string) {

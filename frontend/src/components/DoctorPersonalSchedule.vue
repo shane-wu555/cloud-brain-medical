@@ -76,7 +76,6 @@
           <div class="schedule-legend">
             <span><i class="legend-dot legend-dot--morning"></i>上午</span>
             <span><i class="legend-dot legend-dot--afternoon"></i>下午</span>
-            <span><i class="legend-dot legend-dot--full"></i>全天</span>
             <span><i class="legend-dot legend-dot--suspended"></i>停诊</span>
           </div>
         </div>
@@ -207,8 +206,7 @@ const today = new Date();
 const todayKey = toDateKey(today);
 const periods = [
   { key: 'morning', label: '上午', time: '08:00 - 12:00' },
-  { key: 'afternoon', label: '下午', time: '14:00 - 17:30' },
-  { key: 'full', label: '全天', time: '08:00 - 17:30' }
+  { key: 'afternoon', label: '下午', time: '14:00 - 17:30' }
 ];
 
 const weekStart = computed(() => addDays(today, weekOffset.value * 7));
@@ -335,7 +333,6 @@ function periodKey(period: string) {
   const value = (period || '').toUpperCase();
   if (value.includes('上午') || value.includes('MORNING')) return 'morning';
   if (value.includes('下午') || value.includes('AFTERNOON')) return 'afternoon';
-  if (value.includes('全天') || value.includes('FULL')) return 'full';
   return value.toLowerCase();
 }
 
@@ -678,10 +675,6 @@ onMounted(loadSchedule);
   background: #d9f1fb;
   border-left: 3px solid #2f91b4;
 }
-.legend-dot--full {
-  background: #ccfbf1;
-  border-left: 3px solid #14b8a6;
-}
 .legend-dot--suspended {
   background: #e5e7eb;
   border-left: 3px solid #94a3b8;
@@ -853,7 +846,7 @@ onMounted(loadSchedule);
   min-height: 164px;
   padding: 8px;
   display: grid;
-  grid-template-rows: repeat(3, minmax(46px, 1fr));
+  grid-template-rows: repeat(2, minmax(46px, 1fr));
   gap: 6px;
   background: #fff;
   box-sizing: border-box;
@@ -904,11 +897,6 @@ onMounted(loadSchedule);
 .schedule-shift--afternoon {
   border-left-color: #2f91b4;
   background: #d9f1fb;
-}
-
-.schedule-shift--full {
-  border-left-color: #14b8a6;
-  background: #ccfbf1;
 }
 
 .schedule-shift--suspended {

@@ -204,7 +204,7 @@ onShow(async () => {
 }
 
 .queue-num {
-  color: #1d4ed8;
+  color: var(--patient-theme-strong);
   font-weight: 700;
   font-size: 34rpx;
 }
@@ -222,8 +222,8 @@ onShow(async () => {
 }
 
 .queued {
-  background: #eff6ff;
-  color: #1d4ed8;
+  background: var(--patient-theme-soft);
+  color: var(--patient-theme-deep);
 }
 
 .progress {

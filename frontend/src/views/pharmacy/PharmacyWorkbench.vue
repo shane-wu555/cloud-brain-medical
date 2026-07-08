@@ -367,7 +367,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { useAuthStore } from '../../store/auth';
@@ -390,6 +390,8 @@ type InventoryGroup = {
   collapsed: boolean;
 };
 
+const WORKBENCH_PAGE_SIZE = 100;
+
 const router = useRouter();
 const auth = useAuthStore();
 
@@ -411,6 +413,11 @@ const loadingDrugs = ref(false);
 const stockInSubmitting = ref(false);
 const dispensingId = ref('');
 const authRedirecting = ref(false);
+const loadedPages = reactive({
+  dispense: false,
+  returns: false,
+  inventory: false
+});
 
 const prescriptionSearch = reactive({
   patientName: '',
@@ -488,9 +495,9 @@ const inventoryGroups = computed<InventoryGroup[]>(() => {
     });
 });
 
-const filteredWaitingPrescriptions = computed(() => filterPrescriptions(waitingPrescriptions.value));
-const filteredDispensedPrescriptions = computed(() => filterPrescriptions(dispensedPrescriptions.value));
-const filteredDrugReturns = computed(() => filterReturns(drugReturns.value));
+const filteredWaitingPrescriptions = computed(() => waitingPrescriptions.value);
+const filteredDispensedPrescriptions = computed(() => dispensedPrescriptions.value);
+const filteredDrugReturns = computed(() => drugReturns.value);
 const returnDetailTitle = computed(() => (returnDetailMode.value === 'prescription' ? '处方明细' : '退药明细'));
 
 const today = computed(() => new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }));
@@ -499,14 +506,22 @@ const dayOfWeek = computed(() => ['周日', '周一', '周二', '周三', '周�
 async function loadPrescriptions() {
   loadingPrescriptions.value = true;
   try {
-    const all = await getPrescriptions();
-    const waiting = all.filter((item) => item.status === 'WAITING_DISPENSE');
-    const dispensed = all.filter((item) => item.status === 'DISPENSED' || Boolean(item.dispensedAt));
+    const query = {
+      patientName: activePrescriptionSearch.patientName || undefined,
+      prescriptionNo: activePrescriptionSearch.prescriptionNo || undefined,
+      page: 0,
+      size: WORKBENCH_PAGE_SIZE
+    };
+    const [waiting, dispensed] = await Promise.all([
+      getPrescriptions({ ...query, status: 'WAITING_DISPENSE' }),
+      getPrescriptions({ ...query, status: 'DISPENSED' })
+    ]);
     waitingPrescriptions.value = [...waiting].sort((left, right) => timeValue(left.createdAt) - timeValue(right.createdAt));
     dispensedPrescriptions.value = [...dispensed].sort((left, right) => timeValue(right.dispensedAt || right.createdAt) - timeValue(left.dispensedAt || left.createdAt));
     if (selected.value) {
       selected.value = [...waitingPrescriptions.value, ...dispensedPrescriptions.value].find((item) => item.id === selected.value?.id);
     }
+    loadedPages.dispense = true;
   } catch (error) {
     handleRequestFailure(error, '处方加载失败');
   } finally {
@@ -517,7 +532,15 @@ async function loadPrescriptions() {
 async function loadReturns() {
   loadingReturns.value = true;
   try {
-    drugReturns.value = await getDrugReturns({ status: returnStatus.value });
+    drugReturns.value = await getDrugReturns({
+      status: returnStatus.value,
+      patientName: activeReturnSearch.patientName || undefined,
+      prescriptionNo: activeReturnSearch.prescriptionNo || undefined,
+      returnNo: activeReturnSearch.returnNo || undefined,
+      page: 0,
+      size: WORKBENCH_PAGE_SIZE
+    });
+    loadedPages.returns = true;
   } catch (error) {
     handleRequestFailure(error, '退药记录加载失败');
   } finally {
@@ -532,6 +555,7 @@ async function loadDrugs() {
       keyword: drugKeyword.value.trim(),
       storageCondition: drugStorageCondition.value
     });
+    loadedPages.inventory = true;
   } catch (error) {
     handleRequestFailure(error, '药品库存加载失败');
   } finally {
@@ -544,7 +568,11 @@ async function dispense(id: string) {
   try {
     selected.value = await dispensePrescription(id);
     ElMessage.success('发药完成，库存已扣减');
-    await Promise.all([loadPrescriptions(), loadDrugs()]);
+    const reloads = [loadPrescriptions()];
+    if (loadedPages.inventory) {
+      reloads.push(loadDrugs());
+    }
+    await Promise.all(reloads);
   } catch (error) {
     handleRequestFailure(error, '发药失败');
   } finally {
@@ -599,6 +627,7 @@ function showReturnDetail(row: DrugReturnOrder) {
 function applyPrescriptionSearch() {
   activePrescriptionSearch.patientName = prescriptionSearch.patientName.trim();
   activePrescriptionSearch.prescriptionNo = prescriptionSearch.prescriptionNo.trim();
+  loadPrescriptions();
 }
 
 function resetPrescriptionSearch() {
@@ -606,12 +635,14 @@ function resetPrescriptionSearch() {
   prescriptionSearch.prescriptionNo = '';
   activePrescriptionSearch.patientName = '';
   activePrescriptionSearch.prescriptionNo = '';
+  loadPrescriptions();
 }
 
 function applyReturnSearch() {
   activeReturnSearch.patientName = returnSearch.patientName.trim();
   activeReturnSearch.prescriptionNo = returnSearch.prescriptionNo.trim();
   activeReturnSearch.returnNo = returnSearch.returnNo.trim();
+  loadReturns();
 }
 
 function resetReturnSearch() {
@@ -621,6 +652,7 @@ function resetReturnSearch() {
   activeReturnSearch.patientName = '';
   activeReturnSearch.prescriptionNo = '';
   activeReturnSearch.returnNo = '';
+  loadReturns();
 }
 
 function resetDrugSearch() {
@@ -644,28 +676,6 @@ function compareDrugsForInventory(left: Drug, right: Drug) {
   const nameCompare = left.drugName.localeCompare(right.drugName, 'zh-CN');
   if (nameCompare !== 0) return nameCompare;
   return left.drugCode.localeCompare(right.drugCode);
-}
-
-function filterPrescriptions(items: Prescription[]) {
-  const patientName = activePrescriptionSearch.patientName.toLowerCase();
-  const prescriptionNo = activePrescriptionSearch.prescriptionNo.toLowerCase();
-  return items.filter((item) => {
-    const matchesPatient = !patientName || (item.patientName ?? '').toLowerCase().includes(patientName);
-    const matchesNo = !prescriptionNo || item.prescriptionNo.toLowerCase().includes(prescriptionNo);
-    return matchesPatient && matchesNo;
-  });
-}
-
-function filterReturns(items: DrugReturnOrder[]) {
-  const patientName = activeReturnSearch.patientName.toLowerCase();
-  const prescriptionNo = activeReturnSearch.prescriptionNo.toLowerCase();
-  const returnNo = activeReturnSearch.returnNo.toLowerCase();
-  return items.filter((item) => {
-    const matchesPatient = !patientName || item.patientName.toLowerCase().includes(patientName);
-    const matchesPrescriptionNo = !prescriptionNo || item.prescriptionNo.toLowerCase().includes(prescriptionNo);
-    const matchesReturnNo = !returnNo || item.returnNo.toLowerCase().includes(returnNo);
-    return matchesPatient && matchesPrescriptionNo && matchesReturnNo;
-  });
 }
 
 function prescriptionStatusLabel(value: string) {
@@ -751,8 +761,24 @@ function logout() {
   router.push('/login');
 }
 
+async function loadCurrentPage() {
+  if (currentPage.value === 'dispense' && !loadedPages.dispense) {
+    await loadPrescriptions();
+  }
+  if (currentPage.value === 'returns' && !loadedPages.returns) {
+    await loadReturns();
+  }
+  if (currentPage.value === 'inventory' && !loadedPages.inventory) {
+    await loadDrugs();
+  }
+}
+
+watch(currentPage, () => {
+  loadCurrentPage();
+});
+
 onMounted(async () => {
-  await Promise.all([loadPrescriptions(), loadReturns(), loadDrugs()]);
+  await loadCurrentPage();
 });
 </script>
 

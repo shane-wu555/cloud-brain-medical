@@ -67,8 +67,21 @@ public class PharmacyController {
     public List<Prescription> prescriptions(@RequestParam(name = "patientId", required = false) String patientId,
                                             @RequestParam(name = "status", required = false) String status,
                                             @RequestParam(name = "view", required = false) String view,
+                                            @RequestParam(name = "patientName", required = false) String patientName,
+                                            @RequestParam(name = "prescriptionNo", required = false) String prescriptionNo,
+                                            @RequestParam(name = "page", defaultValue = "0") int page,
+                                            @RequestParam(name = "size", defaultValue = "100") int size,
                                             JwtAuthenticationToken auth) {
-        return service.list(patientId, status, view, auth.getToken().getSubject(), auth.getToken().getClaimAsString("role"));
+        return service.list(
+                patientId,
+                status,
+                view,
+                patientName,
+                prescriptionNo,
+                page,
+                size,
+                auth.getToken().getSubject(),
+                auth.getToken().getClaimAsString("role"));
     }
 
     @GetMapping("/prescriptions/{id}")
@@ -101,8 +114,22 @@ public class PharmacyController {
     @PreAuthorize("hasAnyRole('PATIENT','OUTPATIENT_DOCTOR','PHARMACY_STAFF','CASHIER','ADMIN')")
     public List<DrugReturnOrder> drugReturns(@RequestParam(name = "patientId", required = false) String patientId,
                                              @RequestParam(name = "status", required = false) String status,
+                                             @RequestParam(name = "patientName", required = false) String patientName,
+                                             @RequestParam(name = "prescriptionNo", required = false) String prescriptionNo,
+                                             @RequestParam(name = "returnNo", required = false) String returnNo,
+                                             @RequestParam(name = "page", defaultValue = "0") int page,
+                                             @RequestParam(name = "size", defaultValue = "100") int size,
                                              JwtAuthenticationToken auth) {
-        return service.drugReturns(patientId, status, auth.getToken().getSubject(), auth.getToken().getClaimAsString("role"));
+        return service.drugReturns(
+                patientId,
+                status,
+                patientName,
+                prescriptionNo,
+                returnNo,
+                page,
+                size,
+                auth.getToken().getSubject(),
+                auth.getToken().getClaimAsString("role"));
     }
 
     @PostMapping("/internal/prescriptions/{id}/payment-confirmation")

@@ -13,6 +13,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,6 +37,9 @@ public class PharmacyService {
         this.drugSearchIndexService = drugSearchIndexService;
     }
 
+    @Cacheable(
+            cacheNames = "drugs",
+            key = "(#keyword == null ? '' : #keyword.trim().toLowerCase()) + ':' + (#storageCondition == null ? '' : #storageCondition.trim())")
     public List<PharmacyRepository.Drug> drugs(String keyword, String storageCondition) {
         if (!blank(keyword)) {
             var matchedIds = drugSearchIndexService.searchDrugIds(keyword, storageCondition, 100);
@@ -50,6 +55,7 @@ public class PharmacyService {
     }
 
     @Transactional
+    @CacheEvict(cacheNames = "drugs", allEntries = true)
     public PharmacyRepository.Drug addStock(String drugId, PharmacyController.StockInRequest request, String operatorId) {
         if (request.quantity() <= 0) {
             throw new IllegalArgumentException("Stock-in quantity must be positive");
@@ -191,6 +197,37 @@ public class PharmacyService {
         return prescriptions;
     }
 
+    public List<Prescription> list(String patientId, String status, String view, String patientName,
+            String prescriptionNo, int page, int size, String requesterId, String role) {
+        String scopedPatientId = patientId;
+        if ("PATIENT".equals(role)) {
+            if (blank(scopedPatientId)) {
+                scopedPatientId = patientAccessClient.boundPatientId(requesterId);
+            }
+            if (blank(scopedPatientId)) {
+                throw new AccessDeniedException("Patient account is not bound to a patient profile");
+            }
+            if (!patientAccessClient.owns(requesterId, scopedPatientId)) {
+                throw new AccessDeniedException("Patient cannot access another patient's prescriptions");
+            }
+        }
+        String normalizedView = normalizeView(view);
+        List<PrescriptionStatus> viewStatuses = prescriptionStatusesForView(normalizedView);
+        List<Prescription> prescriptions = blank(status) && viewStatuses != null
+                ? repository.listByStatuses(scopedPatientId, viewStatuses, patientName, prescriptionNo, page, size)
+                : repository.list(scopedPatientId, status, patientName, prescriptionNo, page, size);
+        auditPublisher.publish(
+                "PRESCRIPTION_LIST_VIEW",
+                "PRESCRIPTION",
+                null,
+                scopedPatientId,
+                null,
+                requesterId,
+                role,
+                prescriptionListAuditDetails(status, normalizedView, viewStatuses, prescriptions.size()));
+        return prescriptions;
+    }
+
     @Transactional
     public DrugReturnOrder createDrugReturn(
             String prescriptionId,
@@ -263,6 +300,37 @@ public class PharmacyService {
         return orders;
     }
 
+    public List<DrugReturnOrder> drugReturns(String patientId, String status, String patientName,
+            String prescriptionNo, String returnNo, int page, int size, String requesterId, String role) {
+        String scopedPatientId = patientId;
+        if ("PATIENT".equals(role)) {
+            if (blank(scopedPatientId)) {
+                scopedPatientId = patientAccessClient.boundPatientId(requesterId);
+            }
+            if (blank(scopedPatientId)) {
+                throw new AccessDeniedException("Patient account is not bound to a patient profile");
+            }
+            if (!patientAccessClient.owns(requesterId, scopedPatientId)) {
+                throw new AccessDeniedException("Patient cannot access another patient's return orders");
+            }
+        }
+        List<DrugReturnOrder> orders = repository.listDrugReturns(
+                scopedPatientId, status, patientName, prescriptionNo, returnNo, page, size);
+        auditPublisher.publish(
+                "DRUG_RETURN_LIST_VIEW",
+                "DRUG_RETURN",
+                null,
+                scopedPatientId,
+                null,
+                requesterId,
+                role,
+                Map.of(
+                        "accessScope", "LIST",
+                        "statusFilter", blank(status) ? "ALL" : status.trim(),
+                        "resultCount", orders.size()));
+        return orders;
+    }
+
     @Transactional
     public DrugReturnOrder completeDrugReturn(String id, String cashierId, String refundOrderId) {
         if (!repository.completeDrugReturn(id, cashierId, refundOrderId)) {
@@ -310,6 +378,7 @@ public class PharmacyService {
     }
 
     @Transactional
+    @CacheEvict(cacheNames = "drugs", allEntries = true)
     public Prescription dispense(String id, String operatorId) {
         Prescription prescription = repository.findPrescription(id);
         if (prescription.status() != PrescriptionStatus.WAITING_DISPENSE) {

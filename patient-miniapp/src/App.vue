@@ -7,7 +7,15 @@ onLaunch(() => useAuthStore().restore());
 
 <style>
 page {
-  background: #eef8f8;
+  --patient-theme: #0cbdcc;
+  --patient-theme-strong: #0899a5;
+  --patient-theme-deep: #0b6b74;
+  --patient-theme-soft: #e7fbfc;
+  --patient-theme-soft-alt: #cff4f6;
+  --patient-theme-softest: #f2fcfc;
+  --patient-theme-border: #b7e8eb;
+  --patient-theme-page-bg: #eef8f8;
+  background: var(--patient-theme-page-bg);
   color: #1f2937;
   font-family: Inter, "PingFang SC", "HarmonyOS Sans SC", "MiSans", "Noto Sans CJK SC", "Source Han Sans SC", system-ui, -apple-system, BlinkMacSystemFont, "Microsoft YaHei", sans-serif;
 }
@@ -52,7 +60,7 @@ button {
   height: 78rpx;
   margin-top: 22rpx;
   border-radius: 14rpx;
-  background: linear-gradient(135deg, #0cbdcc 0%, #0899a5 100%);
+  background: linear-gradient(135deg, var(--patient-theme) 0%, var(--patient-theme-strong) 100%);
   color: #fff;
   font-size: 30rpx;
   font-weight: 600;
@@ -69,9 +77,9 @@ button {
 .input {
   margin-top: 16rpx;
   padding: 22rpx 24rpx;
-  border: 1px solid #ccecef;
+  border: 1px solid var(--patient-theme-border);
   border-radius: 14rpx;
-  background: #f7fdfd;
+  background: var(--patient-theme-softest);
   color: #1f2937;
   font-size: 30rpx;
 }
