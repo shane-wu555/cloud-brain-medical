@@ -8,6 +8,8 @@ CT 推理主流程（三阶段）：
 
 import os
 import logging
+import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from .preprocessing import download_and_load, volume_to_slices
@@ -128,6 +130,56 @@ def _lesion_seg_report_text(seg_result: dict) -> tuple[str, str]:
     return finding, advice
 
 
+def _run_small_models_parallel(
+    hu_volume,
+    slices,
+    valid_indices,
+) -> tuple[dict, dict, dict, dict, list[dict], dict[str, int]]:
+    workers = max(1, int(os.getenv("CT_INFERENCE_PARALLEL_WORKERS", "4")))
+    workers = min(workers, 4)
+    timings: dict[str, int] = {}
+    with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="ct-ai") as executor:
+        classifier_future = executor.submit(_timed_call, "classifier", classify_volume, slices)
+        metal_future = executor.submit(_timed_call, "metal_classifier", classify_metal_artifact, slices)
+        metal_seg_future = executor.submit(_timed_call, "metal_segmentation", segment_metal_artifact, hu_volume, valid_indices)
+        lesion_seg_future = executor.submit(_timed_call, "lesion_segmentation", segment_lesion, hu_volume, valid_indices)
+
+        clf_result, timings["classifier"] = classifier_future.result()
+        detections, timings["detector"] = _timed_call("detector", _detect_if_needed, clf_result, slices, valid_indices)
+        metal_result, timings["metal_classifier"] = metal_future.result()
+        metal_seg_result, timings["metal_segmentation"] = metal_seg_future.result()
+        lesion_seg_result, timings["lesion_segmentation"] = lesion_seg_future.result()
+
+    timings["parallel_total"] = max(
+        timings.get("classifier", 0) + timings.get("detector", 0),
+        timings.get("metal_classifier", 0),
+        timings.get("metal_segmentation", 0),
+        timings.get("lesion_segmentation", 0),
+    )
+    return clf_result, metal_result, metal_seg_result, lesion_seg_result, detections, timings
+
+
+def _timed_call(name: str, fn, *args):
+    started = time.perf_counter()
+    result = fn(*args)
+    elapsed_ms = int((time.perf_counter() - started) * 1000)
+    log.info("[CT推理] %s 耗时 %sms", name, elapsed_ms)
+    return result, elapsed_ms
+
+
+def _detect_if_needed(clf_result: dict, slices, valid_indices) -> list[dict]:
+    label = clf_result["label"]
+    slice_probs = clf_result.get("slice_probs")
+    detections: list[dict] = []
+    if label != "normal" and slice_probs:
+        top_slices = top_abnormal_slices(slice_probs, top_k=5)
+        sorted_slices = slices[top_slices] if top_slices else slices[:5]
+        sorted_indices = valid_indices[top_slices] if top_slices else valid_indices[:5]
+        detections = detect_volume(sorted_slices, sorted_indices)
+        log.info(f"[CT推理] 检测框数量: {len(detections)}")
+    return detections
+
+
 def run(object_key: str, order_id: str, clinical_context: str = "") -> dict[str, Any]:
     """
     完整推理流程入口。
@@ -144,24 +196,16 @@ def run(object_key: str, order_id: str, clinical_context: str = "") -> dict[str,
     slices, valid_indices = volume_to_slices(hu_volume)
     log.info(f"[CT推理] 体积 shape={hu_volume.shape}, 有效切片={len(slices)}")
 
-    # ── 2. 分类 ───────────────────────────────────────────
-    clf_result  = classify_volume(slices)
+    # ── 2. 并行运行互不依赖的小模型 ─────────────────────────
+    clf_result, metal_result, metal_seg_result, lesion_seg_result, detections, timings = _run_small_models_parallel(
+        hu_volume,
+        slices,
+        valid_indices,
+    )
     label       = clf_result["label"]
     confidence  = clf_result["confidence"]
-    slice_probs = clf_result["slice_probs"]
-    metal_result = classify_metal_artifact(slices)
-    metal_seg_result = segment_metal_artifact(hu_volume, valid_indices)
-    lesion_seg_result = segment_lesion(hu_volume, valid_indices)
+    _require_model_outputs(metal_result, metal_seg_result, lesion_seg_result)
     log.info(f"[CT推理] 分类结果: {label} ({confidence:.2%})")
-
-    # ── 3. 检测（仅异常时）────────────────────────────────
-    detections: list[dict] = []
-    if label != "normal" and slice_probs:
-        top_slices = top_abnormal_slices(slice_probs, top_k=5)
-        sorted_slices = slices[top_slices] if top_slices else slices[:5]
-        sorted_indices = valid_indices[top_slices] if top_slices else valid_indices[:5]
-        detections = detect_volume(sorted_slices, sorted_indices)
-        log.info(f"[CT推理] 检测框数量: {len(detections)}")
 
     seg_regions = lesion_regions(lesion_seg_result, label=label if label != "normal" else "lesion")
     if seg_regions:
@@ -210,6 +254,7 @@ def run(object_key: str, order_id: str, clinical_context: str = "") -> dict[str,
         "metalArtifactSegmentation": metal_seg_result,
         "lesionSegmentation": lesion_seg_result,
         "abnormalRegions": detections,
+        "inferenceTimingsMs": timings,
         "modelVersion":   model_version,
     }
 
@@ -222,3 +267,21 @@ def _get_minio_client():
         secret_key=os.getenv("MINIO_SECRET_KEY", "minioadmin"),
         secure=os.getenv("MINIO_SECURE", "false").lower() == "true",
     )
+
+
+def _require_model_outputs(
+    metal_result: dict,
+    metal_seg_result: dict,
+    lesion_seg_result: dict,
+) -> None:
+    missing = []
+    if not metal_result.get("enabled"):
+        missing.append("CT_METAL_CLASSIFIER_MODEL")
+    if not metal_seg_result.get("enabled"):
+        missing.append("CT_METAL_SEGMENTATION_MODEL")
+    if not lesion_seg_result.get("enabled"):
+        missing.append("CT_LESION_SEGMENTATION_MODEL")
+    if missing:
+        raise FileNotFoundError(
+            "Required CT small model(s) are not available: " + ", ".join(missing)
+        )

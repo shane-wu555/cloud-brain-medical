@@ -310,7 +310,7 @@ export function renderCoronal(
   const raw = new ImageData(srcW, srcH)
   const d = raw.data
   for (let r = 0; r < srcH; r++) {
-    const z = vol.nz - 1 - r
+    const z = r
     const base = z * vol.ny * vol.nx + y * vol.nx
     for (let c = 0; c < srcW; c++) {
       const g = clamp255((vol.data[base + c] - lo) / rng)
@@ -346,7 +346,7 @@ export function renderSagittal(
   const raw = new ImageData(srcW, srcH)
   const d = raw.data
   for (let r = 0; r < srcH; r++) {
-    const z = vol.nz - 1 - r
+    const z = r
     const base = z * vol.ny * vol.nx + x
     for (let c = 0; c < srcW; c++) {
       const g = clamp255((vol.data[base + c * vol.nx] - lo) / rng)

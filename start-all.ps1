@@ -134,8 +134,8 @@ if (-not $SkipAi) {
     $aiLauncher = New-Launcher -Name "ai-service" -Lines @(
         "`$env:PYTHONPATH = '$root\ai-service'",
         "if (Test-Path '$root\ai-service\.env') { Get-Content '$root\ai-service\.env' | Where-Object { `$_ -and -not `$_.StartsWith('#') -and `$_.Contains('=') } | ForEach-Object { `$k, `$v = `$_.Split('=', 2); [Environment]::SetEnvironmentVariable(`$k.Trim(), `$v.Trim(), 'Process') } }",
-        "if (-not `$env:AI_PROVIDER) { `$env:AI_PROVIDER = 'mock' }",
-        "if (-not `$env:AI_ALLOW_FALLBACK) { `$env:AI_ALLOW_FALLBACK = 'true' }",
+        "if (-not `$env:AI_PROVIDER) { `$env:AI_PROVIDER = 'openai_compatible' }",
+        "if (-not `$env:AI_ALLOW_FALLBACK) { `$env:AI_ALLOW_FALLBACK = 'false' }",
         "if (-not `$env:AI_TIMEOUT_SECONDS) { `$env:AI_TIMEOUT_SECONDS = '60' }",
         "& '$aiPython' -m uvicorn app.main:app --app-dir '$root\ai-service' --host 0.0.0.0 --port 8000"
     )

@@ -30,7 +30,7 @@ AI 服务采用 FastAPI 作为统一入口，按文档预留智能问诊、分�
 
 ## 大模型接入
 
-默认使用 `AI_PROVIDER=mock`，无需外部密钥即可演示。接入 OpenAI 兼容接口时使用：
+默认要求接入 OpenAI 兼容大模型接口；报告草稿不再默认降级到 mock。接入时使用：
 
 ```bash
 AI_PROVIDER=openai_compatible
@@ -38,10 +38,10 @@ AI_OPENAI_BASE_URL=https://api.openai.com/v1
 AI_OPENAI_API_KEY=sk-...
 AI_OPENAI_MODEL=gpt-4o-mini
 AI_TIMEOUT_SECONDS=20
-AI_ALLOW_FALLBACK=true
+AI_ALLOW_FALLBACK=false
 ```
 
-`AI_OPENAI_BASE_URL` 可替换为 DeepSeek、通义千问、智谱或本地网关的 OpenAI-compatible 地址。模型输出必须是 JSON，AI 服务会校验后再返回给业务端；失败时默认降级到 Mock，保证主诊疗流程不断。
+`AI_OPENAI_BASE_URL` 可替换为 DeepSeek、通义千问、智谱或本地网关的 OpenAI-compatible 地址。模型输出必须是 JSON，AI 服务会校验后再返回给业务端；只有显式设置 `AI_ALLOW_FALLBACK=true` 时才允许演示降级。
 
 ## pgvector RAG
 

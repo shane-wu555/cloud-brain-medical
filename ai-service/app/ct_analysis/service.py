@@ -1,13 +1,16 @@
+import json
 import logging
 import os
 import threading
 import uuid
 from typing import Any
-from .models import CtAnalysisRequest
+
 from app.clinical_assistance.models import ClinicalKnowledgeSource
 from app.core.rag import retrieve
 from app.report_drafts.models import ReportDraftRequest
 from app.report_drafts.service import create_draft
+
+from .models import CtAnalysisRequest
 
 log = logging.getLogger(__name__)
 
@@ -28,40 +31,42 @@ def _run(task_id: str, request: CtAnalysisRequest) -> None:
         with _lock:
             _tasks[task_id].update(status="RUNNING", progress=10, error=None)
 
-        # ── 真实 ML 推理（有模型文件时走此路径）────────────────
         infer_result = _run_inference(request, task_id)
-
         sources = _knowledge_sources(request)
+        draft = create_draft(
+            ReportDraftRequest(
+                orderId=request.order_id,
+                reportType="CHECK",
+                itemName=f"{request.body_part} {request.modality}",
+                findings=infer_result["findings"],
+                conclusion=infer_result["conclusion"],
+                context=_report_context_from_inference(request, infer_result),
+            )
+        )
         result = {
             **infer_result,
             "objectKey": request.object_key,
-            "reportDraft": create_draft(
-                ReportDraftRequest(
-                    orderId=request.order_id,
-                    reportType="CHECK",
-                    projectName="头部 CT",
-                    findings=infer_result["findings"],
-                    conclusion=infer_result["conclusion"],
-                    context=request.clinical_context,
-                )
-            ).model_dump(by_alias=True),
+            "reportDraft": draft.model_dump(by_alias=True),
         }
         with _lock:
             _tasks[task_id].update(
-                status="COMPLETED", progress=100,
-                result=result, knowledgeSources=sources,
+                status="COMPLETED",
+                progress=100,
+                result=result,
+                knowledgeSources=sources,
                 modelVersion=infer_result.get("modelVersion", "ct-head-v1.0"),
             )
     except Exception as exc:
-        log.exception(f"CT 推理失败 task={task_id}")
+        log.exception("CT inference failed task=%s", task_id)
         with _lock:
             _tasks[task_id].update(status="FAILED", progress=100, error=str(exc))
 
 
 def _run_inference(request: CtAnalysisRequest, task_id: str) -> dict[str, Any]:
-    """
-    调用 inference/pipeline.py 中的真实模型推理。
-    若模型文件不存在（开发阶段），自动降级为 mock 结果。
+    """Run the real CT model pipeline.
+
+    By default this does not fall back to mock output. Demo fallback is only
+    allowed when CT_INFERENCE_ALLOW_MOCK=true is set explicitly.
     """
     try:
         from .inference.pipeline import run as ml_run
@@ -78,25 +83,24 @@ def _run_inference(request: CtAnalysisRequest, task_id: str) -> dict[str, Any]:
         )
         _progress(90)
         return result
-
     except Exception as exc:
-        # 模型文件缺失（FileNotFoundError）或推理失败时降级
-        if os.getenv("CT_INFERENCE_ALLOW_MOCK", "true").lower() != "true":
+        if os.getenv("CT_INFERENCE_ALLOW_MOCK", "false").strip().lower() != "true":
             raise
-        log.warning(f"ML 推理失败，降级为 mock: {exc}")
+        log.warning("CT model inference failed, using explicit demo fallback: %s", exc)
         return _mock_inference(request)
 
+
 def _mock_inference(request: CtAnalysisRequest) -> dict[str, Any]:
-    """开发/测试阶段的 mock 结果（模型未部署时使用）"""
+    """Explicit demo fallback. Not used unless CT_INFERENCE_ALLOW_MOCK=true."""
     if "fail" in request.object_key.lower():
-        raise RuntimeError("模拟 CT 推理失败，可通过 retry 重新提交")
+        raise RuntimeError("Simulated CT inference failure; retry is allowed")
     return {
-        "findings":        "头颅CT平扫示脑实质密度尚均匀，未见明确急性出血征象。（mock）",
-        "conclusion":      "当前样例未检出明确急性颅内出血，请结合临床并由检查医生复核。",
-        "riskAdvice":      "AI结果仅供辅助，必须由检查医生确认后发布。（mock 模式：模型未部署）",
-        "confidence":      0.86,
-        "label":           "normal",
-        "metalArtifact":   {"enabled": False},
+        "findings": "演示模式：未运行真实 CT 小模型，请勿作为诊断依据。",
+        "conclusion": "演示模式未形成诊断性结论，请检查小模型配置后重新提交。",
+        "riskAdvice": "当前为显式 demo fallback，正式流程必须由真实小模型和检查医生确认。",
+        "confidence": 0.0,
+        "label": "demo",
+        "metalArtifact": {"enabled": False},
         "metalArtifactSegmentation": {
             "enabled": False,
             "hasArtifactRegion": False,
@@ -106,8 +110,17 @@ def _mock_inference(request: CtAnalysisRequest) -> dict[str, Any]:
             "confidence": 0.0,
             "topSlices": [],
         },
+        "lesionSegmentation": {
+            "enabled": False,
+            "hasLesionRegion": False,
+            "affectedSlices": 0,
+            "totalSlices": 0,
+            "foregroundRatio": 0.0,
+            "confidence": 0.0,
+            "topSlices": [],
+        },
         "abnormalRegions": [],
-        "modelVersion":    "ct-demo-1.0",
+        "modelVersion": "ct-demo-1.0",
     }
 
 
@@ -127,7 +140,7 @@ def retry(task_id: str) -> str:
         if task is None:
             raise ValueError("AI task not found")
         if task["status"] not in {"FAILED", "COMPLETED"}:
-            raise ValueError("仅失败或已完成任务允许重试")
+            raise ValueError("Only failed or completed tasks can be retried")
         request = task["_request"]
         retry_count = int(task.get("retryCount", 0)) + 1
         _tasks[task_id] = _task(task_id, request, retry_count=retry_count)
@@ -140,7 +153,7 @@ def _task(task_id: str, request: CtAnalysisRequest, retry_count: int = 0) -> dic
         "taskId": task_id,
         "status": "QUEUED",
         "progress": 0,
-        "modelVersion": "ct-demo-1.0",
+        "modelVersion": None,
         "retryCount": retry_count,
         "createdByType": "AI",
         "requiresHumanConfirmation": True,
@@ -149,6 +162,28 @@ def _task(task_id: str, request: CtAnalysisRequest, retry_count: int = 0) -> dic
         "error": None,
         "_request": request,
     }
+
+
+def _report_context_from_inference(request: CtAnalysisRequest, result: dict[str, Any]) -> str:
+    model_basis = {
+        "modelVersion": result.get("modelVersion"),
+        "label": result.get("label"),
+        "confidence": result.get("confidence"),
+        "riskAdvice": result.get("riskAdvice"),
+        "abnormalRegions": result.get("abnormalRegions", []),
+        "metalArtifact": result.get("metalArtifact"),
+        "metalArtifactSegmentation": result.get("metalArtifactSegmentation"),
+        "lesionSegmentation": result.get("lesionSegmentation"),
+    }
+    return "\n".join(
+        [
+            f"检查类型：{request.modality}",
+            f"检查部位：{request.body_part}",
+            f"临床背景：{request.clinical_context or '未提供'}",
+            "小模型结构化诊断结果如下，报告草稿必须以这些结果为依据，不得新增未提供的影像征象或诊断：",
+            json.dumps(model_basis, ensure_ascii=False, separators=(",", ":")),
+        ]
+    )
 
 
 def _knowledge_sources(request: CtAnalysisRequest) -> list[ClinicalKnowledgeSource]:

@@ -114,26 +114,7 @@
               <div class="ct-viewer">
 
                 <!-- Viewer toolbar -->
-                <div class="ct-toolbar">
-                  <button class="ct-tool" title="四格布局">
-                    <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
-                      <rect x="0" y="0" width="6" height="6" rx="1"/><rect x="8" y="0" width="6" height="6" rx="1"/>
-                      <rect x="0" y="8" width="6" height="6" rx="1"/><rect x="8" y="8" width="6" height="6" rx="1"/>
-                    </svg>
-                  </button>
-                  <div class="ct-sep"></div>
-                  <button class="ct-tool" title="窗宽窗位">☀</button>
-                  <button class="ct-tool" title="旋转">↻</button>
-                  <button class="ct-tool" title="缩小">⊖</button>
-                  <button class="ct-tool" title="放大">⊕</button>
-                  <button class="ct-tool ct-tool--active" title="平移">✋</button>
-                  <button class="ct-tool" title="十字定位线">✛</button>
-                  <button class="ct-tool" title="反色">◑</button>
-                  <div class="ct-sep"></div>
-                  <button class="ct-tool" title="测量">▷</button>
-                  <button class="ct-tool" title="标注">✏</button>
-                  <button class="ct-tool" title="更多">···</button>
-                  <div class="ct-sep ct-sep--flex"></div>
+                <div v-if="volume || aiStatus" class="ct-toolbar">
                   <div class="ct-view-tabs" v-if="volume">
                     <button :class="['ct-view-tab', ctViewerMode === 'mpr' && 'ct-view-tab--active']" @click="setCtViewerMode('mpr')">MPR/3D</button>
                     <button :class="['ct-view-tab', ctViewerMode === 'film' && 'ct-view-tab--active']" @click="setCtViewerMode('film')">多切片胶片</button>
@@ -154,6 +135,23 @@
 
                     <template v-else-if="volume">
                       <canvas ref="canvasAxial" class="ct-panel__canvas"></canvas>
+                      <div v-if="showImageAiOverlay" class="ct-ai-overlay">
+                        <div class="ct-ai-overlay__head">
+                          <span>AI 结果叠加</span>
+                          <strong>{{ overlaySliceLabel }}</strong>
+                        </div>
+                        <button
+                          v-for="item in imageAiFindings"
+                          :key="item.id"
+                          :class="['ct-ai-marker', `ct-ai-marker--${item.tone}`]"
+                          type="button"
+                          :style="{ left: item.x, top: item.y }"
+                          @click.stop="focusAiFinding(item)"
+                        >
+                          <span class="ct-ai-marker__dot"></span>
+                          <span>{{ item.label }}</span>
+                        </button>
+                      </div>
                       <div class="ct-line ct-line--h"></div>
                       <div class="ct-line ct-line--v"></div>
                       <span class="ct-orient ct-orient--ml">R</span>
@@ -167,6 +165,23 @@
 
                     <template v-else-if="imagePreviewUrl">
                       <img :src="imagePreviewUrl" class="ct-panel__img" alt="轴位" />
+                      <div v-if="showImageAiOverlay" class="ct-ai-overlay">
+                        <div class="ct-ai-overlay__head">
+                          <span>AI 结果叠加</span>
+                          <strong>{{ overlaySliceLabel }}</strong>
+                        </div>
+                        <button
+                          v-for="item in imageAiFindings"
+                          :key="item.id"
+                          :class="['ct-ai-marker', `ct-ai-marker--${item.tone}`]"
+                          type="button"
+                          :style="{ left: item.x, top: item.y }"
+                          @click.stop="focusAiFinding(item)"
+                        >
+                          <span class="ct-ai-marker__dot"></span>
+                          <span>{{ item.label }}</span>
+                        </button>
+                      </div>
                       <div class="ct-line ct-line--h"></div>
                       <div class="ct-line ct-line--v"></div>
                       <button class="ct-clear" @click="clearFile">✕</button>
@@ -320,8 +335,8 @@
                     📂 DICOM 文件夹
                     <input type="file" webkitdirectory multiple @change="loadDicomFolder" style="display:none" :disabled="!current" />
                   </label>
-                  <button class="ct-act ct-act--primary" :disabled="!file || !current" @click="uploadCt">
-                    提交 AI 分析
+                  <button class="ct-act ct-act--primary" :disabled="aiDiagnosisDisabled" @click="startAiDiagnosis">
+                    {{ aiDiagnosisButtonText }}
                   </button>
                   <button class="ct-act" :disabled="!aiTaskId" @click="pollAi">
                     刷新 AI
@@ -609,67 +624,143 @@
           <template #header>
             <div class="ai-header">
               <span>AI 检查辅助</span>
-              <el-tag :type="aiFallback ? 'warning' : aiModel ? 'success' : 'info'" effect="plain" size="small">
+              <el-tag v-if="showAiModelTag" :type="aiFallback ? 'warning' : aiModel ? 'success' : 'info'" effect="plain" size="small">
                 {{ aiModelLabel }}
               </el-tag>
             </div>
           </template>
 
-          <div class="context-block">
-            <strong>当前医嘱</strong>
-            <p>{{ current ? `${current.patientName} · ${current.itemName}` : '请先选择医嘱' }}</p>
-            <p class="muted">{{ current?.purpose || '等待 AI 辅助分析' }}</p>
-          </div>
-
-          <div v-if="role === 'CHECK_DOCTOR' && (aiStructured.label || aiStatus)" class="ai-structured">
-            <div class="ai-structured__row">
-              <span>状态</span>
-              <el-tag :type="aiStatusTagType(aiStatus)" size="small" effect="plain">{{ aiStatusLabel(aiStatus) }}</el-tag>
-            </div>
-            <div v-if="aiStructured.label" class="ai-structured__row">
-              <span>识别标签</span>
-              <strong>{{ aiStructured.label }}</strong>
-            </div>
-            <div v-if="aiStructured.confidence !== undefined" class="ai-structured__row">
-              <span>置信度</span>
-              <strong>{{ confidenceText(aiStructured.confidence) }}</strong>
-            </div>
-            <div class="ai-structured__row">
-              <span>异常框</span>
-              <strong>{{ aiStructured.abnormalRegions?.length || 0 }}</strong>
-            </div>
-            <div v-if="aiStructured.metalArtifact" class="ai-structured__row">
-              <span>金属伪影</span>
-              <strong>{{ aiStructured.metalArtifact.labelCn || aiStructured.metalArtifact.label || '已分析' }}</strong>
-            </div>
-            <div v-if="aiStructured.metalArtifactSegmentation" class="ai-structured__row">
-              <span>伪影分割</span>
-              <strong>{{ aiStructured.metalArtifactSegmentation.affectedSlices || 0 }}/{{ aiStructured.metalArtifactSegmentation.totalSlices || 0 }} 层</strong>
-            </div>
-          </div>
-
-          <div class="ai-messages">
-            <div v-for="msg in aiMessages" :key="msg.id" class="ai-message">
-              <span class="ai-msg-label">{{ msg.label }}</span>
-              <p>{{ msg.content }}</p>
-              <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
-                <el-button v-if="msg.kind === 'findings'" size="small" @click="applyToFindings(msg.content)">
-                  填入所见
+          <template v-if="role === 'CHECK_DOCTOR'">
+            <section class="ai-decision">
+              <div class="ai-decision__top">
+                <span :class="['ai-risk-dot', `ai-risk-dot--${aiRiskLevel}`]"></span>
+                <div>
+                  <strong>{{ aiDecisionTitle }}</strong>
+                  <em>{{ aiDecisionSubtitle }}</em>
+                </div>
+                <el-tag :type="aiStatusTagType(aiStatus)" size="small" effect="plain">{{ aiStatusLabel(aiStatus) }}</el-tag>
+              </div>
+              <div class="ai-decision__score">
+                <span>模型置信度</span>
+                <strong>{{ confidenceText(aiStructured.confidence) }}</strong>
+              </div>
+              <div class="ai-diagnosis-actions">
+                <el-button
+                  class="ai-theme-button"
+                  :loading="aiSubmitting"
+                  :disabled="aiDiagnosisDisabled"
+                  @click="startAiDiagnosis"
+                >
+                  {{ aiDiagnosisButtonText }}
                 </el-button>
-                <el-button v-if="msg.kind === 'conclusion'" size="small" @click="applyToConclusion(msg.content)">
-                  填入结论
-                </el-button>
-                <el-button v-if="msg.kind === 'advice'" size="small" @click="applyToAdvice(msg.content)">
-                  填入建议
+                <el-button
+                  class="ai-theme-button ai-theme-button--ghost"
+                  :disabled="!aiTaskId || aiSubmitting"
+                  @click="pollAi"
+                >
+                  刷新判断
                 </el-button>
               </div>
-            </div>
-            <el-empty v-if="!aiMessages.length" description="点击生成后在此显示" :image-size="60" />
-          </div>
+              <div class="ai-metric-grid">
+                <div class="ai-metric">
+                  <span>风险级别</span>
+                  <strong>{{ aiRiskText }}</strong>
+                </div>
+                <div class="ai-metric">
+                  <span>异常定位</span>
+                  <strong>{{ aiStructured.abnormalRegions?.length || 0 }}</strong>
+                </div>
+                <div class="ai-metric">
+                  <span>病灶分割</span>
+                  <strong>{{ lesionSegText }}</strong>
+                </div>
+                <div class="ai-metric">
+                  <span>金属伪影</span>
+                  <strong>{{ metalArtifactText }}</strong>
+                </div>
+              </div>
+            </section>
 
-          <el-button type="primary" class="full ai-action" :disabled="!current" @click="generateAiDraft">
-            {{ role === 'LAB_DOCTOR' ? '生成 AI 后续建议' : '生成 AI 报告草稿' }}
-          </el-button>
+            <section class="ai-evidence-panel">
+              <div class="ai-section-head">
+                <span>影像证据</span>
+                <strong>{{ imageAiFindings.length }}</strong>
+              </div>
+              <div v-if="imageAiFindings.length" class="ai-evidence-list">
+                <button
+                  v-for="item in imageAiFindings"
+                  :key="item.id"
+                  class="ai-evidence"
+                  type="button"
+                  @click="focusAiFinding(item)"
+                >
+                  <span :class="['ai-evidence__pin', `ai-evidence__pin--${item.tone}`]"></span>
+                  <span>
+                    <strong>{{ item.label }}</strong>
+                    <em>{{ item.detail || '点击跳转至影像证据' }}</em>
+                  </span>
+                </button>
+              </div>
+              <div v-else class="ai-evidence-empty">
+                {{ aiEvidenceEmptyText }}
+              </div>
+            </section>
+
+            <section class="ai-judgement-panel">
+              <div class="ai-section-head">
+                <span>辅助判断</span>
+                <strong>{{ aiMessages.length }}</strong>
+              </div>
+              <div v-if="aiMessages.length" class="ai-judgement-list">
+                <button
+                  v-for="msg in aiMessages"
+                  :key="msg.id"
+                  class="ai-judgement"
+                  type="button"
+                  @click="focusAiMessage(msg.kind)"
+                >
+                  <span>{{ msg.label }}</span>
+                  <p>{{ msg.content }}</p>
+                </button>
+              </div>
+              <div v-else class="ai-evidence-empty">提交影像 AI 分析后显示判断结果</div>
+            </section>
+
+            <section class="ai-report-build">
+              <div>
+                <strong>报告草稿</strong>
+                <span>根据上方辅助判断生成，仍需医生审核确认</span>
+              </div>
+              <el-button class="full ai-action ai-theme-button" :disabled="!current || !aiMessages.length" @click="generateAiDraft">
+                根据判断生成报告草稿
+              </el-button>
+            </section>
+          </template>
+
+          <template v-else>
+            <div class="ai-messages">
+              <div v-for="msg in aiMessages" :key="msg.id" class="ai-message">
+                <span class="ai-msg-label">{{ msg.label }}</span>
+                <p>{{ msg.content }}</p>
+                <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
+                  <el-button v-if="msg.kind === 'findings'" size="small" @click="applyToFindings(msg.content)">
+                    填入所见
+                  </el-button>
+                  <el-button v-if="msg.kind === 'conclusion'" size="small" @click="applyToConclusion(msg.content)">
+                    填入结论
+                  </el-button>
+                  <el-button v-if="msg.kind === 'advice'" size="small" @click="applyToAdvice(msg.content)">
+                    填入建议
+                  </el-button>
+                </div>
+              </div>
+              <el-empty v-if="!aiMessages.length" description="点击生成后在此显示" :image-size="60" />
+            </div>
+
+            <el-button type="primary" class="full ai-action" :disabled="!current" @click="generateAiDraft">
+              生成 AI 后续建议
+            </el-button>
+          </template>
         </el-card>
       </aside>
     </div>
@@ -733,15 +824,251 @@ const publishing = ref(false);
 // AI state
 const aiModel = ref('');
 const aiFallback = ref(false);
+const aiSubmitting = ref(false);
 const aiMessages = ref<Array<{ id: string; label: string; content: string; kind: string }>>([]);
 const aiModelLabel = computed(() => !aiModel.value ? '未生成' : aiFallback.value ? `${aiModel.value}/Mock` : aiModel.value);
+const showAiModelTag = computed(() => {
+  const model = aiModel.value.trim().toLowerCase();
+  return Boolean(model) && !aiFallback.value && !model.includes('mock') && !model.includes('demo');
+});
 const aiStructured = ref<{
   label?: string;
   confidence?: number;
   abnormalRegions?: Array<Record<string, any>>;
   metalArtifact?: Record<string, any>;
   metalArtifactSegmentation?: Record<string, any>;
+  lesionSegmentation?: Record<string, any>;
 }>({});
+
+type ImageAiFinding = {
+  id: string;
+  label: string;
+  detail: string;
+  kind: string;
+  tone: 'finding' | 'risk' | 'support';
+  x: string;
+  y: string;
+  sliceIndex?: number;
+};
+
+const imageAiFindings = computed<ImageAiFinding[]>(() => {
+  if (role.value !== 'CHECK_DOCTOR') return [];
+  const items: ImageAiFinding[] = [];
+  const regions = Array.isArray(aiStructured.value.abnormalRegions) ? aiStructured.value.abnormalRegions : [];
+  const sortedRegions = regions
+    .map((region, index) => ({ region, index, distance: sliceDistance(region) }))
+    .sort((a, b) => a.distance - b.distance);
+  const closeRegions = sortedRegions.filter(item => item.distance <= 8);
+  const visibleRegions = (closeRegions.length ? closeRegions : sortedRegions).slice(0, 3);
+  visibleRegions.forEach(({ region, index }) => {
+    const pos = imageRegionPosition(region, index);
+    const label = regionLabel(region);
+    const sliceIndex = numericValue(region.sliceIndex ?? region.slice ?? region.z);
+    items.push({
+      id: `region-${index}`,
+      label: sliceIndex !== undefined ? `${label} 第 ${sliceIndex + 1} 层` : label,
+      detail: regionDetail(region),
+      kind: 'findings',
+      tone: label.includes('金属') || label.includes('伪影') ? 'risk' : 'finding',
+      x: pos.x,
+      y: pos.y,
+      sliceIndex,
+    });
+  });
+  if (hasPositiveLesionSegmentation.value && items.length < 3) {
+    const seg = aiStructured.value.lesionSegmentation || {};
+    const sliceIndex = bestSegmentationSlice(seg);
+    items.push({
+      id: 'lesion-seg',
+      label: `疑似病灶 ${seg.affectedSlices || 0}/${seg.totalSlices || 0} 层`,
+      detail: seg.summary || seg.labelCn || seg.label || 'AI 已返回病灶分割摘要',
+      kind: 'findings',
+      tone: 'finding',
+      x: '58%',
+      y: '46%',
+      sliceIndex,
+    });
+  }
+  if (hasPositiveMetalSegmentation.value && items.length < 3) {
+    const seg = aiStructured.value.metalArtifactSegmentation || {};
+    const sliceIndex = bestSegmentationSlice(seg);
+    items.push({
+      id: 'metal-seg',
+      label: `金属伪影 ${seg.affectedSlices || 0}/${seg.totalSlices || 0} 层`,
+      detail: seg.summary || seg.labelCn || seg.label || 'AI 已返回金属伪影分割摘要',
+      kind: 'advice',
+      tone: 'risk',
+      x: '42%',
+      y: '56%',
+      sliceIndex,
+    });
+  }
+  if (hasPositiveMetalClassification() && items.length < 3) {
+    const metal = aiStructured.value.metalArtifact || {};
+    items.push({
+      id: 'metal-classifier',
+      label: metal.labelCn || '金属伪影提示',
+      detail: `分类置信度 ${confidenceText(numericValue(metal.confidence))}，未返回精确分割区域`,
+      kind: 'advice',
+      tone: 'risk',
+      x: '62%',
+      y: '58%',
+    });
+  }
+  if (isAbnormalCtLabel(aiStructured.value.label) && items.length < 3) {
+    items.push({
+      id: 'ct-classifier',
+      label: ctLabelText(aiStructured.value.label),
+      detail: `分类置信度 ${confidenceText(aiStructured.value.confidence)}，${regions.length ? '可结合检测框复核' : '未返回检测框定位'}`,
+      kind: 'conclusion',
+      tone: 'support',
+      x: '48%',
+      y: '34%',
+    });
+  }
+  return items;
+});
+const showImageAiOverlay = computed(() => imageAiFindings.value.length > 0 && (Boolean(volume.value) || Boolean(imagePreviewUrl.value)));
+const overlaySliceLabel = computed(() => volume.value ? `当前层 ${sliceZ.value + 1}/${volume.value.nz}` : '当前图像');
+const hasPositiveMetalSegmentation = computed(() => Boolean(aiStructured.value.metalArtifactSegmentation?.enabled && aiStructured.value.metalArtifactSegmentation?.hasArtifactRegion));
+const hasPositiveLesionSegmentation = computed(() => Boolean(aiStructured.value.lesionSegmentation?.enabled && aiStructured.value.lesionSegmentation?.hasLesionRegion));
+const aiRiskLevel = computed<'none' | 'low' | 'medium' | 'high'>(() => {
+  if (aiStatus.value === 'FAILED') return 'high';
+  if (!aiStructured.value.label && !aiStatus.value) return 'none';
+  if (aiStructured.value.label === 'hemorrhage') return 'high';
+  if (aiStructured.value.label === 'ischemia' || hasPositiveLesionSegmentation.value) return 'medium';
+  const metalLabel = String(aiStructured.value.metalArtifact?.label || '');
+  if (['severe_metal', 'moderate_metal'].includes(metalLabel) || hasPositiveMetalSegmentation.value) return 'medium';
+  if (aiStructured.value.label === 'normal') return 'low';
+  return 'medium';
+});
+const aiRiskText = computed(() => ({
+  none: '待分析',
+  low: '低风险',
+  medium: '需复核',
+  high: '高风险',
+}[aiRiskLevel.value]));
+const aiDecisionTitle = computed(() => {
+  if (!current.value) return '请选择医嘱';
+  if (aiStatus.value === 'PROCESSING') return 'AI 正在分析影像';
+  if (aiStatus.value === 'FAILED') return 'AI 分析失败';
+  if (!aiStructured.value.label && !aiStatus.value) return '等待辅助判断';
+  return ctLabelText(aiStructured.value.label);
+});
+const aiDecisionSubtitle = computed(() => {
+  if (aiStatus.value === 'FAILED') return '请检查模型服务后重试';
+  if (aiStatus.value === 'PROCESSING') return '完成后会更新风险、定位和报告依据';
+  if (!aiStructured.value.label) return '点击开始 AI 辅助诊断，结果用于辅助判断';
+  if (imageAiFindings.value.length) return '已形成可跳转的影像证据';
+  return '已返回分类判断，暂无精确定位证据';
+});
+const lesionSegText = computed(() => {
+  const seg = aiStructured.value.lesionSegmentation;
+  if (!seg?.enabled) return '未启用';
+  return `${seg.affectedSlices || 0}/${seg.totalSlices || 0} 层`;
+});
+const metalArtifactText = computed(() => {
+  const metal = aiStructured.value.metalArtifact;
+  if (!metal?.enabled) return '未启用';
+  return metal.labelCn || metal.label || '已分析';
+});
+const aiEvidenceEmptyText = computed(() => {
+  if (!aiStructured.value.label && !aiStatus.value) return '开始 AI 辅助诊断后，定位框和分割区域会在这里汇总';
+  if (aiStatus.value === 'PROCESSING') return '正在等待模型返回定位或分割结果';
+  if (aiStructured.value.label === 'normal') return 'AI 暂未发现需要定位的异常证据';
+  return 'AI 已返回分类判断，但没有返回可定位的异常框或分割区域';
+});
+const aiDiagnosisDisabled = computed(() => !current.value || !file.value || aiSubmitting.value || aiStatus.value === 'PROCESSING');
+const aiDiagnosisButtonText = computed(() => {
+  if (!current.value) return '请选择医嘱';
+  if (!file.value) return '上传影像后开始诊断';
+  if (aiStatus.value === 'PROCESSING') return 'AI 正在诊断';
+  if (aiStatus.value === 'COMPLETED') return '重新 AI 辅助诊断';
+  if (aiStatus.value === 'FAILED') return '重新 AI 辅助诊断';
+  return '开始 AI 辅助诊断';
+});
+
+function numericValue(value: unknown): number | undefined {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : undefined;
+}
+
+function sliceDistance(region: Record<string, any>): number {
+  const sliceIndex = numericValue(region.sliceIndex ?? region.slice ?? region.z);
+  if (sliceIndex === undefined || !volume.value) return 0;
+  return Math.abs(sliceIndex - sliceZ.value);
+}
+
+function imageRegionPosition(region: Record<string, any>, index: number): { x: string; y: string } {
+  const bbox = Array.isArray(region.bbox) ? region.bbox.map(Number) : [];
+  let rawX = numericValue(region.x ?? region.centerX ?? region.cx ?? region.left);
+  let rawY = numericValue(region.y ?? region.centerY ?? region.cy ?? region.top);
+  if (bbox.length >= 4 && bbox.every(Number.isFinite)) {
+    rawX = (bbox[0] + bbox[2]) / 2;
+    rawY = (bbox[1] + bbox[3]) / 2;
+  }
+  const x = rawX !== undefined ? normalizeImagePercent(rawX) : 34 + index * 18;
+  const y = rawY !== undefined ? normalizeImagePercent(rawY) : 42 + index * 12;
+  return {
+    x: `${Math.max(14, Math.min(86, x))}%`,
+    y: `${Math.max(18, Math.min(82, y))}%`,
+  };
+}
+
+function normalizeImagePercent(value: number): number {
+  if (value <= 1) return value * 100;
+  return (value / 512) * 100;
+}
+
+function regionLabel(region: Record<string, any>): string {
+  const raw = String(region.labelCn || region.label || region.type || region.source || '异常区');
+  if (raw === 'hemorrhage') return '疑似出血';
+  if (raw === 'ischemia') return '疑似缺血';
+  if (raw === 'lesion' || raw === 'lesion_segmentation') return '疑似病灶';
+  if (raw === 'metal' || raw === 'metal_artifact' || raw.includes('metal')) return '金属伪影';
+  return raw;
+}
+
+function isAbnormalCtLabel(label?: string): boolean {
+  return Boolean(label && !['normal', 'demo'].includes(label));
+}
+
+function ctLabelText(label?: string): string {
+  if (label === 'hemorrhage') return '疑似颅内出血';
+  if (label === 'ischemia') return '疑似脑缺血';
+  return label ? `AI 分类：${label}` : 'AI 分类提示';
+}
+
+function hasPositiveMetalClassification(): boolean {
+  const metal = aiStructured.value.metalArtifact;
+  const label = String(metal?.label || '');
+  return Boolean(metal?.enabled && label && !['normal', 'unknown'].includes(label));
+}
+
+function regionDetail(region: Record<string, any>): string {
+  const confidence = numericValue(region.confidence ?? region.score ?? region.probability);
+  const bbox = Array.isArray(region.bbox) ? `bbox ${region.bbox.join(', ')}` : '';
+  const area = numericValue(region.areaRatio);
+  return [
+    confidence !== undefined ? `置信度 ${Math.round(confidence * 100)}%` : '',
+    area !== undefined ? `面积占比 ${(area * 100).toFixed(2)}%` : '',
+    bbox,
+    String(region.description || region.summary || '').trim(),
+  ].filter(Boolean).join('；');
+}
+
+function bestSegmentationSlice(seg?: Record<string, any>): number | undefined {
+  const topSlices = Array.isArray(seg?.topSlices) ? seg?.topSlices : [];
+  if (!topSlices.length) return undefined;
+  const best = topSlices
+    .map((item: any) => ({
+      sliceIndex: numericValue(item.sliceIndex ?? item.slice ?? item.z),
+      confidence: numericValue(item.maxProb ?? item.confidence ?? item.score) ?? 0,
+    }))
+    .filter((item: { sliceIndex?: number }) => item.sliceIndex !== undefined)
+    .sort((a: { confidence: number }, b: { confidence: number }) => b.confidence - a.confidence)[0];
+  return best?.sliceIndex;
+}
 
 // Imaging state (CHECK_DOCTOR)
 const file = ref<File>();
@@ -1444,14 +1771,18 @@ function clearFile() {
 
 function parseAiOutput(raw: AiMedicalTask['rawOutput']): Record<string, any> {
   if (!raw) return {};
+  let parsed: unknown = raw;
   if (typeof raw === 'string') {
     try {
-      return JSON.parse(raw);
+      parsed = JSON.parse(raw);
     } catch {
       return {};
     }
   }
-  return raw as Record<string, any>;
+  if (!parsed || typeof parsed !== 'object') return {};
+  const record = parsed as Record<string, any>;
+  if (record.result && typeof record.result === 'object') return record.result as Record<string, any>;
+  return record;
 }
 
 function confidenceText(value?: number) {
@@ -1476,6 +1807,7 @@ function syncCtAiResult(task: AiMedicalTask) {
     abnormalRegions: Array.isArray(result.abnormalRegions) ? result.abnormalRegions : [],
     metalArtifact: result.metalArtifact,
     metalArtifactSegmentation: result.metalArtifactSegmentation,
+    lesionSegmentation: result.lesionSegmentation,
   };
   report.findings = result.findings || report.findings;
   report.conclusion = result.conclusion || report.conclusion;
@@ -1489,19 +1821,40 @@ function syncCtAiResult(task: AiMedicalTask) {
 
 async function uploadCt() {
   if (!current.value || !file.value) return;
-  const attachment = await uploadAttachment(current.value.id, file.value);
-  const task = await submitCt(current.value.id, attachment.id);
-  aiTaskId.value = task.externalTaskId;
-  syncCtAiResult(task);
-  if (task.status === 'COMPLETED' && current.value) await loadExistingReport(current.value.id);
-  ElMessage.success('CT AI 任务已提交');
+  aiSubmitting.value = true;
+  try {
+    aiStatus.value = 'PROCESSING';
+    aiMessages.value = [];
+    aiStructured.value = {};
+    const attachment = await uploadAttachment(current.value.id, file.value);
+    const task = await submitCt(current.value.id, attachment.id);
+    aiTaskId.value = task.externalTaskId;
+    syncCtAiResult(task);
+    if (task.status === 'COMPLETED' && current.value) await loadExistingReport(current.value.id);
+    ElMessage.success('AI 辅助诊断已启动');
+  } finally {
+    aiSubmitting.value = false;
+  }
 }
 
 async function pollAi() {
+  if (!aiTaskId.value) return;
   const task = await refreshAiTask(aiTaskId.value);
   syncCtAiResult(task);
   if (task.status === 'COMPLETED' && current.value) await loadExistingReport(current.value.id);
   if (task.status === 'COMPLETED') ElMessage.success('AI 分析完成，已同步至报告草稿');
+}
+
+async function startAiDiagnosis() {
+  if (!current.value) {
+    ElMessage.warning('请先选择医嘱');
+    return;
+  }
+  if (!file.value) {
+    ElMessage.warning('请先上传影像文件');
+    return;
+  }
+  await uploadCt();
 }
 
 async function prepareSpecimen() {
@@ -1598,9 +1951,29 @@ function reportAiContext() {
     );
   } else if (role.value === 'LAB_DOCTOR') {
     base.push(`检验明细：\n${labResultContext()}`);
+  } else if (role.value === 'CHECK_DOCTOR') {
+    base.push(`影像AI结构化结果：\n${ctAiContext()}`);
   }
   base.push('生成要求：只能依据上述真实报告数据和检验明细生成后续建议；不得添加未提供的症状、疾病、检查结果或诊断。信息不足时请明确提示需医生结合临床判断。');
   return base.join('\n');
+}
+
+function ctAiContext() {
+  if (!Object.keys(aiStructured.value).length && !report.findings && !report.conclusion) {
+    return '尚未完成影像AI分析。';
+  }
+  return JSON.stringify({
+    status: aiStatus.value,
+    label: aiStructured.value.label,
+    confidence: aiStructured.value.confidence,
+    findings: report.findings,
+    conclusion: report.conclusion,
+    riskAdvice: report.advice,
+    abnormalRegions: aiStructured.value.abnormalRegions || [],
+    metalArtifact: aiStructured.value.metalArtifact,
+    metalArtifactSegmentation: aiStructured.value.metalArtifactSegmentation,
+    lesionSegmentation: aiStructured.value.lesionSegmentation,
+  }, null, 2);
 }
 
 async function saveLab() {
@@ -1767,6 +2140,19 @@ async function generateAiDraft() {
 function applyToFindings(content: string) { report.findings = content; mainTab.value = 'report'; }
 function applyToConclusion(content: string) { report.conclusion = content; mainTab.value = 'report'; }
 function applyToAdvice(content: string) { report.advice = content; mainTab.value = 'report'; }
+function focusAiFinding(item: ImageAiFinding) {
+  if (volume.value && item.sliceIndex !== undefined) {
+    setSynchronizedSlices('axial', item.sliceIndex);
+  }
+  focusAiMessage(item.kind);
+}
+function focusAiMessage(kind: string) {
+  const message = aiMessages.value.find(item => item.kind === kind);
+  if (!message) return;
+  if (kind === 'findings') applyToFindings(message.content);
+  else if (kind === 'conclusion') applyToConclusion(message.content);
+  else if (kind === 'advice') applyToAdvice(message.content);
+}
 
 function errorMessage(error: unknown, fallback: string) {
   const response = (error as { response?: { data?: unknown } }).response;
@@ -1938,7 +2324,7 @@ onMounted(async () => {
 /* ── Main content ── */
 .wks-main {
   flex: 1; min-width: 0; overflow: hidden;
-  padding: 14px 16px;
+  padding: 12px 14px;
   display: flex; flex-direction: column;
 }
 .wks-main--schedule {
@@ -1984,6 +2370,7 @@ onMounted(async () => {
   background: #fff; border-radius: 0 0 8px 8px; padding: 18px;
   box-shadow: 0 1px 3px rgb(0 0 0 / 5%);
   flex: 1;
+  min-height: 0;
 }
 
 /* ── main-content viewer override ── */
@@ -1994,6 +2381,7 @@ onMounted(async () => {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  min-height: 0;
 }
 
 /* ── CT Viewer (CHECK_DOCTOR) ── */
@@ -2001,9 +2389,12 @@ onMounted(async () => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: #0d1117;
+  background: #f8fafc;
+  border: 1px solid #dbe3ef;
+  border-top: none;
   overflow: hidden;
   min-height: 0;
+  min-width: 0;
 }
 
 /* Toolbar */
@@ -2013,36 +2404,36 @@ onMounted(async () => {
   gap: 2px;
   height: 38px;
   padding: 0 10px;
-  background: #111827;
-  border-bottom: 1px solid #1f2937;
+  background: #ffffff;
+  border-bottom: 1px solid #dbe3ef;
   flex-shrink: 0;
 }
 .ct-tool {
   display: flex; align-items: center; justify-content: center;
   width: 30px; height: 28px;
   border: none; background: transparent;
-  color: #9ca3af; font-size: 14px;
+  color: #64748b; font-size: 14px;
   border-radius: 4px; cursor: pointer;
   transition: background 0.12s, color 0.12s;
 }
-.ct-tool:hover { background: #1f2937; color: #e5e7eb; }
-.ct-tool--active { background: #1e3a5f; color: #38bdf8; }
-.ct-sep { width: 1px; height: 20px; background: #1f2937; margin: 0 4px; flex-shrink: 0; }
+.ct-tool:hover { background: #e6f9fa; color: #0899a5; }
+.ct-tool--active { background: #0899a5; color: #fff; }
+.ct-sep { width: 1px; height: 20px; background: #dbe3ef; margin: 0 4px; flex-shrink: 0; }
 .ct-sep--flex { flex: 1; width: auto; background: transparent; }
 .ct-ai-badge {
   font-size: 11px; padding: 3px 8px;
   border-radius: 20px; white-space: nowrap;
 }
-.ct-ai-badge--running { background: #1e3a20; color: #4ade80; }
-.ct-ai-badge--done { background: #1c3557; color: #38bdf8; }
+.ct-ai-badge--running { background: #dcfce7; color: #15803d; }
+.ct-ai-badge--done { background: #e6f9fa; color: #0899a5; }
 
 .ct-view-tabs {
   display: flex;
   align-items: center;
   gap: 2px;
   padding: 2px;
-  background: #020617;
-  border: 1px solid #1f2937;
+  background: #f1f5f9;
+  border: 1px solid #dbe3ef;
   border-radius: 5px;
   margin-right: 8px;
 }
@@ -2052,26 +2443,27 @@ onMounted(async () => {
   border: none;
   border-radius: 3px;
   background: transparent;
-  color: #9ca3af;
+  color: #64748b;
   font-size: 12px;
   cursor: pointer;
   white-space: nowrap;
 }
-.ct-view-tab:hover { color: #e5e7eb; }
+.ct-view-tab:hover { color: #0899a5; }
 .ct-view-tab--active {
-  background: #164e63;
-  color: #ecfeff;
+  background: #0899a5;
+  color: #fff;
 }
 
 /* 2×2 panels grid */
 .ct-panels {
-  flex: 1;
+  flex: 1 1 0;
   display: grid;
-  grid-template-columns: minmax(360px, 1.18fr) minmax(320px, 1fr);
-  grid-template-rows: minmax(280px, 1.18fr) minmax(210px, 0.82fr);
-  gap: 2px;
-  background: #020617;
+  grid-template-columns: minmax(0, 1.16fr) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1.12fr) minmax(0, 0.78fr);
+  gap: 1px;
+  background: #dbe3ef;
   min-height: 0;
+  min-width: 0;
 }
 
 .ct-panel {
@@ -2080,12 +2472,15 @@ onMounted(async () => {
   overflow: hidden;
   display: flex; align-items: center; justify-content: center;
   cursor: crosshair;
+  min-width: 0;
+  min-height: 0;
 }
-.ct-panel + .ct-panel { border-left: 1px solid #0a1628; }
+.ct-panel + .ct-panel { border-left: 1px solid #dbe3ef; }
 .ct-panel:nth-child(3),
-.ct-panel:nth-child(4) { border-top: 1px solid #0a1628; }
+.ct-panel:nth-child(4) { border-top: 1px solid #dbe3ef; }
+.ct-panel:nth-child(3) { border-top: 1px solid #dbe3ef; }
 .ct-panel:first-child .ct-panel__canvas {
-  max-height: calc(100% - 18px);
+  max-height: calc(86% - 18px);
 }
 
 /* Panel overlays */
@@ -2104,9 +2499,75 @@ onMounted(async () => {
   pointer-events: none; z-index: 5;
 }
 .ct-panel__img {
-  width: 100%; height: 100%;
+  width: 88%; height: 88%;
   object-fit: contain;
 }
+.ct-ai-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 7;
+  pointer-events: none;
+}
+.ct-ai-overlay__head {
+  position: absolute;
+  left: 12px;
+  bottom: 28px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border: 1px solid rgba(34, 211, 238, 0.45);
+  border-radius: 4px;
+  background: rgba(2, 6, 23, 0.72);
+  color: #cffafe;
+  font-size: 11px;
+  backdrop-filter: blur(4px);
+}
+.ct-ai-overlay__head strong {
+  color: #fff;
+  font-weight: 700;
+}
+.ct-ai-marker {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 188px;
+  min-height: 28px;
+  padding: 5px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.48);
+  border-radius: 4px;
+  background: rgba(8, 13, 23, 0.82);
+  color: #fff;
+  font-size: 12px;
+  line-height: 1.25;
+  text-align: left;
+  cursor: pointer;
+  pointer-events: auto;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45), 0 0 24px rgba(34, 211, 238, 0.18);
+}
+.ct-ai-marker::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  width: 1px;
+  height: 34px;
+  background: currentColor;
+  opacity: 0.7;
+}
+.ct-ai-marker__dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 5px rgba(255,255,255,0.08), 0 0 14px currentColor;
+  flex-shrink: 0;
+}
+.ct-ai-marker--finding { color: #67e8f9; }
+.ct-ai-marker--risk { color: #fda4af; }
+.ct-ai-marker--support { color: #bef264; }
 
 /* Crosshair lines */
 .ct-line {
@@ -2170,16 +2631,16 @@ onMounted(async () => {
   display: grid;
   grid-template-columns: repeat(5, minmax(120px, 1fr));
   grid-auto-rows: minmax(118px, 1fr);
-  gap: 2px;
+  gap: 6px;
   overflow: auto;
-  padding: 2px;
-  background: #050505;
+  padding: 8px;
+  background: #f8fafc;
 }
 .ct-film__cell {
   position: relative;
   min-width: 0;
   min-height: 118px;
-  border: 1px solid #6e7600;
+  border: 1px solid #dbe3ef;
   background: #000;
   padding: 0;
   overflow: hidden;
@@ -2187,8 +2648,8 @@ onMounted(async () => {
   transition: border-color 0.12s, box-shadow 0.12s;
 }
 .ct-film__cell:hover {
-  border-color: #b9c400;
-  box-shadow: inset 0 0 0 1px rgba(185, 196, 0, 0.55);
+  border-color: #0899a5;
+  box-shadow: 0 0 0 2px rgba(8, 153, 165, 0.16);
 }
 .ct-film__cell--selected {
   border-color: #ef4444;
@@ -2229,8 +2690,8 @@ onMounted(async () => {
 
 /* Canvas — use smooth (bilinear) interpolation for medical CT display */
 .ct-panel__canvas {
-  max-width: 100%;
-  max-height: calc(100% - 22px);
+  max-width: 88%;
+  max-height: calc(86% - 22px);
   image-rendering: auto;    /* bilinear when scaled, avoids blocky pixel look */
   display: block;
 }
@@ -2238,8 +2699,8 @@ onMounted(async () => {
 .ct-panel--3d { cursor: grab; }
 .ct-panel--3d:active { cursor: grabbing; }
 .ct-panel__canvas--3d {
-  width: 100% !important;
-  height: 100% !important;
+  width: 92% !important;
+  height: 92% !important;
   max-height: 100%;
   image-rendering: auto;
 }
@@ -2252,9 +2713,9 @@ onMounted(async () => {
   align-items: center;
   gap: 4px;
   padding: 4px;
-  border: 1px solid rgba(31, 41, 55, 0.9);
+  border: 1px solid rgba(219, 227, 239, 0.9);
   border-radius: 5px;
-  background: rgba(2, 6, 23, 0.78);
+  background: rgba(255, 255, 255, 0.86);
   backdrop-filter: blur(4px);
 }
 .ct-3d-preset {
@@ -2262,22 +2723,22 @@ onMounted(async () => {
   padding: 0 8px;
   border: none;
   border-radius: 3px;
-  background: #111827;
-  color: #8ea3b8;
+  background: #f1f5f9;
+  color: #64748b;
   font-size: 11px;
   cursor: pointer;
 }
-.ct-3d-preset:hover { color: #e5e7eb; background: #1f2937; }
+.ct-3d-preset:hover { color: #0899a5; background: #e6f9fa; }
 .ct-3d-preset--active {
-  background: #0e7490;
-  color: #ecfeff;
+  background: #0899a5;
+  color: #fff;
 }
 .ct-3d-roi {
   display: flex;
   align-items: center;
   gap: 5px;
   margin-left: 4px;
-  color: #7dd3fc;
+  color: #0899a5;
   font-size: 10px;
   white-space: nowrap;
 }
@@ -2303,7 +2764,7 @@ onMounted(async () => {
   margin: 0;
   padding: 0;
   appearance: none;
-  background: rgba(0, 0, 0, 0.55);
+  background: rgba(255, 255, 255, 0.78);
   cursor: pointer;
   z-index: 8;
 }
@@ -2311,12 +2772,12 @@ onMounted(async () => {
   appearance: none;
   width: 14px; height: 14px;
   border-radius: 50%;
-  background: #38bdf8;
+  background: #0899a5;
   cursor: pointer;
 }
 .ct-slider::-webkit-slider-runnable-track {
   height: 3px;
-  background: rgba(56, 189, 248, 0.35);
+  background: rgba(8, 153, 165, 0.32);
 }
 
 /* Loading spinner */
@@ -2329,13 +2790,13 @@ onMounted(async () => {
 .ct-wl-lbl { font-size: 11px; color: #6b7280; white-space: nowrap; }
 .ct-wl-inp {
   width: 64px; height: 28px;
-  background: #1f2937; color: #e5e7eb;
-  border: 1px solid #374151; border-radius: 4px;
+  background: #fff; color: #0f172a;
+  border: 1px solid #dbe3ef; border-radius: 4px;
   padding: 0 6px; font-size: 12px;
   text-align: center;
 }
-.ct-wl-inp:focus { outline: none; border-color: #38bdf8; }
-.ct-sep--sm { width: 1px; height: 20px; background: #1f2937; margin: 0 4px; }
+.ct-wl-inp:focus { outline: none; border-color: #0899a5; }
+.ct-sep--sm { width: 1px; height: 20px; background: #dbe3ef; margin: 0 4px; }
 
 /* Clear button */
 .ct-clear {
@@ -2353,37 +2814,42 @@ onMounted(async () => {
   gap: 2px;
   height: 46px;
   padding: 0 12px;
-  background: #111827;
-  border-top: 1px solid #1f2937;
+  background: #ffffff;
+  border-top: 1px solid #dbe3ef;
   flex-shrink: 0;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 .ct-act {
   display: flex; align-items: center; gap: 6px;
   padding: 7px 14px;
-  border: none; background: #1f2937;
-  color: #9ca3af; font-size: 12px;
+  border: 1px solid #dbe3ef; background: #f8fafc;
+  color: #475569; font-size: 12px;
   border-radius: 5px; cursor: pointer;
   transition: background 0.12s, color 0.12s;
   white-space: nowrap;
+  flex-shrink: 0;
 }
-.ct-act:hover:not(:disabled):not(.ct-act--disabled) { background: #273549; color: #e5e7eb; }
+.ct-act:hover:not(:disabled):not(.ct-act--disabled) { background: #e6f9fa; color: #0899a5; border-color: #a8e8ec; }
 .ct-act:disabled,
 .ct-act--disabled { opacity: 0.4; cursor: not-allowed; }
 .ct-act-gap { flex: 1; }
 .ct-act--primary {
-  background: #0899a5; color: #fff;
+  background: #0899a5; color: #fff; border-color: #0899a5;
 }
 .ct-act--primary:hover:not(:disabled) { background: #0cbdcc; }
 .ct-act--report {
-  background: #1e3a5f; color: #93c5fd;
+  background: #e6f9fa; color: #0899a5; border-color: #a8e8ec;
 }
-.ct-act--report:hover { background: #1d4ed8; color: #fff; }
+.ct-act--report:hover { background: #0899a5; color: #fff; }
 .ct-act--publish {
-  background: #334155;
-  color: #d9f99d;
+  background: #f0fdf4;
+  color: #15803d;
+  border-color: #bbf7d0;
 }
 .ct-act--publish:hover:not(:disabled) {
-  background: #4d7c0f;
+  background: #16a34a;
   color: #fff;
 }
 
@@ -2747,14 +3213,256 @@ onMounted(async () => {
 
 /* ── AI panel ── */
 .wks-ai {
-  width: 300px; flex-shrink: 0;
-  overflow-y: auto; padding: 12px;
-  border-left: 1px solid #e5e7eb; background: #f8fafc;
+  width: clamp(300px, 18vw, 336px); flex-shrink: 0;
+  overflow-y: auto; padding: 14px;
+  border-left: 1px solid #dbe3ef; background: linear-gradient(180deg, #f8fafc 0%, #eef7f8 100%);
+  box-sizing: border-box;
 }
-.ai-card { border-color: #a8e8ec; }
-.ai-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ai-card {
+  border-color: #b9edf0;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
+}
+.ai-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: #0f172a;
+  font-size: 16px;
+  font-weight: 700;
+}
 .context-block { margin: 12px 0; padding: 10px 12px; border-radius: 8px; background: #f0f9fa; }
 .context-block p { margin: 4px 0 0; font-size: 13px; }
+.ai-decision,
+.ai-evidence-panel,
+.ai-judgement-panel,
+.ai-report-build {
+  margin-bottom: 12px;
+  border: 1px solid #dbe3ef;
+  border-radius: 8px;
+  background: #fff;
+}
+.ai-decision {
+  padding: 14px;
+  border-color: #9de3e7;
+  background:
+    linear-gradient(135deg, rgba(8, 153, 165, 0.12) 0%, rgba(255,255,255,0) 46%),
+    #ffffff;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.85), 0 6px 18px rgba(8, 153, 165, 0.08);
+}
+.ai-decision__top {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 9px;
+}
+.ai-decision__top strong {
+  display: block;
+  color: #0f172a;
+  font-size: 16px;
+  line-height: 1.3;
+}
+.ai-decision__top em {
+  display: block;
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.4;
+}
+.ai-risk-dot {
+  width: 10px;
+  height: 10px;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: #94a3b8;
+  box-shadow: 0 0 0 4px rgba(148, 163, 184, 0.14);
+}
+.ai-risk-dot--low {
+  background: #22c55e;
+  box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.14);
+}
+.ai-risk-dot--medium {
+  background: #f59e0b;
+  box-shadow: 0 0 0 4px rgba(245, 158, 11, 0.16);
+}
+.ai-risk-dot--high {
+  background: #ef4444;
+  box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.16);
+}
+.ai-decision__score {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 9px 10px;
+  border-radius: 6px;
+  background: linear-gradient(135deg, #0f172a, #12313a);
+  color: #cbd5e1;
+}
+.ai-decision__score strong {
+  color: #fff;
+  font-size: 20px;
+  line-height: 1;
+}
+.ai-diagnosis-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  margin-top: 10px;
+}
+.ai-theme-button,
+:deep(.ai-theme-button.el-button) {
+  height: 36px;
+  border-color: #0899a5;
+  background: #0899a5;
+  color: #fff;
+  font-weight: 700;
+}
+.ai-theme-button:hover,
+.ai-theme-button:focus,
+:deep(.ai-theme-button.el-button:hover),
+:deep(.ai-theme-button.el-button:focus) {
+  border-color: #0cbdcc;
+  background: #0cbdcc;
+  color: #fff;
+}
+.ai-theme-button:disabled,
+:deep(.ai-theme-button.el-button.is-disabled) {
+  border-color: #9bd7dc;
+  background: #9bd7dc;
+  color: rgba(255,255,255,0.9);
+}
+.ai-theme-button--ghost,
+:deep(.ai-theme-button--ghost.el-button) {
+  min-width: 88px;
+  border-color: #a8e8ec;
+  background: #f0f9fa;
+  color: #0899a5;
+}
+.ai-theme-button--ghost:hover,
+.ai-theme-button--ghost:focus,
+:deep(.ai-theme-button--ghost.el-button:hover),
+:deep(.ai-theme-button--ghost.el-button:focus) {
+  border-color: #0899a5;
+  background: #e6f9fa;
+  color: #067985;
+}
+.ai-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+.ai-metric {
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid #dbe3ef;
+  border-radius: 6px;
+  background: rgba(248, 250, 252, 0.85);
+}
+.ai-metric span {
+  display: block;
+  color: #64748b;
+  font-size: 11px;
+}
+.ai-metric strong {
+  display: block;
+  margin-top: 3px;
+  color: #0f172a;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.ai-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 11px 12px 8px;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 700;
+}
+.ai-section-head strong {
+  min-width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 11px;
+  background: #0899a5;
+  color: #fff;
+  font-size: 12px;
+}
+.ai-evidence-empty {
+  min-height: 70px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 12px 12px;
+  padding: 10px;
+  border: 1px dashed #b9dfe4;
+  border-radius: 6px;
+  color: #7890a4;
+  background: #fbfeff;
+  font-size: 12px;
+  text-align: center;
+  line-height: 1.45;
+}
+.ai-judgement-list {
+  display: grid;
+  gap: 8px;
+  padding: 0 12px 12px;
+}
+.ai-judgement {
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid #dbe3ef;
+  border-left: 3px solid #0cbdcc;
+  border-radius: 5px;
+  background: #fbfeff;
+  text-align: left;
+  cursor: pointer;
+}
+.ai-judgement:hover {
+  border-color: #0cbdcc;
+  background: #ecfeff;
+}
+.ai-judgement span {
+  display: block;
+  color: #0899a5;
+  font-size: 12px;
+  font-weight: 700;
+}
+.ai-judgement p {
+  display: -webkit-box;
+  margin: 5px 0 0;
+  color: #334155;
+  font-size: 13px;
+  line-height: 1.5;
+  overflow: hidden;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+.ai-report-build {
+  padding: 12px;
+  border-color: #a8e8ec;
+  background: #f7fcfd;
+}
+.ai-report-build strong {
+  display: block;
+  color: #0f172a;
+  font-size: 13px;
+}
+.ai-report-build span {
+  display: block;
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 12px;
+}
 .ai-structured {
   margin-bottom: 10px;
   padding: 9px 10px;
@@ -2781,6 +3489,100 @@ onMounted(async () => {
   font-weight: 700;
   text-align: right;
   overflow-wrap: anywhere;
+}
+.ai-image-bridge {
+  margin-bottom: 10px;
+  padding: 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+}
+.ai-image-bridge__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 700;
+}
+.ai-image-bridge__top strong {
+  min-width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 11px;
+  background: #0f172a;
+  color: #fff;
+  font-size: 12px;
+}
+.ai-evidence-list {
+  display: grid;
+  gap: 7px;
+}
+.ai-evidence {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  padding: 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 5px;
+  background: #f8fafc;
+  text-align: left;
+  cursor: pointer;
+}
+.ai-evidence:hover {
+  border-color: #0899a5;
+  background: #f0fdfa;
+}
+.ai-evidence__pin {
+  width: 9px;
+  height: 9px;
+  margin-top: 4px;
+  border-radius: 50%;
+  background: #06b6d4;
+  box-shadow: 0 0 0 4px rgba(6, 182, 212, 0.12);
+}
+.ai-evidence__pin--risk {
+  background: #f43f5e;
+  box-shadow: 0 0 0 4px rgba(244, 63, 94, 0.12);
+}
+.ai-evidence__pin--support {
+  background: #65a30d;
+  box-shadow: 0 0 0 4px rgba(101, 163, 13, 0.12);
+}
+.ai-evidence strong {
+  display: block;
+  color: #0f172a;
+  font-size: 12px;
+  line-height: 1.35;
+}
+.ai-evidence em {
+  display: -webkit-box;
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 12px;
+  font-style: normal;
+  line-height: 1.45;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.ai-image-bridge__empty {
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed #cbd5e1;
+  border-radius: 5px;
+  color: #94a3b8;
+  font-size: 12px;
+  text-align: center;
+  padding: 8px;
 }
 .ai-messages { min-height: 120px; max-height: 300px; overflow-y: auto; margin-bottom: 10px; }
 .ai-message {

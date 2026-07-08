@@ -95,7 +95,9 @@ def classify_volume(
     """
     session = _get_session()
     if session is None:
-        return _mock_result()
+        raise FileNotFoundError(
+            "CT classifier model is not available. Configure CT_CLASSIFIER_MODEL or provide models/classifier.onnx."
+        )
 
     input_name  = session.get_inputs()[0].name
     output_name = session.get_outputs()[0].name

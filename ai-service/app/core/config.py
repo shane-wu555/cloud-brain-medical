@@ -22,12 +22,12 @@ class AiSettings:
 
 def settings() -> AiSettings:
     return AiSettings(
-        provider=os.getenv("AI_PROVIDER", "mock").strip().lower(),
+        provider=os.getenv("AI_PROVIDER", "openai_compatible").strip().lower(),
         openai_base_url=os.getenv("AI_OPENAI_BASE_URL", "https://api.openai.com/v1").rstrip("/"),
         openai_api_key=os.getenv("AI_OPENAI_API_KEY") or None,
         openai_model=os.getenv("AI_OPENAI_MODEL", "gpt-4o-mini"),
         timeout_seconds=float(os.getenv("AI_TIMEOUT_SECONDS", "55")),
-        allow_fallback=os.getenv("AI_ALLOW_FALLBACK", "true").strip().lower() != "false",
+        allow_fallback=os.getenv("AI_ALLOW_FALLBACK", "false").strip().lower() == "true",
         rag_database_url=os.getenv("AI_RAG_DATABASE_URL") or os.getenv("DATABASE_URL") or None,
         rag_schema=os.getenv("AI_RAG_SCHEMA", "ai"),
         rag_embedding_dim=int(os.getenv("AI_RAG_EMBEDDING_DIM", "64")),
