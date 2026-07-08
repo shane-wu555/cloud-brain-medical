@@ -7,8 +7,12 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 5173,
     proxy: {
-      '/api': 'http://localhost:8080',
-      '/ai': 'http://localhost:8000'
+      '/api': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+        timeout: 10 * 60 * 1000,
+        proxyTimeout: 10 * 60 * 1000
+      }
     }
   },
   preview: {

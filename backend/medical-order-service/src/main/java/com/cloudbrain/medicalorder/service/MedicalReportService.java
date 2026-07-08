@@ -10,8 +10,10 @@ import com.cloudbrain.medicalorder.repository.MedicalReportRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,6 +30,7 @@ public class MedicalReportService {
     private final ClinicalWorkflowClient workflow;
     private final PatientAccessClient patientAccessClient;
     private final AuditPublisher auditPublisher;
+    private final long ctTaskTimeoutSeconds;
 
     public MedicalReportService(
             MedicalReportRepository reports,
@@ -38,7 +41,8 @@ public class MedicalReportService {
             ObjectMapper mapper,
             ClinicalWorkflowClient workflow,
             PatientAccessClient patientAccessClient,
-            AuditPublisher auditPublisher) {
+            AuditPublisher auditPublisher,
+            @Value("${ai.ct.task-timeout-seconds:360}") long ctTaskTimeoutSeconds) {
         this.reports = reports;
         this.orders = orders;
         this.orderService = orderService;
@@ -48,6 +52,7 @@ public class MedicalReportService {
         this.workflow = workflow;
         this.patientAccessClient = patientAccessClient;
         this.auditPublisher = auditPublisher;
+        this.ctTaskTimeoutSeconds = ctTaskTimeoutSeconds;
     }
 
     public MedicalAttachment upload(String orderId, MultipartFile file, String actor) {
@@ -68,11 +73,14 @@ public class MedicalReportService {
     public AiMedicalTask submitCt(String orderId, String attachmentId, String actor) {
         MedicalOrder order = order(orderId);
         checkExecutor(order, actor);
+        if (!"CHECK".equals(order.orderType())) {
+            throw new IllegalArgumentException("CT analysis is only supported for check orders");
+        }
         MedicalAttachment attachment = reports.attachments(orderId).stream()
                 .filter(candidate -> candidate.id().equals(attachmentId))
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("Attachment does not exist"));
-        Map<String, Object> response = ai.submit(orderId, attachment.objectKey());
+        Map<String, Object> response = ai.submit(orderId, attachment.objectKey(), order.bodyPart(), order.purpose());
         return reports.createTask(orderId, (String) response.get("taskId"));
     }
 
@@ -81,6 +89,10 @@ public class MedicalReportService {
         AiMedicalTask task = reports.taskByExternal(externalId)
                 .orElseThrow(() -> new IllegalArgumentException("AI task does not exist"));
         checkExecutor(order(task.medicalOrderId()), actor);
+        Optional<AiMedicalTask> timedOut = reports.timeoutTaskIfExpired(externalId, ctTaskTimeoutSeconds);
+        if (timedOut.isPresent()) {
+            return timedOut.get();
+        }
         Map<String, Object> result = ai.task(externalId);
         String status = (String) result.get("status");
         String output;

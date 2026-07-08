@@ -198,6 +198,7 @@ def test_triage_response_includes_rag_sources(monkeypatch):
 
 def test_ct_analysis_generates_report_draft_and_sources(monkeypatch):
     monkeypatch.setenv("AI_PROVIDER", "mock")
+    monkeypatch.setenv("CT_INFERENCE_ALLOW_MOCK", "true")
     monkeypatch.delenv("AI_RAG_DATABASE_URL", raising=False)
     monkeypatch.delenv("DATABASE_URL", raising=False)
     task_id = submit(CtAnalysisRequest(orderId="order-ct", objectKey="ct/sample.dcm", clinicalContext="突发头痛"))
@@ -213,6 +214,7 @@ def test_ct_analysis_generates_report_draft_and_sources(monkeypatch):
 
 
 def test_ct_analysis_failed_task_can_retry(monkeypatch):
+    monkeypatch.setenv("CT_INFERENCE_ALLOW_MOCK", "true")
     monkeypatch.delenv("AI_RAG_DATABASE_URL", raising=False)
     monkeypatch.delenv("DATABASE_URL", raising=False)
     task_id = submit(CtAnalysisRequest(orderId="order-ct", objectKey="ct/fail.dcm"))
@@ -220,6 +222,7 @@ def test_ct_analysis_failed_task_can_retry(monkeypatch):
     assert get(task_id)["status"] == "FAILED"
 
     retry(task_id)
+    time.sleep(0.3)
     assert get(task_id)["retryCount"] == 1
 
 

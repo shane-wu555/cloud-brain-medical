@@ -5,6 +5,8 @@ from pathlib import Path
 
 import numpy as np
 
+from .ort_runtime import preload_cuda_dlls
+
 CLASSES    = ["normal", "hemorrhage"]
 CLASS_CN   = {
     "normal":     "未见明确异常",
@@ -34,10 +36,15 @@ def _get_session():
         return None
 
     import onnxruntime as ort
+    preload_cuda_dlls(ort)
     opts = ort.SessionOptions()
-    opts.inter_op_num_threads = 4
-    opts.intra_op_num_threads = 4
-    providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    opts.inter_op_num_threads = int(os.getenv("CT_ONNX_INTER_OP_THREADS", "1"))
+    opts.intra_op_num_threads = int(os.getenv("CT_ONNX_INTRA_OP_THREADS", "1"))
+    providers = [
+        provider
+        for provider in ["CUDAExecutionProvider", "CPUExecutionProvider"]
+        if provider in ort.get_available_providers()
+    ]
     _session = ort.InferenceSession(model_path, sess_options=opts, providers=providers)
     return _session
 

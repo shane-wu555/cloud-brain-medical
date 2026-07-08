@@ -4,8 +4,13 @@ server:
 spring:
   application:
     name: gateway-service
+  codec:
+    max-in-memory-size: ${GATEWAY_MAX_IN_MEMORY_SIZE:64MB}
   cloud:
     gateway:
+      httpclient:
+        connect-timeout: 60000
+        response-timeout: 600s
       globalcors:
         cors-configurations:
           '[/**]':

@@ -38,7 +38,8 @@ class MedicalReportServiceTest {
             mapper,
             workflow,
             patientAccessClient,
-            auditPublisher);
+            auditPublisher,
+            360);
 
     @Test
     void reportListAuditsAsSingleAggregatedAccess() {

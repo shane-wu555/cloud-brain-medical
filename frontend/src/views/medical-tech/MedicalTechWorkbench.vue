@@ -116,9 +116,22 @@
                 <!-- Viewer toolbar -->
                 <div v-if="volume || aiStatus" class="ct-toolbar">
                   <div class="ct-view-tabs" v-if="volume">
-                    <button :class="['ct-view-tab', ctViewerMode === 'mpr' && 'ct-view-tab--active']" @click="setCtViewerMode('mpr')">MPR/3D</button>
-                    <button :class="['ct-view-tab', ctViewerMode === 'film' && 'ct-view-tab--active']" @click="setCtViewerMode('film')">多切片胶片</button>
+                    <button type="button" :class="['ct-view-tab', ctViewerMode === 'mpr' && 'ct-view-tab--active']" @click.stop="setCtViewerMode('mpr')">MPR/3D</button>
+                    <button type="button" :class="['ct-view-tab', ctViewerMode === 'film' && 'ct-view-tab--active']" @click.stop="setCtViewerMode('film')">多切片胶片</button>
                   </div>
+                  <div v-if="volume" class="ct-window-tools">
+                    <span class="ct-wl-lbl">WL</span>
+                    <input class="ct-wl-inp" type="number" v-model.number="winC" @change="onManualWindowChange" />
+                    <span class="ct-wl-lbl">WW</span>
+                    <input class="ct-wl-inp" type="number" v-model.number="winW" @change="onManualWindowChange" />
+                    <div class="ct-sep ct-sep--sm"></div>
+                    <button :class="['ct-act ct-act--compact', windowPreset === 'brain' && 'ct-act--active']" @click="setWindow('brain')">脑窗</button>
+                    <button :class="['ct-act ct-act--compact', windowPreset === 'standard' && 'ct-act--active']" @click="setWindow('standard')">标准</button>
+                    <button :class="['ct-act ct-act--compact', windowPreset === 'subdural' && 'ct-act--active']" @click="setWindow('subdural')">硬膜下</button>
+                    <button :class="['ct-act ct-act--compact', windowPreset === 'bone' && 'ct-act--active']" @click="setWindow('bone')">骨窗</button>
+                    <button :class="['ct-act ct-act--compact', windowPreset === 'soft' && 'ct-act--active']" @click="setWindow('soft')">软组织</button>
+                  </div>
+                  <div class="ct-toolbar__spacer"></div>
                   <span v-if="aiStatus === 'PROCESSING'" class="ct-ai-badge ct-ai-badge--running">AI 分析中…</span>
                   <span v-else-if="aiStatus === 'COMPLETED'" class="ct-ai-badge ct-ai-badge--done">✓ AI 已完成</span>
                 </div>
@@ -289,56 +302,44 @@
 
                 </div><!-- /ct-panels -->
 
-                <div v-show="ctViewerMode === 'film'" class="ct-film">
+                <div v-show="ctViewerMode === 'film'" ref="filmScrollRef" class="ct-film" @scroll="onFilmScroll">
                   <div v-if="!volume" class="ct-placeholder">
                     <div class="ct-placeholder__icon">⬡</div>
                     <div class="ct-placeholder__text">上传体积影像后显示多切片胶片</div>
                   </div>
-                  <template v-else>
+                  <div v-else class="ct-film__spacer" :style="{ height: `${filmTotalRows * FILM_ROW_STRIDE}px` }">
+                    <div class="ct-film__window" :style="{ transform: `translateY(${filmStartRow * FILM_ROW_STRIDE}px)` }">
                     <button
-                      v-for="item in filmThumbs"
+                      v-for="item in visibleFilmThumbs"
                       :key="item.z"
                       :class="['ct-film__cell', isFilmSliceSelected(item.z) && 'ct-film__cell--selected']"
                       @click="toggleFilmSlice(item.z)"
                       @dblclick="jumpToSlice(item.z)"
                     >
-                      <img :src="item.url" :alt="`轴位切片 ${item.z + 1}`" />
+                      <img v-if="item.url" :src="item.url" :alt="`轴位切片 ${item.z + 1}`" />
+                      <span v-else class="ct-film__loading">生成中</span>
                       <span class="ct-film__tag">R</span>
                       <span class="ct-film__tag ct-film__tag--posterior">P</span>
                       <span class="ct-film__idx">{{ item.z + 1 }}</span>
                     </button>
-                  </template>
+                    </div>
+                  </div>
                 </div>
 
                 <!-- Bottom action toolbar -->
                 <div class="ct-actions">
-                  <!-- W/L inline controls -->
-                  <span class="ct-wl-lbl">WL</span>
-                  <input class="ct-wl-inp" type="number" v-model.number="winC" @change="rerenderMpr" />
-                  <span class="ct-wl-lbl">WW</span>
-                  <input class="ct-wl-inp" type="number" v-model.number="winW" @change="rerenderMpr" />
-                  <div class="ct-sep ct-sep--sm"></div>
-                  <button class="ct-act" @click="setWindow('brain')">脑窗</button>
-                  <button class="ct-act" @click="setWindow('standard')">标准</button>
-                  <button class="ct-act" @click="setWindow('subdural')">硬膜下</button>
-                  <button class="ct-act" @click="setWindow('bone')">骨窗</button>
-                  <button class="ct-act" @click="setWindow('soft')">软组织</button>
                   <button class="ct-act" :disabled="!volume" @click="selectCurrentFilmSlice">选当前层</button>
-                  <button class="ct-act" :disabled="!volume" @click="selectRecommendedFilmSlices">智能选片</button>
+                  <button class="ct-act" :disabled="!volume" @click="selectRecommendedFilmSlices">推荐选片</button>
                   <button class="ct-act" :disabled="selectedFilmSlices.length === 0" @click="clearSelectedFilmSlices">清空选片</button>
                   <div class="ct-act-gap"></div>
-                  <label class="ct-act" :class="{ 'ct-act--disabled': !current }">
-                    ⬆ 单文件影像
-                    <input type="file" accept=".nii,.nii.gz,.nrrd,.nhdr,.mha,.dcm,.jpg,.jpeg,.png,.bmp,.tiff" @change="chooseFile" style="display:none" :disabled="!current" />
-                  </label>
-                  <label class="ct-act" :class="{ 'ct-act--disabled': !current }" title="上传一整个 DICOM 文件夹">
-                    📂 DICOM 文件夹
-                    <input type="file" webkitdirectory multiple @change="loadDicomFolder" style="display:none" :disabled="!current" />
+                  <label class="ct-act ct-act--upload" :class="{ 'ct-act--disabled': !current }" title="自动识别 NIfTI、NRRD、MHA、DICOM 和常见图片">
+                    上传影像
+                    <input type="file" accept=".nii,.nii.gz,.nrrd,.nhdr,.mha,.dcm,.jpg,.jpeg,.png,.bmp,.tiff" multiple @change="chooseFile" style="display:none" :disabled="!current" />
                   </label>
                   <button class="ct-act ct-act--primary" :disabled="aiDiagnosisDisabled" @click="startAiDiagnosis">
                     {{ aiDiagnosisButtonText }}
                   </button>
-                  <button class="ct-act" :disabled="!aiTaskId" @click="pollAi">
+                  <button class="ct-act" :disabled="!aiTaskId" @click="pollAi()">
                     刷新 AI
                   </button>
                   <button class="ct-act ct-act--publish" :disabled="selectedFilmSlices.length === 0" @click="exportSelectedFilm">
@@ -636,7 +637,7 @@
                 <span :class="['ai-risk-dot', `ai-risk-dot--${aiRiskLevel}`]"></span>
                 <div>
                   <strong>{{ aiDecisionTitle }}</strong>
-                  <em>{{ aiDecisionSubtitle }}</em>
+                  <em v-if="aiDecisionSubtitle">{{ aiDecisionSubtitle }}</em>
                 </div>
                 <el-tag :type="aiStatusTagType(aiStatus)" size="small" effect="plain">{{ aiStatusLabel(aiStatus) }}</el-tag>
               </div>
@@ -656,7 +657,7 @@
                 <el-button
                   class="ai-theme-button ai-theme-button--ghost"
                   :disabled="!aiTaskId || aiSubmitting"
-                  @click="pollAi"
+                  @click="pollAi()"
                 >
                   刷新判断
                 </el-button>
@@ -701,7 +702,7 @@
                   </span>
                 </button>
               </div>
-              <div v-else class="ai-evidence-empty">
+              <div v-else-if="aiEvidenceEmptyText" class="ai-evidence-empty">
                 {{ aiEvidenceEmptyText }}
               </div>
             </section>
@@ -723,13 +724,12 @@
                   <p>{{ msg.content }}</p>
                 </button>
               </div>
-              <div v-else class="ai-evidence-empty">提交影像 AI 分析后显示判断结果</div>
+              <div v-else-if="aiJudgementEmptyText" class="ai-evidence-empty">{{ aiJudgementEmptyText }}</div>
             </section>
 
             <section class="ai-report-build">
               <div>
                 <strong>报告草稿</strong>
-                <span>根据上方辅助判断生成，仍需医生审核确认</span>
               </div>
               <el-button class="full ai-action ai-theme-button" :disabled="!current || !aiMessages.length" @click="generateAiDraft">
                 根据判断生成报告草稿
@@ -768,7 +768,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 import { ElMessage } from 'element-plus';
 import JsBarcode from 'jsbarcode';
 import * as XLSX from 'xlsx';
@@ -949,18 +949,17 @@ const aiRiskText = computed(() => ({
   high: '高风险',
 }[aiRiskLevel.value]));
 const aiDecisionTitle = computed(() => {
-  if (!current.value) return '请选择医嘱';
-  if (aiStatus.value === 'PROCESSING') return 'AI 正在分析影像';
+  if (!current.value) return '请选择检查';
+  if (aiStatus.value === 'PROCESSING') return '正在分析影像';
   if (aiStatus.value === 'FAILED') return 'AI 分析失败';
   if (!aiStructured.value.label && !aiStatus.value) return '等待辅助判断';
   return ctLabelText(aiStructured.value.label);
 });
 const aiDecisionSubtitle = computed(() => {
   if (aiStatus.value === 'FAILED') return '请检查模型服务后重试';
-  if (aiStatus.value === 'PROCESSING') return '完成后会更新风险、定位和报告依据';
-  if (!aiStructured.value.label) return '点击开始 AI 辅助诊断，结果用于辅助判断';
-  if (imageAiFindings.value.length) return '已形成可跳转的影像证据';
-  return '已返回分类判断，暂无精确定位证据';
+  if (aiStatus.value === 'PROCESSING') return '';
+  if (!aiStructured.value.label) return '';
+  return '';
 });
 const lesionSegText = computed(() => {
   const seg = aiStructured.value.lesionSegmentation;
@@ -973,19 +972,18 @@ const metalArtifactText = computed(() => {
   return metal.labelCn || metal.label || '已分析';
 });
 const aiEvidenceEmptyText = computed(() => {
-  if (!aiStructured.value.label && !aiStatus.value) return '开始 AI 辅助诊断后，定位框和分割区域会在这里汇总';
-  if (aiStatus.value === 'PROCESSING') return '正在等待模型返回定位或分割结果';
-  if (aiStructured.value.label === 'normal') return 'AI 暂未发现需要定位的异常证据';
-  return 'AI 已返回分类判断，但没有返回可定位的异常框或分割区域';
+  if (!aiStructured.value.label && !aiStatus.value) return '';
+  return '';
 });
+const aiJudgementEmptyText = computed(() => '');
 const aiDiagnosisDisabled = computed(() => !current.value || !file.value || aiSubmitting.value || aiStatus.value === 'PROCESSING');
 const aiDiagnosisButtonText = computed(() => {
-  if (!current.value) return '请选择医嘱';
+  if (!current.value) return '请选择检查';
   if (!file.value) return '上传影像后开始诊断';
-  if (aiStatus.value === 'PROCESSING') return 'AI 正在诊断';
-  if (aiStatus.value === 'COMPLETED') return '重新 AI 辅助诊断';
-  if (aiStatus.value === 'FAILED') return '重新 AI 辅助诊断';
-  return '开始 AI 辅助诊断';
+  if (aiStatus.value === 'PROCESSING') return '正在诊断';
+  if (aiStatus.value === 'COMPLETED') return '重新诊断';
+  if (aiStatus.value === 'FAILED') return '重新诊断';
+  return '开始诊断';
 });
 
 function numericValue(value: unknown): number | undefined {
@@ -1075,6 +1073,13 @@ const file = ref<File>();
 const imagePreviewUrl = ref('');
 const aiTaskId = ref('');
 const aiStatus = ref('');
+const AI_POLL_INTERVAL_MS = 2500;
+const AI_CLIENT_TIMEOUT_MS = 6 * 60 * 1000;
+const aiStartedAtMs = ref<number>();
+let aiPollTimer: number | undefined;
+let aiPolling = false;
+let aiCompletionNotified = false;
+let aiPollFailureCount = 0;
 
 // Volume state
 const volume = ref<VolumeData | null>(null);
@@ -1084,9 +1089,21 @@ const sliceY = ref(0);
 const sliceX = ref(0);
 const winC = ref(40);
 const winW = ref(80);
+const windowPreset = ref<WindowPreset | null>('brain');
 const ctViewerMode = ref<'mpr' | 'film'>('mpr');
 const selectedFilmSlices = ref<number[]>([]);
-const filmThumbs = ref<Array<{ z: number; url: string }>>([]);
+const filmScrollRef = ref<HTMLElement>();
+const filmScrollTop = ref(0);
+const filmViewportHeight = ref(0);
+const filmThumbVersion = ref(0);
+const filmThumbCache = new Map<number, string>();
+const filmThumbQueue = new Set<number>();
+let filmThumbRendering = false;
+const FILM_COLS = 5;
+const FILM_ROW_HEIGHT = 118;
+const FILM_GAP = 6;
+const FILM_ROW_STRIDE = FILM_ROW_HEIGHT + FILM_GAP;
+const FILM_OVERSCAN_ROWS = 3;
 
 // Canvas refs
 const canvasAxial    = ref<HTMLCanvasElement>();
@@ -1193,6 +1210,69 @@ function axialDataUrl(vol: VolumeData, z: number, scale = 0.62): string {
   return out.toDataURL('image/png');
 }
 
+const filmTotalSlices = computed(() => volume.value?.nz ?? 0);
+const filmTotalRows = computed(() => Math.ceil(filmTotalSlices.value / FILM_COLS));
+const filmStartRow = computed(() => Math.max(0, Math.floor(filmScrollTop.value / FILM_ROW_STRIDE) - FILM_OVERSCAN_ROWS));
+const filmEndRow = computed(() => {
+  const visibleRows = Math.ceil((filmViewportHeight.value || FILM_ROW_STRIDE * 4) / FILM_ROW_STRIDE);
+  return Math.min(filmTotalRows.value, filmStartRow.value + visibleRows + FILM_OVERSCAN_ROWS * 2);
+});
+const visibleFilmSliceIndexes = computed(() => {
+  const vol = volume.value;
+  if (!vol) return [];
+  const start = filmStartRow.value * FILM_COLS;
+  const end = Math.min(vol.nz, filmEndRow.value * FILM_COLS);
+  return Array.from({ length: Math.max(0, end - start) }, (_, index) => start + index);
+});
+const visibleFilmThumbs = computed(() => {
+  filmThumbVersion.value;
+  return visibleFilmSliceIndexes.value.map(z => ({ z, url: filmThumbCache.get(z) || '' }));
+});
+
+function queueFilmThumbs(sliceIndexes: number[]) {
+  if (!volume.value) return;
+  for (const z of sliceIndexes) {
+    if (!filmThumbCache.has(z)) filmThumbQueue.add(z);
+  }
+  processFilmThumbQueue();
+}
+
+function processFilmThumbQueue() {
+  if (filmThumbRendering) return;
+  const vol = volume.value;
+  if (!vol || filmThumbQueue.size === 0) return;
+  filmThumbRendering = true;
+  requestAnimationFrame(() => {
+    const z = filmThumbQueue.values().next().value as number | undefined;
+    if (typeof z === 'number') {
+      filmThumbQueue.delete(z);
+      if (!filmThumbCache.has(z)) {
+        filmThumbCache.set(z, axialDataUrl(vol, z));
+        filmThumbVersion.value++;
+      }
+    }
+    filmThumbRendering = false;
+    if (filmThumbQueue.size > 0) processFilmThumbQueue();
+  });
+}
+
+function clearFilmThumbCache() {
+  filmThumbCache.clear();
+  filmThumbQueue.clear();
+  filmThumbVersion.value++;
+}
+
+function updateFilmViewport() {
+  const el = filmScrollRef.value;
+  if (!el) return;
+  filmScrollTop.value = el.scrollTop;
+  filmViewportHeight.value = el.clientHeight;
+}
+
+function onFilmScroll() {
+  updateFilmViewport();
+}
+
 function recommendedAxialSlices(vol: VolumeData, count = 20): number[] {
   if (vol.nz <= count) return Array.from({ length: vol.nz }, (_, z) => z);
   const start = Math.max(0, Math.floor(vol.nz * 0.08));
@@ -1204,10 +1284,11 @@ function recommendedAxialSlices(vol: VolumeData, count = 20): number[] {
 function refreshFilmThumbs() {
   const vol = volume.value;
   if (!vol) {
-    filmThumbs.value = [];
+    clearFilmThumbCache();
     return;
   }
-  filmThumbs.value = recommendedAxialSlices(vol, 20).map(z => ({ z, url: axialDataUrl(vol, z) }));
+  clearFilmThumbCache();
+  nextTick(updateFilmViewport);
 }
 
 async function setCtViewerMode(mode: 'mpr' | 'film') {
@@ -1217,7 +1298,11 @@ async function setCtViewerMode(mode: 'mpr' | 'film') {
     rerenderMpr();
     rerender3D();
   } else {
+    filmScrollRef.value?.scrollTo({ top: 0 });
+    filmScrollTop.value = 0;
     refreshFilmThumbs();
+    await nextTick();
+    updateFilmViewport();
   }
 }
 
@@ -1245,8 +1330,8 @@ function selectRecommendedFilmSlices() {
   const vol = volume.value;
   if (!vol) return;
   selectedFilmSlices.value = recommendedAxialSlices(vol, Math.min(12, vol.nz));
-  refreshFilmThumbs();
   ctViewerMode.value = 'film';
+  nextTick(updateFilmViewport);
 }
 
 function clearSelectedFilmSlices() {
@@ -1260,8 +1345,7 @@ function drawFilmCell(
   x: number,
   y: number,
   w: number,
-  h: number,
-  selected: boolean
+  h: number
 ) {
   const raw = document.createElement('canvas');
   renderAxial(raw, vol, z, winC.value, winW.value);
@@ -1278,8 +1362,8 @@ function drawFilmCell(
   ctx.fillRect(x, y, w, h);
   ctx.imageSmoothingEnabled = true;
   ctx.drawImage(raw, dx, dy, dw, dh);
-  ctx.strokeStyle = selected ? '#e11d48' : '#7a8400';
-  ctx.lineWidth = selected ? 3 : 1;
+  ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+  ctx.lineWidth = 1;
   ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
   ctx.font = 'bold 15px Arial';
   ctx.fillStyle = '#18c447';
@@ -1295,7 +1379,7 @@ function exportSelectedFilm() {
   const slices = [...selectedFilmSlices.value].sort((a, b) => a - b);
   if (!vol || slices.length === 0) return;
 
-  const cols = Math.min(5, slices.length);
+  const cols = 4;
   const rows = Math.ceil(slices.length / cols);
   const cellW = 260;
   const cellH = 196;
@@ -1306,7 +1390,7 @@ function exportSelectedFilm() {
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   slices.forEach((z, idx) => {
-    drawFilmCell(ctx, vol, z, (idx % cols) * cellW, Math.floor(idx / cols) * cellH, cellW, cellH, true);
+    drawFilmCell(ctx, vol, z, (idx % cols) * cellW, Math.floor(idx / cols) * cellH, cellW, cellH);
   });
 
   const a = document.createElement('a');
@@ -1320,6 +1404,7 @@ function exportSelectedFilm() {
 watch(sliceZ, () => { if (syncingSlices) return; const v = volume.value; if (v && canvasAxial.value)    renderAxial(canvasAxial.value,       v, sliceZ.value, winC.value, winW.value); });
 watch(sliceY, () => { if (syncingSlices) return; const v = volume.value; if (v && canvasCoronal.value)  renderCoronal(canvasCoronal.value,   v, sliceY.value, winC.value, winW.value); });
 watch(sliceX, () => { if (syncingSlices) return; const v = volume.value; if (v && canvasSagittal.value) renderSagittal(canvasSagittal.value, v, sliceX.value, winC.value, winW.value); });
+watch(visibleFilmSliceIndexes, indexes => queueFilmThumbs(indexes), { immediate: true });
 watch([azim3D, elev3D], rerender3D);
 watch([render3DMode, render3DRoi], rerender3D);
 watch([winC, winW], () => { rerenderMpr(); rerender3D(); refreshFilmThumbs(); });
@@ -1329,7 +1414,8 @@ watch(volume, async (vol) => {
   renderer3D.value?.destroy();
   renderer3D.value = null;
   selectedFilmSlices.value = [];
-  filmThumbs.value = [];
+  clearFilmThumbCache();
+  filmScrollTop.value = 0;
   ctViewerMode.value = 'mpr';
   render3DMode.value = 'brain';
   render3DRoi.value = 0.76;
@@ -1350,7 +1436,7 @@ watch(volume, async (vol) => {
   refreshFilmThumbs();
 });
 
-function setWindow(preset: 'brain' | 'standard' | 'subdural' | 'bone' | 'soft') {
+function setWindow(preset: WindowPreset) {
   const map = {
     brain: [40, 80],
     standard: [400, 1400],
@@ -1358,7 +1444,13 @@ function setWindow(preset: 'brain' | 'standard' | 'subdural' | 'bone' | 'soft') 
     bone: [500, 2500],
     soft: [60, 400],
   } as const;
+  windowPreset.value = preset;
   [winC.value, winW.value] = map[preset];
+}
+
+function onManualWindowChange() {
+  windowPreset.value = null;
+  rerenderMpr();
 }
 
 // Lab state (LAB_DOCTOR)
@@ -1579,6 +1671,7 @@ function isLegacyPathologySpecimen(order: MedicalOrder, specimen?: Specimen) {
 }
 
 async function select(row: MedicalOrder) {
+  stopAiPolling();
   current.value = row;
   Object.assign(report, { findings: '', conclusion: '', advice: '' });
   confirmedAt.value = '';
@@ -1588,6 +1681,8 @@ async function select(row: MedicalOrder) {
   volume.value = null;
   aiTaskId.value = '';
   aiStatus.value = '';
+  aiStartedAtMs.value = undefined;
+  aiCompletionNotified = false;
   aiMessages.value = [];
   aiModel.value = '';
   aiStructured.value = {};
@@ -1669,10 +1764,15 @@ async function miss(row: MedicalOrder) {
 }
 
 const VOLUME_EXTS = ['.nii', '.nii.gz', '.nrrd', '.nhdr', '.mha'];
+type WindowPreset = 'brain' | 'standard' | 'subdural' | 'bone' | 'soft';
 
 function isVolumeFile(f: File): boolean {
   const name = f.name.toLowerCase();
   return VOLUME_EXTS.some(ext => name.endsWith(ext));
+}
+
+function isDicomFile(f: File): boolean {
+  return f.name.toLowerCase().endsWith('.dcm');
 }
 
 async function loadFile(f: File) {
@@ -1698,20 +1798,17 @@ async function loadFile(f: File) {
 }
 
 function chooseFile(event: Event) {
-  const f = (event.target as HTMLInputElement).files?.[0];
-  if (f) loadFile(f);
-  (event.target as HTMLInputElement).value = '';
+  const input = event.target as HTMLInputElement;
+  const files = input.files ? Array.from(input.files) : [];
+  if (files.length) loadFiles(files);
+  input.value = '';
 }
 
-/** Python 微服务地址（dicom-service/app.py） */
-const DICOM_SERVICE = 'http://localhost:8765';
+/** DICOM conversion endpoint hosted by ai-service. */
+const DICOM_SERVICE = '/api/ai';
 
-async function loadDicomFolder(event: Event) {
-  const input = event.target as HTMLInputElement;
-  const fileList = input.files;
-  if (!fileList || fileList.length === 0) return;
-  const files = Array.from(fileList);   // snapshot before clearing
-  input.value = '';
+async function loadDicomFiles(files: File[]) {
+  if (files.length === 0) return;
   file.value = files[0];
   imagePreviewUrl.value = '';
   volume.value = null;
@@ -1722,12 +1819,11 @@ async function loadDicomFolder(event: Event) {
     let vol: import('../../utils/volumeReader').VolumeData | null = null;
     let serviceOk = false;
     try {
-      const hc = await fetch(`${DICOM_SERVICE}/health`, { signal: AbortSignal.timeout(1500) });
+      const hc = await fetch(`${DICOM_SERVICE}/dicom/health`, { signal: AbortSignal.timeout(1500) });
       serviceOk = hc.ok;
     } catch { /* 服务未启动 */ }
 
     if (serviceOk) {
-      ElMessage.info(`正在通过 Python 服务解析 ${files.length} 个 DICOM 文件…`);
       const form = new FormData();
       for (const f of files) form.append('files', f, f.name);
       const resp = await fetch(`${DICOM_SERVICE}/dicom2nii`, { method: 'POST', body: form });
@@ -1758,9 +1854,26 @@ async function loadDicomFolder(event: Event) {
   }
 }
 
+function loadFiles(files: File[]) {
+  if (files.length > 1 || isDicomFile(files[0])) {
+    loadDicomFiles(files);
+    return;
+  }
+  loadFile(files[0]);
+}
+
+async function loadDicomFolder(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const fileList = input.files;
+  if (!fileList || fileList.length === 0) return;
+  const files = Array.from(fileList);
+  input.value = '';
+  await loadDicomFiles(files);
+}
+
 function handleDrop(event: DragEvent) {
-  const f = event.dataTransfer?.files?.[0];
-  if (f) loadFile(f);
+  const files = event.dataTransfer?.files ? Array.from(event.dataTransfer.files) : [];
+  if (files.length) loadFiles(files);
 }
 
 function clearFile() {
@@ -1789,10 +1902,36 @@ function confidenceText(value?: number) {
   return typeof value === 'number' ? `${Math.round(value * 100)}%` : '未返回';
 }
 
+function aiTaskStartedAt(task: AiMedicalTask): number {
+  const createdAt = task.createdAt ? Date.parse(task.createdAt) : NaN;
+  if (Number.isFinite(createdAt)) return createdAt;
+  if (aiStartedAtMs.value !== undefined) return aiStartedAtMs.value;
+  return Date.now() - AI_CLIENT_TIMEOUT_MS;
+}
+
+function markAiTimedOut() {
+  aiStatus.value = 'FAILED';
+  aiMessages.value = [{
+    id: 'ct-timeout',
+    label: 'AI 分析超时',
+    content: 'AI 分析超过 6 分钟仍未返回结果，请检查 AI 服务日志或重新提交诊断。',
+    kind: 'advice',
+  }];
+  stopAiPolling();
+}
+
 function syncCtAiResult(task: AiMedicalTask) {
-  aiStatus.value = task.status === 'RUNNING' || task.status === 'PENDING' ? 'PROCESSING' : task.status;
+  aiStatus.value = task.status === 'RUNNING' || task.status === 'PENDING' || task.status === 'QUEUED' ? 'PROCESSING' : task.status;
   aiModel.value = task.modelVersion || aiModel.value;
   aiFallback.value = task.modelVersion?.includes('demo') || task.modelVersion?.includes('mock') || false;
+
+  if (aiStatus.value === 'PROCESSING') {
+    aiStartedAtMs.value = aiTaskStartedAt(task);
+    if (Date.now() - aiStartedAtMs.value > AI_CLIENT_TIMEOUT_MS) {
+      markAiTimedOut();
+      return;
+    }
+  }
 
   if (task.status === 'FAILED') {
     aiMessages.value = [{ id: 'ct-error', label: 'AI 分析失败', content: task.errorMessage || '推理失败，请检查模型文件和 AI 服务日志', kind: 'advice' }];
@@ -1812,37 +1951,143 @@ function syncCtAiResult(task: AiMedicalTask) {
   report.findings = result.findings || report.findings;
   report.conclusion = result.conclusion || report.conclusion;
   report.advice = result.riskAdvice || report.advice;
+  const timingSummary = formatInferenceTimings(result.inferenceTimingsMs);
   aiMessages.value = [
     { id: 'ct-f', label: 'AI 影像所见', content: result.findings, kind: 'findings' },
     { id: 'ct-c', label: 'AI 初步结论', content: result.conclusion, kind: 'conclusion' },
     { id: 'ct-a', label: '风险提示', content: result.riskAdvice, kind: 'advice' },
-  ].filter(item => item.content);
+    timingSummary ? { id: 'ct-timing', label: '推理耗时诊断', content: timingSummary, kind: 'advice' } : null,
+  ].filter((item): item is { id: string; label: string; content: string; kind: string } => Boolean(item?.content));
+}
+
+function formatInferenceTimings(value: unknown) {
+  if (!value || typeof value !== 'object') return '';
+  const timings = value as Record<string, unknown>;
+  const labelMap: Record<string, string> = {
+    total: '总耗时',
+    download_load: '下载/读取',
+    preprocess_slices: '预处理',
+    classifier: '出血分类',
+    detector: '异常定位',
+    metal_classifier: '金属伪影分类',
+    metal_segmentation: '金属伪影分割',
+    lesion_segmentation: '病灶分割',
+    parallel_total: '小模型并行段',
+    originalSlices: '原始有效切片',
+    modelSlices: '模型实际切片',
+  };
+  return Object.entries(labelMap)
+    .filter(([key]) => typeof timings[key] === 'number')
+    .map(([key, label]) => {
+      const numberValue = Number(timings[key]);
+      if (key.endsWith('Slices')) return `${label}: ${numberValue}`;
+      return `${label}: ${(numberValue / 1000).toFixed(1)}s`;
+    })
+    .join('；');
+}
+
+function isAiTaskTerminal(status?: string) {
+  return status === 'COMPLETED' || status === 'FAILED' || status === 'CANCELLED';
+}
+
+function stopAiPolling() {
+  if (aiPollTimer !== undefined) {
+    window.clearInterval(aiPollTimer);
+    aiPollTimer = undefined;
+  }
+}
+
+function startAiPolling() {
+  if (!aiTaskId.value || isAiTaskTerminal(aiStatus.value)) return;
+  stopAiPolling();
+  aiPollTimer = window.setInterval(() => {
+    if (!aiTaskId.value || isAiTaskTerminal(aiStatus.value)) {
+      stopAiPolling();
+      return;
+    }
+    if (aiStartedAtMs.value !== undefined && Date.now() - aiStartedAtMs.value > AI_CLIENT_TIMEOUT_MS) {
+      markAiTimedOut();
+      return;
+    }
+    pollAi({ silent: true }).catch((error) => {
+      aiPollFailureCount++;
+      if (aiPollFailureCount >= 3) {
+        aiStatus.value = 'FAILED';
+        aiMessages.value = [{
+          id: 'ct-refresh-error',
+          label: 'AI 状态刷新失败',
+          content: errorMessage(error, '连续刷新 AI 状态失败，请检查后端服务和任务表结构。'),
+          kind: 'advice',
+        }];
+        stopAiPolling();
+      }
+    });
+  }, AI_POLL_INTERVAL_MS);
+}
+
+function notifyAiCompleted() {
+  if (aiCompletionNotified) return;
+  aiCompletionNotified = true;
+  ElMessage.success('AI 分析完成，已同步至报告草稿');
 }
 
 async function uploadCt() {
   if (!current.value || !file.value) return;
   aiSubmitting.value = true;
+  let submitStage = '上传影像附件';
   try {
+    stopAiPolling();
+    aiCompletionNotified = false;
+    aiPollFailureCount = 0;
+    aiStartedAtMs.value = Date.now();
     aiStatus.value = 'PROCESSING';
     aiMessages.value = [];
     aiStructured.value = {};
+    submitStage = '上传影像附件';
     const attachment = await uploadAttachment(current.value.id, file.value);
+    submitStage = '创建 AI 分析任务';
     const task = await submitCt(current.value.id, attachment.id);
     aiTaskId.value = task.externalTaskId;
     syncCtAiResult(task);
-    if (task.status === 'COMPLETED' && current.value) await loadExistingReport(current.value.id);
+    if (task.status === 'COMPLETED' && current.value) {
+      await loadExistingReport(current.value.id);
+      notifyAiCompleted();
+    } else if (!isAiTaskTerminal(task.status)) {
+      startAiPolling();
+    }
     ElMessage.success('AI 辅助诊断已启动');
+  } catch (error) {
+    stopAiPolling();
+    const rawMessage = errorMessage(error, '请检查影像附件、医嘱信息和 AI 服务配置。');
+    const message = `${submitStage}失败：${rawMessage}`;
+    aiStatus.value = 'FAILED';
+    aiTaskId.value = '';
+    aiMessages.value = [{
+      id: 'ct-submit-error',
+      label: 'AI 分析提交失败',
+      content: message,
+      kind: 'advice',
+    }];
+    ElMessage.error({ message, duration: 6000 });
   } finally {
     aiSubmitting.value = false;
   }
 }
 
-async function pollAi() {
-  if (!aiTaskId.value) return;
-  const task = await refreshAiTask(aiTaskId.value);
+async function pollAi(options: { silent?: boolean } = {}) {
+  if (!aiTaskId.value || aiPolling) return;
+  aiPolling = true;
+  try {
+    const task = await refreshAiTask(aiTaskId.value);
+    aiPollFailureCount = 0;
   syncCtAiResult(task);
+  if (isAiTaskTerminal(task.status)) stopAiPolling();
   if (task.status === 'COMPLETED' && current.value) await loadExistingReport(current.value.id);
+  if (task.status === 'COMPLETED' && options.silent) return;
   if (task.status === 'COMPLETED') ElMessage.success('AI 分析完成，已同步至报告草稿');
+  } finally {
+    aiPolling = false;
+  }
 }
 
 async function startAiDiagnosis() {
@@ -2163,6 +2408,18 @@ function errorMessage(error: unknown, fallback: string) {
     for (const key of ['message', 'error', 'detail']) {
       if (typeof record[key] === 'string' && String(record[key]).trim()) return String(record[key]);
     }
+    if (Array.isArray(record.detail)) {
+      const details = record.detail
+        .map((item) => {
+          if (!item || typeof item !== 'object') return '';
+          const detail = item as Record<string, unknown>;
+          const loc = Array.isArray(detail.loc) ? detail.loc.join('.') : '';
+          const msg = typeof detail.msg === 'string' ? detail.msg : '';
+          return [loc, msg].filter(Boolean).join(': ');
+        })
+        .filter(Boolean);
+      if (details.length) return details.join('；');
+    }
   }
   const message = (error as Error)?.message;
   return message || fallback;
@@ -2219,6 +2476,10 @@ watch(() => [pathology.material, pathology.gross, pathology.diagnosis], () => {
 onMounted(async () => {
   await renderLabBarcode();
   await loadOrders();
+});
+
+onUnmounted(() => {
+  stopAiPolling();
 });
 </script>
 
@@ -2401,12 +2662,14 @@ onMounted(async () => {
 .ct-toolbar {
   display: flex;
   align-items: center;
-  gap: 2px;
-  height: 38px;
-  padding: 0 10px;
+  gap: 8px;
+  height: 44px;
+  padding: 0 12px;
   background: #ffffff;
   border-bottom: 1px solid #dbe3ef;
   flex-shrink: 0;
+  min-width: 0;
+  overflow: hidden;
 }
 .ct-tool {
   display: flex; align-items: center; justify-content: center;
@@ -2420,6 +2683,10 @@ onMounted(async () => {
 .ct-tool--active { background: #0899a5; color: #fff; }
 .ct-sep { width: 1px; height: 20px; background: #dbe3ef; margin: 0 4px; flex-shrink: 0; }
 .ct-sep--flex { flex: 1; width: auto; background: transparent; }
+.ct-toolbar__spacer {
+  flex: 1 1 auto;
+  min-width: 8px;
+}
 .ct-ai-badge {
   font-size: 11px; padding: 3px 8px;
   border-radius: 20px; white-space: nowrap;
@@ -2428,6 +2695,8 @@ onMounted(async () => {
 .ct-ai-badge--done { background: #e6f9fa; color: #0899a5; }
 
 .ct-view-tabs {
+  position: relative;
+  z-index: 3;
   display: flex;
   align-items: center;
   gap: 2px;
@@ -2435,7 +2704,18 @@ onMounted(async () => {
   background: #f1f5f9;
   border: 1px solid #dbe3ef;
   border-radius: 5px;
-  margin-right: 8px;
+  flex-shrink: 0;
+  pointer-events: auto;
+}
+.ct-window-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 2px 0;
 }
 .ct-view-tab {
   height: 24px;
@@ -2458,8 +2738,8 @@ onMounted(async () => {
 .ct-panels {
   flex: 1 1 0;
   display: grid;
-  grid-template-columns: minmax(0, 1.16fr) minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1.12fr) minmax(0, 0.78fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
   gap: 1px;
   background: #dbe3ef;
   min-height: 0;
@@ -2626,34 +2906,63 @@ onMounted(async () => {
 .ct-placeholder__sub { font-size: 11px; color: #1f2937; margin-top: 4px; }
 
 .ct-film {
-  flex: 1;
+  flex: 1 1 0;
   min-height: 0;
-  display: grid;
-  grid-template-columns: repeat(5, minmax(120px, 1fr));
-  grid-auto-rows: minmax(118px, 1fr);
-  gap: 6px;
+  position: relative;
   overflow: auto;
+  overscroll-behavior: contain;
   padding: 8px;
   background: #f8fafc;
+}
+.ct-film__spacer {
+  position: relative;
+  min-width: 0;
+}
+.ct-film__window {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(120px, 1fr));
+  grid-auto-rows: 118px;
+  gap: 6px;
+  will-change: transform;
 }
 .ct-film__cell {
   position: relative;
   min-width: 0;
   min-height: 118px;
-  border: 1px solid #dbe3ef;
+  border: 2px solid #dbe3ef;
   background: #000;
   padding: 0;
   overflow: hidden;
   cursor: pointer;
-  transition: border-color 0.12s, box-shadow 0.12s;
+  transition: border-color 0.12s, box-shadow 0.12s, transform 0.12s;
 }
 .ct-film__cell:hover {
   border-color: #0899a5;
   box-shadow: 0 0 0 2px rgba(8, 153, 165, 0.16);
 }
 .ct-film__cell--selected {
-  border-color: #ef4444;
-  box-shadow: inset 0 0 0 2px #ef4444;
+  border-color: #0899a5;
+  box-shadow:
+    inset 0 0 0 3px #facc15,
+    inset 0 0 0 6px rgba(8, 153, 165, 0.92),
+    0 0 0 2px rgba(8, 153, 165, 0.22),
+    0 10px 24px rgba(8, 153, 165, 0.18);
+}
+.ct-film__cell--selected::after {
+  content: '';
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #0899a5;
+  box-shadow: 0 0 0 3px rgba(250, 204, 21, 0.9);
+  z-index: 4;
 }
 .ct-film__cell img {
   width: 100%;
@@ -2661,6 +2970,17 @@ onMounted(async () => {
   object-fit: contain;
   display: block;
   image-rendering: auto;
+}
+.ct-film__loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: rgba(255, 255, 255, 0.52);
+  font-size: 12px;
+  letter-spacing: 0;
+  pointer-events: none;
 }
 .ct-film__tag {
   position: absolute;
@@ -2809,17 +3129,20 @@ onMounted(async () => {
 
 /* Bottom action toolbar */
 .ct-actions {
+  position: relative;
+  z-index: 20;
   display: flex;
   align-items: center;
   gap: 2px;
   height: 46px;
+  flex: 0 0 46px;
   padding: 0 12px;
   background: #ffffff;
   border-top: 1px solid #dbe3ef;
-  flex-shrink: 0;
   min-width: 0;
   overflow-x: auto;
   overflow-y: hidden;
+  overscroll-behavior: contain;
 }
 .ct-act {
   display: flex; align-items: center; gap: 6px;
@@ -2831,10 +3154,37 @@ onMounted(async () => {
   white-space: nowrap;
   flex-shrink: 0;
 }
+.ct-act--compact {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+}
 .ct-act:hover:not(:disabled):not(.ct-act--disabled) { background: #e6f9fa; color: #0899a5; border-color: #a8e8ec; }
 .ct-act:disabled,
 .ct-act--disabled { opacity: 0.4; cursor: not-allowed; }
 .ct-act-gap { flex: 1; }
+.ct-act--active {
+  background: #0899a5;
+  color: #fff;
+  border-color: #0899a5;
+  box-shadow: 0 0 0 2px rgba(8, 153, 165, 0.14);
+}
+.ct-act--active:hover:not(:disabled):not(.ct-act--disabled) {
+  background: #0cbdcc;
+  color: #fff;
+  border-color: #0cbdcc;
+}
+.ct-act--upload {
+  background: #e6f9fa;
+  color: #0899a5;
+  border-color: #a8e8ec;
+  font-weight: 700;
+}
+.ct-act--upload:hover:not(.ct-act--disabled) {
+  background: #0899a5;
+  color: #fff;
+  border-color: #0899a5;
+}
 .ct-act--primary {
   background: #0899a5; color: #fff; border-color: #0899a5;
 }
@@ -3300,27 +3650,42 @@ onMounted(async () => {
   margin-top: 12px;
   padding: 9px 10px;
   border-radius: 6px;
-  background: linear-gradient(135deg, #0f172a, #12313a);
-  color: #cbd5e1;
+  border: 1px solid #a8e8ec;
+  background: linear-gradient(135deg, #f0fdfa 0%, #ffffff 100%);
+  color: #0f766e;
+  min-width: 0;
 }
 .ai-decision__score strong {
-  color: #fff;
-  font-size: 20px;
+  color: #0899a5;
+  font-size: 18px;
   line-height: 1;
+  overflow-wrap: anywhere;
+  text-align: right;
 }
 .ai-diagnosis-actions {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
   margin-top: 10px;
 }
 .ai-theme-button,
 :deep(.ai-theme-button.el-button) {
+  width: 100%;
   height: 36px;
+  min-width: 0;
+  padding: 0 10px;
   border-color: #0899a5;
   background: #0899a5;
   color: #fff;
   font-weight: 700;
+  white-space: normal;
+  line-height: 1.2;
+}
+:deep(.ai-theme-button.el-button > span) {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: center;
 }
 .ai-theme-button:hover,
 .ai-theme-button:focus,
@@ -3338,7 +3703,7 @@ onMounted(async () => {
 }
 .ai-theme-button--ghost,
 :deep(.ai-theme-button--ghost.el-button) {
-  min-width: 88px;
+  min-width: 0;
   border-color: #a8e8ec;
   background: #f0f9fa;
   color: #0899a5;
@@ -3375,6 +3740,11 @@ onMounted(async () => {
   color: #0f172a;
   font-size: 12px;
   overflow-wrap: anywhere;
+}
+@media (max-width: 1360px) {
+  .ai-diagnosis-actions {
+    grid-template-columns: 1fr;
+  }
 }
 .ai-section-head {
   display: flex;

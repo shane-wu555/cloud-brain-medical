@@ -8,6 +8,8 @@ from pathlib import Path
 
 import numpy as np
 
+from .ort_runtime import preload_cuda_dlls
+
 HU_MIN = -100.0
 HU_MAX = 300.0
 
@@ -121,10 +123,11 @@ def _get_session():
         return None
 
     import onnxruntime as ort
+    preload_cuda_dlls(ort)
 
     opts = ort.SessionOptions()
-    opts.inter_op_num_threads = 4
-    opts.intra_op_num_threads = 4
+    opts.inter_op_num_threads = int(os.getenv("CT_ONNX_INTER_OP_THREADS", "1"))
+    opts.intra_op_num_threads = int(os.getenv("CT_ONNX_INTRA_OP_THREADS", "1"))
     providers = [provider for provider in ["CUDAExecutionProvider", "CPUExecutionProvider"] if provider in ort.get_available_providers()]
     _session = ort.InferenceSession(
         model_path,
@@ -188,7 +191,7 @@ def _mask_bbox(mask: np.ndarray) -> list[int]:
 
 
 def _sigmoid(x: np.ndarray) -> np.ndarray:
-    return 1.0 / (1.0 + np.exp(-x))
+    return 1.0 / (1.0 + np.exp(-np.clip(x, -60.0, 60.0)))
 
 
 def _fallback_result(enabled: bool = False) -> dict:

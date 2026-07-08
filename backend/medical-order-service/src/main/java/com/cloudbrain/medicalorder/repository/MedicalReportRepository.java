@@ -51,21 +51,38 @@ public class MedicalReportRepository {
     public AiMedicalTask createTask(String orderId, String externalId) {
         String id = UUID.randomUUID().toString();
         jdbc.update("""
-                insert into ai_task(id, order_id, external_task_id, task_type, status)
-                values (?::uuid, ?::uuid, ?, 'CT_ANALYSIS', 'PENDING')
+                insert into ai_medical_task(id, medical_order_id, external_task_id, task_type, status)
+                values (?, ?, ?, 'CT_ANALYSIS', 'PENDING')
                 """, id, orderId, externalId);
         return taskByExternal(externalId).orElseThrow();
     }
 
     public Optional<AiMedicalTask> taskByExternal(String id) {
-        return jdbc.query("select * from ai_task where external_task_id = ?",
+        return jdbc.query("select * from ai_medical_task where external_task_id = ?",
                 (rs, row) -> task(rs), id).stream().findFirst();
+    }
+
+    public Optional<AiMedicalTask> timeoutTaskIfExpired(String externalId, long timeoutSeconds) {
+        int updated = jdbc.update("""
+                update ai_medical_task
+                set status = 'FAILED',
+                    raw_output = '{}'::jsonb,
+                    error_message = ?,
+                    updated_at = now()
+                where external_task_id = ?
+                  and status in ('PENDING','RUNNING')
+                  and created_at < now() - (? * interval '1 second')
+                """,
+                "AI analysis timed out. Please check the AI service logs and retry.",
+                externalId,
+                timeoutSeconds);
+        return updated > 0 ? taskByExternal(externalId) : Optional.empty();
     }
 
     public AiMedicalTask updateTask(String externalId, String status, String modelVersion,
             String output, String error) {
         jdbc.update("""
-                update ai_task
+                update ai_medical_task
                 set status = ?, model_version = ?, raw_output = ?::jsonb, error_message = ?, updated_at = now()
                 where external_task_id = ?
                 """, normalizeTaskStatus(status), modelVersion, output == null ? "{}" : output, error, externalId);
@@ -146,13 +163,14 @@ public class MedicalReportRepository {
     private AiMedicalTask task(ResultSet rs) throws SQLException {
         return new AiMedicalTask(
                 rs.getString("id"),
-                rs.getString("order_id"),
+                rs.getString("medical_order_id"),
                 rs.getString("external_task_id"),
                 rs.getString("task_type"),
                 rs.getString("status"),
                 rs.getString("model_version"),
                 rs.getString("raw_output"),
                 rs.getString("error_message"),
+                rs.getTimestamp("created_at").toLocalDateTime(),
                 rs.getTimestamp("updated_at").toLocalDateTime());
     }
 
