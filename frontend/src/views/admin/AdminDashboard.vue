@@ -490,7 +490,7 @@
               <el-form-item label="科室">
                 <el-select v-model="doctorForm.departmentId" class="full" filterable>
                   <el-option
-                    v-for="department in schedulableDepartments"
+                    v-for="department in doctorDepartmentsForRole(doctorForm.roleType)"
                     :key="department.id"
                     :label="department.name"
                     :value="department.id"
@@ -570,7 +570,7 @@
             <el-form-item label="科室">
               <el-select v-model="doctorDetailForm.departmentId" class="full" filterable>
                 <el-option
-                  v-for="department in schedulableDepartments"
+                  v-for="department in doctorDepartmentsForRole(doctorDetailForm.roleType)"
                   :key="department.id"
                   :label="department.name"
                   :value="department.id"
@@ -833,6 +833,7 @@ const doctorDetailForm = reactive({
   name: '',
   title: '',
   departmentId: '',
+  roleType: 'OUTPATIENT_DOCTOR',
   specialty: ''
 });
 
@@ -852,6 +853,9 @@ const departmentMap = computed(() => new Map(departments.value.map((item) => [it
 const doctorById = computed(() => new Map(doctors.value.map((doctor) => [doctor.id, doctor])));
 const schedulableDepartments = computed(() =>
   departments.value.filter((department) => !NON_REGISTRATION_DEPARTMENT_NAMES.includes(department.name))
+);
+const managedDoctorDepartments = computed(() =>
+  departments.value.filter((department) => !['dept-admin', 'dept-cashier'].includes(department.id))
 );
 const schedulableDepartmentIds = computed(() => new Set(schedulableDepartments.value.map((department) => department.id)));
 const schedulableDoctors = computed(() =>
@@ -986,7 +990,7 @@ async function refreshAll() {
     const [overviewData, departmentData, doctorData, accountData, allAccountData, eventData] = await Promise.all([
       getDashboardOverview(),
       getDepartments(),
-      getDoctors(),
+      getDoctors({ includeAllRoles: true }),
       getStaffAccounts(accountFilter.role || undefined),
       getStaffAccounts(),
       getDoctorEvents()
@@ -1382,7 +1386,7 @@ async function submitDoctor() {
     ElMessage.success(doctorForm.createAccount ? '医生档案和账号已创建' : '医生档案已创建');
     resetDoctorForm();
     doctorDialogVisible.value = false;
-    doctors.value = await getDoctors();
+    doctors.value = await getDoctors({ includeAllRoles: true });
     await loadAccounts();
     seedDefaults();
   } catch (error) {
@@ -1399,6 +1403,7 @@ function openDoctorDetail(doctor: Doctor) {
   doctorDetailForm.name = doctor.name;
   doctorDetailForm.title = doctor.title;
   doctorDetailForm.departmentId = doctor.departmentId;
+  doctorDetailForm.roleType = doctor.roleType;
   doctorDetailForm.specialty = doctor.specialty ?? '';
   doctorDetailVisible.value = true;
 }
@@ -1547,12 +1552,28 @@ async function resetPassword(account: StaffAccount) {
   }
 }
 
+function doctorDepartmentsForRole(roleType: string) {
+  if (roleType === 'CHECK_DOCTOR') {
+    return managedDoctorDepartments.value.filter((department) => department.id === 'dept-imaging');
+  }
+  if (roleType === 'LAB_DOCTOR') {
+    return managedDoctorDepartments.value.filter((department) => department.id === 'dept-lab');
+  }
+  if (roleType === 'DISPOSAL_DOCTOR') {
+    return managedDoctorDepartments.value.filter((department) => department.id === 'dept-disposal');
+  }
+  if (roleType === 'PHARMACY_STAFF') {
+    return managedDoctorDepartments.value.filter((department) => department.id === 'dept-pharmacy');
+  }
+  return schedulableDepartments.value;
+}
+
 function resetDoctorForm() {
   doctorForm.employeeNo = '';
   doctorForm.name = '';
   doctorForm.title = '主治医师';
-  doctorForm.departmentId = schedulableDepartments.value[0]?.id ?? '';
   doctorForm.roleType = 'OUTPATIENT_DOCTOR';
+  doctorForm.departmentId = doctorDepartmentsForRole(doctorForm.roleType)[0]?.id ?? '';
   doctorForm.specialty = '';
   doctorForm.createAccount = true;
   doctorForm.phone = '';

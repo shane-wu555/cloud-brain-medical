@@ -22,6 +22,8 @@ import org.springframework.stereotype.Repository;
  */
 @Repository
 public class DoctorCatalogRepository {
+    private static final List<String> MANAGED_ROLE_TYPES = List.of(
+            "OUTPATIENT_DOCTOR", "CHECK_DOCTOR", "LAB_DOCTOR", "DISPOSAL_DOCTOR", "PHARMACY_STAFF");
     private final JdbcTemplate jdbc;
     public DoctorCatalogRepository(JdbcTemplate jdbc) { this.jdbc = jdbc; }
 
@@ -55,8 +57,8 @@ public class DoctorCatalogRepository {
     }
 
     // ── 医生（staff 表，仅门诊医生）────────────────────────────────────
-    @Cacheable(cacheNames = "doctor:doctors", key = "#p0 == null ? 'all' : #p0")
-    public List<Doctor> doctors(String departmentId) {
+    @Cacheable(cacheNames = "doctor:doctors", key = "#p0 == null ? (#p1 ? 'all:managed' : 'all:outpatient') : (#p0 + ':' + #p1)")
+    public List<Doctor> doctors(String departmentId, boolean includeAllRoles) {
         StringBuilder sql = new StringBuilder("""
                 select s.id, s.employee_no, s.name, s.title, s.department_id, p.name as dept_name,
                        s.specialty, s.role_type, r.id as room_id, r.name as room_name
@@ -64,9 +66,14 @@ public class DoctorCatalogRepository {
                 join department p on p.id = s.department_id
                 left join outpatient_doctor od on od.staff_id = s.id
                 left join outpatient_room r on r.id = od.room_id and r.active
-                where s.active and s.role_type = 'OUTPATIENT_DOCTOR'
+                where s.active and p.active
                 """);
         List<Object> args = new ArrayList<>();
+        if (includeAllRoles) {
+            sql.append(" and s.role_type in ('OUTPATIENT_DOCTOR','CHECK_DOCTOR','LAB_DOCTOR','DISPOSAL_DOCTOR','PHARMACY_STAFF')");
+        } else {
+            sql.append(" and s.role_type = 'OUTPATIENT_DOCTOR'");
+        }
         if (departmentId != null && !departmentId.isBlank()) {
             sql.append(" and s.department_id = ?");
             args.add(departmentId);
@@ -150,22 +157,13 @@ public class DoctorCatalogRepository {
     }, allEntries = true)
     public Doctor createDoctor(String employeeNo, String name, String title,
             String departmentId, String roleType, String specialty) {
-        validateSchedulingDepartment(departmentId);
+        validateManagedDoctorRole(roleType);
+        validateDoctorDepartment(roleType, departmentId);
         String id = UUID.randomUUID().toString();
         jdbc.update("insert into staff (id,employee_no,name,title,department_id,role_type,specialty) values (?,?,?,?,?,?,?)",
                 id, employeeNo, name, title, departmentId, roleType, specialty);
-        jdbc.update("""
-                insert into outpatient_room (id,department_id,name,location)
-                select ?,id,name || ' Default Room','Outpatient Building'
-                from department where id=?
-                on conflict (id) do nothing
-                """, "room-" + departmentId, departmentId);
-        jdbc.update("""
-                insert into outpatient_doctor (staff_id, room_id)
-                values (?,?)
-                on conflict (staff_id) do update set room_id = excluded.room_id
-                """, id, "room-" + departmentId);
-        return doctors(departmentId).stream().filter(d -> d.id().equals(id)).findFirst().orElseThrow();
+        syncOutpatientAssignment(id, roleType, departmentId);
+        return findDoctor(id);
     }
 
     @Cacheable(cacheNames = "doctor:doctorDetails", key = "#p0")
@@ -177,7 +175,9 @@ public class DoctorCatalogRepository {
                 join department p on p.id = s.department_id
                 left join outpatient_doctor od on od.staff_id = s.id
                 left join outpatient_room r on r.id = od.room_id and r.active
-                where s.active and s.role_type = 'OUTPATIENT_DOCTOR' and s.id = ?
+                where s.active
+                  and s.role_type in ('OUTPATIENT_DOCTOR','CHECK_DOCTOR','LAB_DOCTOR','DISPOSAL_DOCTOR','PHARMACY_STAFF')
+                  and s.id = ?
                 """, (rs, row) -> new Doctor(
                 rs.getString("id"), rs.getString("employee_no"), rs.getString("name"),
                 rs.getString("title"), rs.getString("department_id"), rs.getString("dept_name"),
@@ -195,25 +195,23 @@ public class DoctorCatalogRepository {
             "doctor:timeSlots"
     }, allEntries = true)
     public Doctor updateDoctor(String id, String name, String title, String departmentId, String specialty) {
-        validateSchedulingDepartment(departmentId);
+        String roleType = jdbc.query("""
+                select role_type
+                from staff
+                where id = ? and active
+                  and role_type in ('OUTPATIENT_DOCTOR','CHECK_DOCTOR','LAB_DOCTOR','DISPOSAL_DOCTOR','PHARMACY_STAFF')
+                """, (rs, row) -> rs.getString("role_type"), id).stream().findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("doctor not found"));
+        validateDoctorDepartment(roleType, departmentId);
         if (jdbc.update("""
                 update staff
                 set name = ?, title = ?, department_id = ?, specialty = ?
-                where id = ? and active and role_type = 'OUTPATIENT_DOCTOR'
+                where id = ? and active
+                  and role_type in ('OUTPATIENT_DOCTOR','CHECK_DOCTOR','LAB_DOCTOR','DISPOSAL_DOCTOR','PHARMACY_STAFF')
                 """, name, title, departmentId, specialty, id) != 1) {
             throw new IllegalArgumentException("医生不存在");
         }
-        jdbc.update("""
-                insert into outpatient_room (id,department_id,name,location)
-                select ?,id,name || ' Default Room','Outpatient Building'
-                from department where id=?
-                on conflict (id) do nothing
-                """, "room-" + departmentId, departmentId);
-        jdbc.update("""
-                insert into outpatient_doctor (staff_id, room_id)
-                values (?,?)
-                on conflict (staff_id) do update set room_id = excluded.room_id
-                """, id, "room-" + departmentId);
+        syncOutpatientAssignment(id, roleType, departmentId);
         return findDoctor(id);
     }
 
@@ -620,6 +618,49 @@ public class DoctorCatalogRepository {
         if (!Boolean.TRUE.equals(allowed)) {
             throw new IllegalArgumentException("该科室不参与门诊排班");
         }
+    }
+
+    private void validateManagedDoctorRole(String roleType) {
+        if (!MANAGED_ROLE_TYPES.contains(roleType)) {
+            throw new IllegalArgumentException("unsupported doctor role type");
+        }
+    }
+
+    private void validateDoctorDepartment(String roleType, String departmentId) {
+        validateManagedDoctorRole(roleType);
+        Boolean allowed = jdbc.queryForObject("""
+                select count(*) > 0
+                from department
+                where id = ? and active
+                  and (
+                    (? = 'OUTPATIENT_DOCTOR' and id not in ('dept-imaging','dept-lab','dept-disposal','dept-pharmacy','dept-admin','dept-cashier'))
+                    or (? = 'CHECK_DOCTOR' and id = 'dept-imaging')
+                    or (? = 'LAB_DOCTOR' and id = 'dept-lab')
+                    or (? = 'DISPOSAL_DOCTOR' and id = 'dept-disposal')
+                    or (? = 'PHARMACY_STAFF' and id = 'dept-pharmacy')
+                  )
+                """, Boolean.class, departmentId, roleType, roleType, roleType, roleType, roleType);
+        if (!Boolean.TRUE.equals(allowed)) {
+            throw new IllegalArgumentException("doctor role does not match the selected department");
+        }
+    }
+
+    private void syncOutpatientAssignment(String doctorId, String roleType, String departmentId) {
+        if (!"OUTPATIENT_DOCTOR".equals(roleType)) {
+            jdbc.update("delete from outpatient_doctor where staff_id = ?", doctorId);
+            return;
+        }
+        jdbc.update("""
+                insert into outpatient_room (id,department_id,name,location)
+                select ?,id,name || ' Default Room','Outpatient Building'
+                from department where id=?
+                on conflict (id) do nothing
+                """, "room-" + departmentId, departmentId);
+        jdbc.update("""
+                insert into outpatient_doctor (staff_id, room_id)
+                values (?,?)
+                on conflict (staff_id) do update set room_id = excluded.room_id
+                """, doctorId, "room-" + departmentId);
     }
 
     public record Department(String id, String name, String description) implements Serializable {}

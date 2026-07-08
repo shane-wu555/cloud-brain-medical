@@ -230,8 +230,8 @@ onShow(load);
 }
 
 .queued {
-  background: #eff6ff;
-  color: #1d4ed8;
+  background: var(--patient-theme-soft);
+  color: var(--patient-theme-deep);
 }
 
 .progress {

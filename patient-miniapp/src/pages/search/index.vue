@@ -84,6 +84,7 @@ const departmentResults = ref<Department[]>([]);
 const doctorResults = ref<Doctor[]>([]);
 const loading = ref(false);
 const searched = ref(false);
+const highlightColor = '#0899a5';
 let searchTimer: ReturnType<typeof setTimeout> | undefined;
 let searchSequence = 0;
 
@@ -145,7 +146,7 @@ function highlight(value: string) {
   const before = escapeHtml(value.slice(0, index));
   const match = escapeHtml(value.slice(index, index + query.length));
   const after = escapeHtml(value.slice(index + query.length));
-  return `${before}<span style="color:#2f80ed;">${match}</span>${after}`;
+  return `${before}<span style="color:${highlightColor};">${match}</span>${after}`;
 }
 
 function doctorLabelNodes(doctor: Doctor) {
@@ -265,12 +266,12 @@ function goDoctor(doctor: Doctor) {
 .search-page {
   min-height: 100vh;
   padding: 0;
-  background: #f5f5f5;
+  background: var(--patient-theme-page-bg);
 }
 
 .search-panel {
   padding: 18rpx 24rpx;
-  background: #f5f5f5;
+  background: var(--patient-theme-page-bg);
 }
 
 .search-row {
@@ -286,7 +287,7 @@ function goDoctor(doctor: Doctor) {
   min-width: 0;
   height: 72rpx;
   overflow: hidden;
-  border: 2rpx solid #9dc4df;
+  border: 2rpx solid var(--patient-theme-border);
   border-radius: 8rpx;
   background: #fff;
 }
@@ -331,14 +332,14 @@ function goDoctor(doctor: Doctor) {
   width: 112rpx;
   height: 72rpx;
   border-radius: 8rpx;
-  background: #2f80ed;
+  background: linear-gradient(135deg, var(--patient-theme) 0%, var(--patient-theme-strong) 100%);
   color: #fff;
   font-size: 32rpx;
   font-weight: 700;
 }
 
 .search-action-active {
-  background: #1d6ed6;
+  background: var(--patient-theme-strong);
 }
 
 .result-section {
@@ -361,7 +362,7 @@ function goDoctor(doctor: Doctor) {
   width: 8rpx;
   height: 34rpx;
   border-radius: 999rpx;
-  background: #2f80ed;
+  background: var(--patient-theme-strong);
 }
 
 .result-row {

@@ -225,8 +225,8 @@ onShow(load);
 }
 
 .confirmed {
-  background: #eff6ff;
-  color: #1d4ed8;
+  background: var(--patient-theme-soft);
+  color: var(--patient-theme-deep);
 }
 
 .pending {
@@ -250,8 +250,8 @@ onShow(load);
 }
 
 .returned {
-  background: #eff6ff;
-  color: #1d4ed8;
+  background: var(--patient-theme-soft);
+  color: var(--patient-theme-deep);
 }
 
 .cancelled {

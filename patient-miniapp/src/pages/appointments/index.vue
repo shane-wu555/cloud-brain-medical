@@ -193,7 +193,7 @@ async function revisit(item: Appointment) {
   display: flex;
   flex-direction: column;
   gap: 16rpx;
-  border-left: 8rpx solid #2f80ed;
+  border-left: 8rpx solid var(--patient-theme-strong);
 }
 
 .row-between {
@@ -241,8 +241,8 @@ async function revisit(item: Appointment) {
 }
 
 .queued {
-  background: #eff6ff;
-  color: #1d4ed8;
+  background: var(--patient-theme-soft);
+  color: var(--patient-theme-deep);
 }
 
 .progress {
@@ -275,8 +275,8 @@ async function revisit(item: Appointment) {
   margin: 0;
   padding: 0 24rpx;
   border-radius: 10rpx;
-  background: #eef6ff;
-  color: #2f80ed;
+  background: var(--patient-theme-soft);
+  color: var(--patient-theme-strong);
   font-size: 26rpx;
   font-weight: 700;
   line-height: 64rpx;

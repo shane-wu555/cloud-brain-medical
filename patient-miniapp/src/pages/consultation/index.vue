@@ -246,7 +246,7 @@ function goBooking() {
   height: calc(100vh - var(--status-bar-height) - 96rpx);
   min-height: 0;
   padding: 0;
-  background: #eef5fb;
+  background: var(--patient-theme-page-bg);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -263,7 +263,7 @@ function goBooking() {
 .intro {
   margin-bottom: 24rpx;
   padding: 24rpx;
-  border-left: 6rpx solid #2f80ed;
+  border-left: 6rpx solid var(--patient-theme-strong);
   background: #ffffff;
   border-radius: 8rpx;
 }
@@ -296,7 +296,7 @@ function goBooking() {
   width: 58rpx;
   height: 58rpx;
   border-radius: 50%;
-  background: #2f80ed;
+  background: linear-gradient(135deg, var(--patient-theme) 0%, var(--patient-theme-strong) 100%);
   color: #ffffff;
   display: flex;
   align-items: center;
@@ -340,10 +340,10 @@ function goBooking() {
   width: 100%;
   margin: 0;
   padding: 14rpx 18rpx;
-  border: 1px solid #bfd8f5;
+  border: 1px solid var(--patient-theme-border);
   border-radius: 8rpx;
-  background: #f4f9ff;
-  color: #1f5f9f;
+  background: var(--patient-theme-softest);
+  color: var(--patient-theme-deep);
   font-size: 25rpx;
   line-height: 1.45;
   text-align: left;
@@ -461,7 +461,7 @@ function goBooking() {
   width: 100%;
   height: 82rpx;
   border-radius: 8rpx;
-  background: #2f80ed;
+  background: linear-gradient(135deg, var(--patient-theme) 0%, var(--patient-theme-strong) 100%);
   color: #ffffff;
   font-size: 30rpx;
   font-weight: 700;
@@ -476,7 +476,7 @@ function goBooking() {
   flex-shrink: 0;
   padding: 18rpx 24rpx calc(18rpx + env(safe-area-inset-bottom));
   background: #ffffff;
-  border-top: 1px solid #dce7f2;
+  border-top: 1px solid var(--patient-theme-border);
   display: flex;
   gap: 16rpx;
   align-items: flex-end;
@@ -487,9 +487,9 @@ function goBooking() {
   min-height: 76rpx;
   max-height: 190rpx;
   padding: 18rpx 20rpx;
-  border: 1px solid #c9d9e8;
+  border: 1px solid var(--patient-theme-border);
   border-radius: 8rpx;
-  background: #f8fbff;
+  background: var(--patient-theme-softest);
   box-sizing: border-box;
   color: #1f2937;
   font-size: 28rpx;
@@ -505,7 +505,7 @@ function goBooking() {
   height: 76rpx;
   margin: 0;
   border-radius: 8rpx;
-  background: #2f80ed;
+  background: linear-gradient(135deg, var(--patient-theme) 0%, var(--patient-theme-strong) 100%);
   color: #ffffff;
   font-size: 27rpx;
   font-weight: 700;

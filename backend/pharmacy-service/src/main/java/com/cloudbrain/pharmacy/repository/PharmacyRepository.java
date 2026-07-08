@@ -157,20 +157,15 @@ public class PharmacyRepository {
         Prescription base = jdbc.query("select * from prescription where id = ?::uuid",
                         (rs, row) -> prescription(rs), id)
                 .stream().findFirst().orElseThrow(() -> new IllegalArgumentException("prescription does not exist"));
-        List<PrescriptionItem> items = jdbc.query("""
-                select * from prescription_item
-                where prescription_id = ?::uuid
-                order by id
-                """, (rs, row) -> item(rs), id);
-        return new Prescription(base.id(), base.prescriptionNo(), base.appointmentId(), base.medicalRecordId(),
-                base.patientId(), base.patientName(), base.doctorId(), base.diagnosis(), base.status(),
-                base.totalAmount(), base.paymentOrderId(), base.aiAssistanceId(), base.aiAdoptionStatus(),
-                base.aiRevisionNote(), base.createdAt(), base.confirmedAt(), base.paidAt(),
-                base.dispensedAt(), base.returnedAt(), base.dispensedBy(), base.returnedBy(),
-                base.returnReason(), items);
+        return prescriptionWithItems(base, prescriptionItemsByPrescriptionId(List.of(id)));
     }
 
     public List<Prescription> list(String patientId, String status) {
+        return list(patientId, status, null, null, 0, 0);
+    }
+
+    public List<Prescription> list(String patientId, String status, String patientName, String prescriptionNo,
+            int page, int size) {
         StringBuilder sql = new StringBuilder("select * from prescription where 1 = 1");
         List<Object> args = new ArrayList<>();
         if (patientId != null && !patientId.isBlank()) {
@@ -181,11 +176,17 @@ public class PharmacyRepository {
             sql.append(" and status = ?");
             args.add(status);
         }
-        sql.append(" order by created_at desc");
-        return jdbc.query(sql.toString(), (rs, row) -> findPrescription(rs.getString("id")), args.toArray());
+        appendPrescriptionSearch(sql, args, patientName, prescriptionNo);
+        appendPaging(sql, args, page, size);
+        return prescriptionsWithItems(jdbc.query(sql.toString(), (rs, row) -> prescription(rs), args.toArray()));
     }
 
     public List<Prescription> listByStatuses(String patientId, List<PrescriptionStatus> statuses) {
+        return listByStatuses(patientId, statuses, null, null, 0, 0);
+    }
+
+    public List<Prescription> listByStatuses(String patientId, List<PrescriptionStatus> statuses, String patientName,
+            String prescriptionNo, int page, int size) {
         StringBuilder sql = new StringBuilder("select * from prescription where 1 = 1");
         List<Object> args = new ArrayList<>();
         if (patientId != null && !patientId.isBlank()) {
@@ -199,8 +200,9 @@ public class PharmacyRepository {
             sql.append(")");
             statuses.forEach(status -> args.add(status.name()));
         }
-        sql.append(" order by created_at desc");
-        return jdbc.query(sql.toString(), (rs, row) -> findPrescription(rs.getString("id")), args.toArray());
+        appendPrescriptionSearch(sql, args, patientName, prescriptionNo);
+        appendPaging(sql, args, page, size);
+        return prescriptionsWithItems(jdbc.query(sql.toString(), (rs, row) -> prescription(rs), args.toArray()));
     }
 
     public boolean markPaid(String id, String patientId, String paymentOrderId) {
@@ -293,6 +295,11 @@ public class PharmacyRepository {
     }
 
     public List<DrugReturnOrder> listDrugReturns(String patientId, String status) {
+        return listDrugReturns(patientId, status, null, null, null, 0, 0);
+    }
+
+    public List<DrugReturnOrder> listDrugReturns(String patientId, String status, String patientName,
+            String prescriptionNo, String returnNo, int page, int size) {
         StringBuilder sql = new StringBuilder("""
                 select r.*, p.prescription_no
                 from drug_return_request r
@@ -308,8 +315,20 @@ public class PharmacyRepository {
             sql.append(" and r.status = ?");
             args.add(status);
         }
-        sql.append(" order by r.created_at desc");
-        return jdbc.query(sql.toString(), (rs, row) -> drugReturnWithItems(drugReturn(rs)), args.toArray());
+        if (patientName != null && !patientName.isBlank()) {
+            sql.append(" and r.patient_name ilike ?");
+            args.add("%" + patientName.trim() + "%");
+        }
+        if (prescriptionNo != null && !prescriptionNo.isBlank()) {
+            sql.append(" and p.prescription_no ilike ?");
+            args.add("%" + prescriptionNo.trim() + "%");
+        }
+        if (returnNo != null && !returnNo.isBlank()) {
+            sql.append(" and r.return_no ilike ?");
+            args.add("%" + returnNo.trim() + "%");
+        }
+        appendDrugReturnPaging(sql, args, page, size);
+        return drugReturnsWithItems(jdbc.query(sql.toString(), (rs, row) -> drugReturn(rs), args.toArray()));
     }
 
     public boolean completeDrugReturn(String id, String cashierId, String refundOrderId) {
@@ -327,6 +346,120 @@ public class PharmacyRepository {
                 set status = 'RETURN_REFUNDED', updated_at = now()
                 where id = ?::uuid and status = 'RETURN_PENDING_REFUND'
                 """, id) == 1;
+    }
+
+    private void appendPrescriptionSearch(StringBuilder sql, List<Object> args, String patientName, String prescriptionNo) {
+        if (patientName != null && !patientName.isBlank()) {
+            sql.append(" and patient_name ilike ?");
+            args.add("%" + patientName.trim() + "%");
+        }
+        if (prescriptionNo != null && !prescriptionNo.isBlank()) {
+            sql.append(" and prescription_no ilike ?");
+            args.add("%" + prescriptionNo.trim() + "%");
+        }
+    }
+
+    private void appendPaging(StringBuilder sql, List<Object> args, int page, int size) {
+        sql.append(" order by created_at desc");
+        appendLimitOffset(sql, args, page, size);
+    }
+
+    private void appendDrugReturnPaging(StringBuilder sql, List<Object> args, int page, int size) {
+        sql.append(" order by r.created_at desc");
+        appendLimitOffset(sql, args, page, size);
+    }
+
+    private void appendLimitOffset(StringBuilder sql, List<Object> args, int page, int size) {
+        if (size <= 0) {
+            return;
+        }
+        int normalizedSize = Math.min(Math.max(size, 1), 200);
+        int normalizedPage = Math.max(page, 0);
+        sql.append(" limit ? offset ?");
+        args.add(normalizedSize);
+        args.add(normalizedPage * normalizedSize);
+    }
+
+    private List<Prescription> prescriptionsWithItems(List<Prescription> bases) {
+        if (bases.isEmpty()) {
+            return List.of();
+        }
+        Map<String, List<PrescriptionItem>> itemsByPrescriptionId = prescriptionItemsByPrescriptionId(
+                bases.stream().map(Prescription::id).toList());
+        return bases.stream()
+                .map(base -> prescriptionWithItems(base, itemsByPrescriptionId))
+                .toList();
+    }
+
+    private Map<String, List<PrescriptionItem>> prescriptionItemsByPrescriptionId(List<String> prescriptionIds) {
+        List<String> ids = prescriptionIds.stream()
+                .filter(id -> id != null && !id.isBlank())
+                .distinct()
+                .toList();
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        String placeholders = ids.stream()
+                .map(id -> "?::uuid")
+                .collect(java.util.stream.Collectors.joining(","));
+        List<PrescriptionItem> items = jdbc.query("""
+                select * from prescription_item
+                where prescription_id in (""" + placeholders + """
+                )
+                order by prescription_id, id
+                """, (rs, row) -> item(rs), ids.toArray());
+        Map<String, List<PrescriptionItem>> grouped = new java.util.LinkedHashMap<>();
+        for (PrescriptionItem item : items) {
+            grouped.computeIfAbsent(item.prescriptionId(), ignored -> new ArrayList<>()).add(item);
+        }
+        return grouped;
+    }
+
+    private Prescription prescriptionWithItems(Prescription base, Map<String, List<PrescriptionItem>> itemsByPrescriptionId) {
+        return new Prescription(base.id(), base.prescriptionNo(), base.appointmentId(), base.medicalRecordId(),
+                base.patientId(), base.patientName(), base.doctorId(), base.diagnosis(), base.status(),
+                base.totalAmount(), base.paymentOrderId(), base.aiAssistanceId(), base.aiAdoptionStatus(),
+                base.aiRevisionNote(), base.createdAt(), base.confirmedAt(), base.paidAt(),
+                base.dispensedAt(), base.returnedAt(), base.dispensedBy(), base.returnedBy(),
+                base.returnReason(), itemsByPrescriptionId.getOrDefault(base.id(), List.of()));
+    }
+
+    private List<DrugReturnOrder> drugReturnsWithItems(List<DrugReturnOrder> bases) {
+        if (bases.isEmpty()) {
+            return List.of();
+        }
+        Map<String, String> returnIdByPrescriptionId = new java.util.LinkedHashMap<>();
+        bases.forEach(base -> returnIdByPrescriptionId.put(base.prescriptionId(), base.id()));
+        Map<String, List<DrugReturnItem>> itemsByReturnId = drugReturnItemsByPrescriptionId(returnIdByPrescriptionId);
+        return bases.stream()
+                .map(base -> drugReturnWithItems(base, itemsByReturnId.getOrDefault(base.id(), List.of())))
+                .toList();
+    }
+
+    private Map<String, List<DrugReturnItem>> drugReturnItemsByPrescriptionId(Map<String, String> returnIdByPrescriptionId) {
+        List<String> prescriptionIds = returnIdByPrescriptionId.keySet().stream()
+                .filter(id -> id != null && !id.isBlank())
+                .toList();
+        if (prescriptionIds.isEmpty()) {
+            return Map.of();
+        }
+        String placeholders = prescriptionIds.stream()
+                .map(id -> "?::uuid")
+                .collect(java.util.stream.Collectors.joining(","));
+        Map<String, List<DrugReturnItem>> grouped = new java.util.LinkedHashMap<>();
+        jdbc.query("""
+                select * from prescription_item
+                where prescription_id in (""" + placeholders + """
+                )
+                order by prescription_id, id
+                """, rs -> {
+            String returnId = returnIdByPrescriptionId.get(rs.getString("prescription_id"));
+            if (returnId != null) {
+                grouped.computeIfAbsent(returnId, ignored -> new ArrayList<>())
+                        .add(prescriptionItemAsReturnItem(rs, returnId));
+            }
+        }, prescriptionIds.toArray());
+        return grouped;
     }
 
     private int stock(String drugId) {
@@ -395,6 +528,10 @@ public class PharmacyRepository {
                 where prescription_id = ?::uuid
                 order by id
                 """, (rs, row) -> prescriptionItemAsReturnItem(rs, base.id()), base.prescriptionId());
+        return drugReturnWithItems(base, items);
+    }
+
+    private DrugReturnOrder drugReturnWithItems(DrugReturnOrder base, List<DrugReturnItem> items) {
         return new DrugReturnOrder(base.id(), base.returnNo(), base.prescriptionId(), base.prescriptionNo(),
                 base.patientId(), base.patientName(), base.doctorId(), base.doctorOpinion(), base.opinionTemplate(),
                 base.status(), base.totalAmount(), base.pharmacistId(), base.pharmacistOpinion(),
@@ -433,7 +570,7 @@ public class PharmacyRepository {
 
     public record Drug(String id, String drugCode, String drugName, String specification, String unit,
             BigDecimal unitPrice, String dosageForm, String storageCondition,
-            int quantity, int warningThreshold) {}
+            int quantity, int warningThreshold) implements java.io.Serializable {}
     public record DrugDemandObservation(String drugId, String drugCode, String drugName, BigDecimal unitPrice,
             int quantity, int warningThreshold, LocalDate demandDate, int dispensedQuantity) {}
     public record StockChange(int beforeQuantity, int afterQuantity) {}

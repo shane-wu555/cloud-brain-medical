@@ -245,7 +245,7 @@ const visibleSchedules = computed(() =>
 );
 const availableDates = computed(() => Array.from(new Set(visibleSchedules.value.map((item) => item.workDate))).sort());
 const doctorMap = computed(() => new Map(doctors.value.map((item) => [item.id, item])));
-const displaySchedules = computed(() => aggregateSchedules(visibleSchedules.value));
+const displaySchedules = computed(() => visibleSchedules.value.map(withSlotPeriod));
 const filteredSchedules = computed(() =>
   displaySchedules.value
     .filter((item) => !selectedDate.value || item.workDate === selectedDate.value)
@@ -374,40 +374,6 @@ function withSlotPeriod(schedule: Schedule): Schedule {
     ...schedule,
     timeSlots: schedule.timeSlots.map((slot) => ({ ...slot, period: slot.period || schedule.period }))
   };
-}
-
-function aggregateSchedules(items: Schedule[]) {
-  const groups = new Map<string, Schedule[]>();
-  items.forEach((item) => {
-    const key = `${item.doctorId}|${item.departmentId}|${item.workDate}`;
-    groups.set(key, [...(groups.get(key) || []), item]);
-  });
-
-  return Array.from(groups.values()).flatMap((group) => {
-    const morning = group.find((item) => item.period === '上午');
-    const afternoon = group.find((item) => item.period === '下午');
-    const others = group.filter((item) => item.period !== '上午' && item.period !== '下午').map(withSlotPeriod);
-    if (!morning || !afternoon) {
-      return [...group.filter((item) => item.period === '上午' || item.period === '下午').map(withSlotPeriod), ...others];
-    }
-    const timeSlots = [...morning.timeSlots, ...afternoon.timeSlots]
-      .map((slot) => ({
-        ...slot,
-        period: slot.period || (slot.startTime >= '12:00' ? '下午' : '上午')
-      }))
-      .sort((a, b) => a.startTime.localeCompare(b.startTime));
-    const combined: Schedule = {
-      ...morning,
-      id: `${morning.id}__${afternoon.id}`,
-      period: '全天',
-      capacity: morning.capacity + afternoon.capacity,
-      booked: morning.booked + afternoon.booked,
-      locked: morning.locked + afternoon.locked,
-      available: morning.available + afternoon.available,
-      timeSlots
-    };
-    return [combined, ...others];
-  });
 }
 
 function optionIndexById(options: Array<{ id: string }>, value: string) {
@@ -642,7 +608,7 @@ onMounted(initialize);
 <style scoped>
 .booking-page {
   padding-top: 0;
-  background: #f2f7ff;
+  background: var(--patient-theme-page-bg);
 }
 
 .ai-card,
@@ -658,7 +624,7 @@ onMounted(initialize);
 }
 
 .ai-card {
-  border-left: 8rpx solid #2f80ed;
+  border-left: 8rpx solid var(--patient-theme-strong);
 }
 
 .ai-title,
@@ -677,7 +643,7 @@ onMounted(initialize);
 
 .ai-meta {
   margin-top: 12rpx;
-  color: #2f80ed;
+  color: var(--patient-theme-strong);
   font-size: 26rpx;
 }
 
@@ -709,7 +675,7 @@ onMounted(initialize);
 }
 
 .dept-chip.active {
-  background: #2f80ed;
+  background: var(--patient-theme-strong);
   color: #fff;
 }
 
@@ -733,13 +699,13 @@ onMounted(initialize);
 }
 
 .date-card.active {
-  background: #2f80ed;
+  background: var(--patient-theme-strong);
   color: #fff;
 }
 
 .date-status {
   margin-top: 8rpx;
-  color: #2f80ed;
+  color: var(--patient-theme-strong);
   font-size: 26rpx;
   font-weight: 700;
 }
@@ -762,8 +728,8 @@ onMounted(initialize);
   width: 104rpx;
   height: 104rpx;
   border-radius: 12rpx;
-  background: linear-gradient(135deg, #dbeafe 0%, #93c5fd 100%);
-  color: #1d4ed8;
+  background: linear-gradient(135deg, var(--patient-theme-soft) 0%, var(--patient-theme-soft-alt) 100%);
+  color: var(--patient-theme-deep);
   font-size: 42rpx;
   font-weight: 900;
 }
@@ -874,7 +840,7 @@ onMounted(initialize);
   align-items: center;
   gap: 22rpx;
   padding: 34rpx 30rpx;
-  background: #3d98f4;
+  background: linear-gradient(135deg, var(--patient-theme) 0%, var(--patient-theme-strong) 100%);
   color: #fff;
 }
 
@@ -905,7 +871,7 @@ onMounted(initialize);
   height: 34rpx;
   margin-right: 14rpx;
   border-radius: 999rpx;
-  background: #2f80ed;
+  background: var(--patient-theme-strong);
   vertical-align: -6rpx;
 }
 
@@ -1038,7 +1004,7 @@ onMounted(initialize);
 }
 
 .confirm-value {
-  color: #2f80ed;
+  color: var(--patient-theme-strong);
 }
 
 .dialog-actions {
@@ -1063,7 +1029,7 @@ onMounted(initialize);
 }
 
 .dialog-primary {
-  color: #2f80ed;
+  color: var(--patient-theme-strong);
 }
 
 .empty-card {
