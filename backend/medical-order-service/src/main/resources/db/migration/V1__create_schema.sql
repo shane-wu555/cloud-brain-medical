@@ -160,9 +160,9 @@ create table if not exists attachment (
 create index if not exists idx_attachment_order on attachment(order_id);
 
 -- AI 任务记录
-create table if not exists ai_task (
-    id               uuid        primary key default gen_random_uuid(),
-    order_id         uuid        not null references medical_order(id),
+create table if not exists ai_medical_task (
+    id               varchar(36) primary key,
+    medical_order_id varchar(36) not null,
     external_task_id varchar(128) not null unique,
     task_type        varchar(32) not null,
     status           varchar(16) not null check (status in ('PENDING','RUNNING','COMPLETED','FAILED')),
@@ -172,4 +172,4 @@ create table if not exists ai_task (
     created_at       timestamptz not null default now(),
     updated_at       timestamptz not null default now()
 );
-create index if not exists idx_ai_task_order on ai_task(order_id);
+create index if not exists idx_ai_medical_task_order on ai_medical_task(medical_order_id);

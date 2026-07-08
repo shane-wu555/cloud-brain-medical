@@ -44,7 +44,7 @@ function logout() {
 }
 
 .audit-nav {
-  height: 52px;
+  height: 56px;
   padding: 0 20px;
   display: flex;
   align-items: center;

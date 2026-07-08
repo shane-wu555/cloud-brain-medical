@@ -1694,7 +1694,7 @@ onBeforeUnmount(() => {
 }
 
 .cashier-nav {
-  height: 52px;
+  height: 56px;
   padding: 0 20px;
   display: flex;
   align-items: center;
@@ -1749,7 +1749,7 @@ onBeforeUnmount(() => {
 }
 
 .cashier-body {
-  height: calc(100vh - 52px);
+  height: calc(100vh - 56px);
   display: flex;
   overflow: hidden;
 }
@@ -2213,7 +2213,7 @@ onBeforeUnmount(() => {
 @media (max-width: 1100px) {
   .cashier-body {
     height: auto;
-    min-height: calc(100vh - 52px);
+    min-height: calc(100vh - 56px);
     overflow: visible;
   }
 

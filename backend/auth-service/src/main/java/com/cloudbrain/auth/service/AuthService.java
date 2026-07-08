@@ -213,6 +213,16 @@ public class AuthService {
                 client.userAgent());
     }
 
+    public void changePassword(String userId, String oldPassword, String newPassword) {
+        UserAccount account = repository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("账号不存在"));
+        if (!passwordEncoder.matches(oldPassword, account.getPasswordHash())) {
+            throw new IllegalArgumentException("原密码不正确");
+        }
+        validatePassword(newPassword);
+        repository.updatePassword(userId, passwordEncoder.encode(newPassword));
+    }
+
     private void verifyCode(String phone, String purpose, String code) {
         VerificationCodeRepository.VerificationCode saved = verificationCodes.latestActive(phone, purpose)
                 .orElseThrow(() -> new IllegalArgumentException("验证码无效或已过期"));

@@ -793,7 +793,7 @@ onMounted(async () => {
 }
 
 .pharmacy-nav {
-  height: 52px;
+  height: 56px;
   padding: 0 20px;
   display: flex;
   align-items: center;
@@ -850,7 +850,7 @@ onMounted(async () => {
 }
 
 .pharmacy-body {
-  height: calc(100vh - 52px);
+  height: calc(100vh - 56px);
   display: flex;
   overflow: hidden;
 }
@@ -1194,7 +1194,7 @@ onMounted(async () => {
 @media (max-width: 900px) {
   .pharmacy-body {
     height: auto;
-    min-height: calc(100vh - 52px);
+    min-height: calc(100vh - 56px);
     flex-direction: column;
     overflow: visible;
   }

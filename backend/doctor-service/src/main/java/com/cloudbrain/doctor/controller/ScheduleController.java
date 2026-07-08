@@ -140,7 +140,8 @@ public class ScheduleController {
         List<AiDoctorCandidate> candidates=new ArrayList<>();
         List<AiScheduleDemand> demands=new ArrayList<>();
         for(DoctorCatalogRepository.Department department:targetDepartments) {
-            List<DoctorCatalogRepository.Doctor> doctors=repository.doctors(department.id(), false);
+            List<DoctorCatalogRepository.Doctor> doctors=repository
+                    .doctors(department.id(), false);
             for(DoctorCatalogRepository.Doctor doctor:doctors) {
                 int historicalAverage=insight.trainingReady()?insight.doctorAverageVisits().getOrDefault(doctor.id(),0):0;
                 List<DoctorUnavailableSlot> unavailableSlots=events.stream()

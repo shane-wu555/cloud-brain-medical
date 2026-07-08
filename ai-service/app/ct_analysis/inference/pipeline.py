@@ -12,6 +12,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
+import numpy as np
+
 from .preprocessing import download_and_load, volume_to_slices
 from .classifier    import classify_volume
 from .detector      import detect_volume, top_abnormal_slices
@@ -159,6 +161,32 @@ def _run_small_models_parallel(
     return clf_result, metal_result, metal_seg_result, lesion_seg_result, detections, timings
 
 
+def _limit_model_slices(
+    hu_volume,
+    slices,
+    valid_indices,
+) -> tuple[Any, Any, Any, dict[str, int]]:
+    max_slices = int(os.getenv("CT_MAX_MODEL_SLICES", "128"))
+    total = int(len(slices))
+    if max_slices <= 0 or total <= max_slices:
+        return hu_volume, slices, valid_indices, {
+            "originalSlices": total,
+            "modelSlices": total,
+        }
+
+    selected = np.unique(np.linspace(0, total - 1, max_slices, dtype=np.int32))
+    selected_valid_indices = valid_indices[selected]
+    return (
+        hu_volume,
+        slices[selected],
+        selected_valid_indices,
+        {
+            "originalSlices": total,
+            "modelSlices": int(len(selected)),
+        },
+    )
+
+
 def _timed_call(name: str, fn, *args):
     started = time.perf_counter()
     result = fn(*args)
@@ -188,20 +216,39 @@ def run(object_key: str, order_id: str, clinical_context: str = "") -> dict[str,
         abnormalRegions (bboxes), modelVersion
     """
     model_version = os.getenv("CT_MODEL_VERSION", "ct-head-v1.0")
+    total_started = time.perf_counter()
+    timings: dict[str, int] = {}
 
     # ── 1. 下载 + 预处理 ──────────────────────────────────
     minio_client = _get_minio_client()
     log.info(f"[CT推理] 开始下载 objectKey={object_key}")
+    started = time.perf_counter()
     hu_volume = download_and_load(object_key, minio_client)
+    timings["download_load"] = int((time.perf_counter() - started) * 1000)
+    started = time.perf_counter()
     slices, valid_indices = volume_to_slices(hu_volume)
+    timings["preprocess_slices"] = int((time.perf_counter() - started) * 1000)
     log.info(f"[CT推理] 体积 shape={hu_volume.shape}, 有效切片={len(slices)}")
-
-    # ── 2. 并行运行互不依赖的小模型 ─────────────────────────
-    clf_result, metal_result, metal_seg_result, lesion_seg_result, detections, timings = _run_small_models_parallel(
+    model_hu_volume, model_slices, model_valid_indices, slice_timings = _limit_model_slices(
         hu_volume,
         slices,
         valid_indices,
     )
+    timings.update(slice_timings)
+    if slice_timings["modelSlices"] != slice_timings["originalSlices"]:
+        log.info(
+            "[CT推理] 模型切片采样 %s -> %s",
+            slice_timings["originalSlices"],
+            slice_timings["modelSlices"],
+        )
+
+    # ── 2. 并行运行互不依赖的小模型 ─────────────────────────
+    clf_result, metal_result, metal_seg_result, lesion_seg_result, detections, model_timings = _run_small_models_parallel(
+        model_hu_volume,
+        model_slices,
+        model_valid_indices,
+    )
+    timings.update(model_timings)
     label       = clf_result["label"]
     confidence  = clf_result["confidence"]
     _require_model_outputs(metal_result, metal_seg_result, lesion_seg_result)
@@ -254,7 +301,7 @@ def run(object_key: str, order_id: str, clinical_context: str = "") -> dict[str,
         "metalArtifactSegmentation": metal_seg_result,
         "lesionSegmentation": lesion_seg_result,
         "abnormalRegions": detections,
-        "inferenceTimingsMs": timings,
+        "inferenceTimingsMs": {**timings, "total": int((time.perf_counter() - total_started) * 1000)},
         "modelVersion":   model_version,
     }
 

@@ -70,8 +70,7 @@
       <section class="work-card schedule-visual-card">
         <div class="schedule-board-tools">
           <div>
-            <strong>周排班可视化</strong>
-            <span>{{ scheduleBoardSubtitle }}</span>
+            <strong>周排班</strong>
           </div>
           <div class="schedule-legend">
             <span><i class="legend-dot legend-dot--morning"></i>上午</span>
@@ -144,41 +143,53 @@
     </div>
 
         <div v-else class="profile-shell">
-          <div class="schedule-header">
-            <div>
-              <span class="schedule-header__eyebrow">个人中心</span>
-              <h1>个人信息</h1>
-              <p>{{ auth.user?.username || auth.user?.employeeNo || auth.user?.id || '当前账号' }}</p>
+          <!-- Profile banner -->
+          <section class="profile-banner">
+            <div class="profile-banner__bg"></div>
+            <div class="profile-banner__content">
+              <div class="profile-banner__avatar">{{ doctorAvatar }}</div>
+              <div class="profile-banner__info">
+                <h2>{{ auth.user?.name || '未设置姓名' }}</h2>
+                <div class="profile-banner__tags">
+                  <span class="profile-banner__tag">{{ roleLabel }}</span>
+                  <span class="profile-banner__tag profile-banner__tag--dept">{{ doctorMeta }}</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Profile detail cards -->
+          <div class="profile-detail-grid">
+            <div class="profile-detail-card">
+              <div class="profile-detail-card__icon profile-detail-card__icon--id">工</div>
+              <div class="profile-detail-card__body">
+                <span>工号</span>
+                <strong>{{ auth.user?.employeeNo || '-' }}</strong>
+              </div>
+            </div>
+            <div class="profile-detail-card">
+              <div class="profile-detail-card__icon profile-detail-card__icon--account">账</div>
+              <div class="profile-detail-card__body">
+                <span>账号</span>
+                <strong>{{ auth.user?.username || '-' }}</strong>
+              </div>
             </div>
           </div>
 
-          <section class="work-card profile-card">
-            <div class="profile-grid">
-              <label>
-                <span>姓名</span>
-                <strong>{{ auth.user?.name || '-' }}</strong>
-              </label>
-              <label>
-                <span>工号</span>
-                <strong>{{ auth.user?.employeeNo || '-' }}</strong>
-              </label>
-              <label>
-                <span>账号</span>
-                <strong>{{ auth.user?.username || '-' }}</strong>
-              </label>
-              <label>
-                <span>电话</span>
-                <strong>{{ auth.user?.phone || '-' }}</strong>
-              </label>
-              <label>
-                <span>角色</span>
-                <strong>{{ roleLabel }}</strong>
-              </label>
-              <label>
-                <span>实名认证</span>
-                <strong>{{ auth.user?.realNameVerified ? '已认证' : '未认证' }}</strong>
-              </label>
-            </div>
+          <!-- Change password -->
+          <section class="work-card profile-password-card">
+            <h3>修改密码</h3>
+            <el-form :model="pwdForm" label-position="top" class="pwd-form" @submit.prevent>
+              <el-form-item label="原密码">
+                <el-input v-model="pwdForm.oldPassword" type="password" show-password placeholder="输入原密码" />
+              </el-form-item>
+              <el-form-item label="新密码">
+                <el-input v-model="pwdForm.newPassword" type="password" show-password placeholder="至少8位，含字母和数字" />
+              </el-form-item>
+              <el-button type="primary" class="pwd-submit-btn" :loading="pwdLoading" @click="handleChangePassword">
+                确认修改
+              </el-button>
+            </el-form>
           </section>
         </div>
       </main>
@@ -187,7 +198,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
+import { ElMessage } from 'element-plus';
+import { changeMyPassword } from '../api/auth';
 import { getSchedules, type Schedule } from '../api/doctor';
 import { useAuthStore } from '../store/auth';
 
@@ -242,11 +255,6 @@ const roleLabel = computed(() => ({
   ADMIN: '管理员'
 } as Record<string, string>)[auth.user?.role || ''] || auth.user?.role || '-');
 const isOutpatientDoctor = computed(() => auth.user?.role === 'OUTPATIENT_DOCTOR');
-const scheduleBoardSubtitle = computed(() =>
-  isOutpatientDoctor.value
-    ? '按管理员端排班看板样式展示当前医生 7 天班次与号源'
-    : '按管理员端排班看板样式展示当前医生 7 天值班安排'
-);
 
 const weekDateKeys = computed(() => new Set(weekDays.value.map((day) => day.key)));
 const weeklySchedules = computed(() => schedules.value.filter((item) => weekDateKeys.value.has(item.workDate)));
@@ -357,6 +365,39 @@ function shiftClasses(schedule: Schedule | undefined, period: string) {
   ];
 }
 
+const pwdLoading = ref(false);
+const pwdForm = reactive({
+  oldPassword: '',
+  newPassword: ''
+});
+
+async function handleChangePassword() {
+  if (!pwdForm.oldPassword || !pwdForm.newPassword) {
+    ElMessage.warning('请填写原密码和新密码');
+    return;
+  }
+  if (pwdForm.newPassword.length < 8) {
+    ElMessage.warning('新密码至少8位');
+    return;
+  }
+  if (!/[A-Za-z]/.test(pwdForm.newPassword) || !/\d/.test(pwdForm.newPassword)) {
+    ElMessage.warning('新密码需包含字母和数字');
+    return;
+  }
+  pwdLoading.value = true;
+  try {
+    await changeMyPassword(pwdForm.oldPassword, pwdForm.newPassword);
+    ElMessage.success('密码已修改，请妥善保管');
+    pwdForm.oldPassword = '';
+    pwdForm.newPassword = '';
+  } catch (e: any) {
+    const msg = e?.response?.data?.message || e?.message || '修改失败';
+    ElMessage.error(msg);
+  } finally {
+    pwdLoading.value = false;
+  }
+}
+
 onMounted(loadSchedule);
 </script>
 
@@ -382,30 +423,31 @@ onMounted(loadSchedule);
 .personal-sidebar {
   min-height: 0;
   padding: 14px;
-  border: 1px solid #dbe7f0;
-  border-radius: 8px;
+  border: 1px solid #d0e8eb;
+  border-radius: 10px;
   background: #fff;
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+  box-shadow: 0 1px 6px rgba(12,189,204,.06);
   box-sizing: border-box;
 }
 
 .personal-card {
-  padding: 10px 4px 16px;
-  border-bottom: 1px solid #e5edf5;
+  padding: 14px 4px 18px;
+  border-bottom: 1px solid #e8f4f6;
   text-align: center;
 }
 
 .personal-card .personal-avatar {
-  width: 54px;
-  height: 54px;
-  margin: 0 auto 10px;
+  width: 60px;
+  height: 60px;
+  margin: 0 auto 12px;
   border-radius: 50%;
   display: grid;
   place-items: center;
-  background: linear-gradient(135deg, #dbeafe, #ccfbf1);
-  color: #0f766e;
-  font-size: 20px;
+  background: linear-gradient(135deg, #0cbdcc, #0899a5);
+  color: #fff;
+  font-size: 22px;
   font-weight: 800;
+  box-shadow: 0 3px 12px rgba(12,189,204,.25);
 }
 
 .personal-card strong,
@@ -414,7 +456,7 @@ onMounted(loadSchedule);
 }
 
 .personal-card strong {
-  color: #0f172a;
+  color: #0e7b85;
   font-size: 16px;
 }
 
@@ -427,15 +469,15 @@ onMounted(loadSchedule);
 
 .personal-nav {
   display: grid;
-  gap: 8px;
+  gap: 6px;
   padding-top: 14px;
 }
 
 .personal-nav__item {
-  height: 42px;
+  height: 44px;
   border: 1px solid transparent;
-  border-radius: 6px;
-  padding: 0 10px;
+  border-radius: 8px;
+  padding: 0 12px;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -443,18 +485,20 @@ onMounted(loadSchedule);
   color: #475569;
   cursor: pointer;
   text-align: left;
+  transition: all .15s ease;
 }
 
 .personal-nav__item span {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   display: grid;
   place-items: center;
-  border-radius: 5px;
-  background: #f1f5f9;
-  color: #64748b;
-  font-size: 12px;
+  border-radius: 7px;
+  background: #f0f8f9;
+  color: #0899a5;
+  font-size: 13px;
   font-weight: 700;
+  transition: all .15s ease;
 }
 
 .personal-nav__item strong {
@@ -464,12 +508,12 @@ onMounted(loadSchedule);
 .personal-nav__item:hover,
 .personal-nav__item--active {
   border-color: #a8e8ec;
-  background: #e6f9fa;
-  color: #0f766e;
+  background: linear-gradient(135deg, #f0f8f9 0%, #e6f9fa 100%);
+  color: #0e7b85;
 }
 
 .personal-nav__item--active span {
-  background: #0f9aa8;
+  background: linear-gradient(135deg, #0cbdcc, #0899a5);
   color: #fff;
 }
 
@@ -489,6 +533,125 @@ onMounted(loadSchedule);
   margin: 0 auto;
 }
 
+/* ── Profile Banner ── */
+.profile-banner {
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 20px;
+  background: #fff;
+  box-shadow: 0 2px 12px rgba(12,189,204,.10);
+}
+.profile-banner__bg {
+  height: 100px;
+  background: linear-gradient(135deg, #0cbdcc 0%, #0899a5 50%, #0e7b85 100%);
+}
+.profile-banner__content {
+  display: flex;
+  align-items: flex-end;
+  gap: 18px;
+  padding: 0 24px 20px;
+  margin-top: -36px;
+  position: relative;
+  z-index: 1;
+}
+.profile-banner__avatar {
+  width: 72px; height: 72px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #0cbdcc, #0899a5);
+  color: #fff;
+  font-size: 28px; font-weight: 800;
+  display: flex; align-items: center; justify-content: center;
+  border: 4px solid #fff;
+  box-shadow: 0 4px 16px rgba(12,189,204,.30);
+  flex-shrink: 0;
+}
+.profile-banner__info h2 {
+  margin: 0 0 8px;
+  font-size: 22px; font-weight: 700;
+  color: #0e7b85;
+}
+.profile-banner__tags {
+  display: flex; gap: 8px; flex-wrap: wrap;
+}
+.profile-banner__tag {
+  padding: 3px 12px;
+  border-radius: 12px;
+  font-size: 12px; font-weight: 600;
+  background: linear-gradient(135deg, #0cbdcc, #0899a5);
+  color: #fff;
+}
+.profile-banner__tag--dept {
+  background: #e6f9fa;
+  color: #0899a5;
+}
+
+/* ── Profile Detail Cards ── */
+.profile-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.profile-detail-card {
+  display: flex;
+  align-items: center; gap: 14px;
+  padding: 18px 20px;
+  border: 1px solid #d0e8eb;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #f9fcfd 0%, #fff 60%);
+  box-shadow: 0 1px 4px rgba(12,189,204,.06);
+  transition: box-shadow .15s ease, transform .15s ease;
+}
+.profile-detail-card:hover {
+  box-shadow: 0 4px 16px rgba(12,189,204,.12);
+  transform: translateY(-1px);
+}
+.profile-detail-card__icon {
+  width: 44px; height: 44px;
+  border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; font-weight: 800;
+  flex-shrink: 0;
+}
+.profile-detail-card__icon--id      { background: #e6f9fa; color: #0899a5; }
+.profile-detail-card__icon--account { background: #eff6ff; color: #3b82f6; }
+.profile-detail-card__body span {
+  display: block;
+  font-size: 12px; color: #9ca3af; font-weight: 500;
+  text-transform: uppercase; letter-spacing: .3px; margin-bottom: 4px;
+}
+.profile-detail-card__body strong {
+  font-size: 15px; color: #374151; font-weight: 600;
+}
+
+/* ── Change password ── */
+.profile-password-card {
+  margin-top: 20px;
+  padding: 24px;
+}
+.profile-password-card h3 {
+  margin: 0 0 18px;
+  font-size: 16px; font-weight: 700;
+  color: #0e7b85;
+}
+.pwd-form :deep(.el-form-item__label) {
+  font-size: 13px; color: #64748b;
+}
+.pwd-submit-btn {
+  width: 100%;
+  height: 42px;
+  border-radius: 10px;
+  font-size: 15px; font-weight: 600;
+  background: linear-gradient(135deg, #0cbdcc 0%, #0899a5 100%);
+  border: none;
+  box-shadow: 0 3px 12px rgba(12,189,204,.30);
+  margin-top: 4px;
+}
+.pwd-submit-btn:hover {
+  box-shadow: 0 5px 18px rgba(12,189,204,.40);
+  opacity: .95;
+}
+
 .schedule-header {
   display: flex;
   align-items: flex-end;
@@ -500,14 +663,16 @@ onMounted(loadSchedule);
 .schedule-header__eyebrow {
   display: block;
   margin-bottom: 5px;
-  color: #0899a5;
+  color: #0cbdcc;
   font-size: 12px;
   font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .5px;
 }
 
 .schedule-header h1 {
   margin: 0;
-  color: #0f172a;
+  color: #0e7b85;
   font-size: 24px;
   font-weight: 750;
   letter-spacing: 0;
@@ -537,10 +702,10 @@ onMounted(loadSchedule);
 .summary-item {
   min-height: 72px;
   padding: 14px 16px;
-  border: 1px solid #dbe7f0;
-  border-radius: 8px;
-  background: #fff;
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+  border: 1px solid #d0e8eb;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #f9fcfd 0%, #fff 100%);
+  box-shadow: 0 1px 4px rgba(12,189,204,.08);
   box-sizing: border-box;
 }
 
@@ -553,66 +718,16 @@ onMounted(loadSchedule);
 .summary-item strong {
   display: block;
   margin-top: 7px;
-  color: #0f172a;
+  color: #0e7b85;
   font-size: 24px;
   line-height: 1;
 }
 
 .work-card {
-  border: 1px solid #dbe7f0;
-  border-radius: 8px;
+  border: 1px solid #d0e8eb;
+  border-radius: 10px;
   background: #fff;
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
-}
-
-.profile-card {
-  position: relative;
-  padding: 20px;
-  overflow: hidden;
-}
-
-.profile-card::before {
-  content: '';
-  position: absolute;
-  inset: 0 0 auto;
-  height: 4px;
-  background: linear-gradient(90deg, #0f9aa8, #2f91b4, #14b8a6);
-}
-
-.profile-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.profile-grid label {
-  min-height: 82px;
-  padding: 15px 16px;
-  border: 1px solid #e5edf5;
-  border-radius: 8px;
-  background:
-    linear-gradient(180deg, rgb(255 255 255 / 88%), rgb(248 250 252 / 94%)),
-    #fff;
-  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.04);
-  box-sizing: border-box;
-}
-
-.profile-grid span,
-.profile-grid strong {
-  display: block;
-}
-
-.profile-grid span {
-  color: #64748b;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.profile-grid strong {
-  margin-top: 10px;
-  color: #0f172a;
-  font-size: 16px;
-  overflow-wrap: anywhere;
+  box-shadow: 0 1px 6px rgba(12,189,204,.08);
 }
 
 .schedule-visual-card {
@@ -625,8 +740,8 @@ onMounted(loadSchedule);
   justify-content: space-between;
   gap: 16px;
   padding: 16px 18px;
-  border-bottom: 1px solid #dbe7f0;
-  background: #f8fafc;
+  border-bottom: 1px solid #e8f4f6;
+  background: linear-gradient(180deg, #f9fcfd 0%, #f0f8f9 100%);
 }
 
 .schedule-board-tools strong,
@@ -635,7 +750,7 @@ onMounted(loadSchedule);
 }
 
 .schedule-board-tools strong {
-  color: #0f172a;
+  color: #0e7b85;
   font-size: 15px;
 }
 
@@ -701,9 +816,9 @@ onMounted(loadSchedule);
 .schedule-board {
   display: grid;
   min-width: 1160px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid #d0e8eb;
   border-radius: 8px;
-  background: #f8fafc;
+  background: #fff;
 }
 
 .schedule-board__corner,
@@ -711,8 +826,8 @@ onMounted(loadSchedule);
 .schedule-board__person,
 .schedule-board__cell {
   min-width: 0;
-  border-right: 1px solid #dbe7f0;
-  border-bottom: 1px solid #dbe7f0;
+  border-right: 1px solid #e8f4f6;
+  border-bottom: 1px solid #e8f4f6;
 }
 
 .schedule-board__corner {
@@ -726,15 +841,15 @@ onMounted(loadSchedule);
   justify-content: space-between;
   padding: 12px;
   background:
-    linear-gradient(27deg, transparent 49.2%, #e5e7eb 50%, transparent 50.8%),
-    #f8fafc;
+    linear-gradient(27deg, transparent 49.2%, #d0e8eb 50%, transparent 50.8%),
+    #f9fcfd;
   color: #64748b;
   font-size: 13px;
 }
 
 .schedule-board__corner strong {
   align-self: flex-start;
-  color: #0f172a;
+  color: #0e7b85;
   font-size: 13px;
 }
 
@@ -750,7 +865,7 @@ onMounted(loadSchedule);
   z-index: 3;
   min-height: 82px;
   padding: 10px 10px 8px;
-  background: #f8fafc;
+  background: #f9fcfd;
   box-sizing: border-box;
   text-align: center;
 }
@@ -765,7 +880,7 @@ onMounted(loadSchedule);
 .schedule-board__day strong {
   display: inline-block;
   margin-right: 8px;
-  color: #0f172a;
+  color: #0e7b85;
   font-size: 14px;
 }
 
@@ -785,7 +900,7 @@ onMounted(loadSchedule);
 }
 
 .schedule-board__day--today {
-  background: #e6f9fa;
+  background: linear-gradient(180deg, #f0f8f9 0%, #e6f9fa 100%);
 }
 
 .schedule-board__day--weekend span,

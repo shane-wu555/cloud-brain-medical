@@ -1,9 +1,16 @@
 server:
   port: 8112
+  tomcat:
+    max-http-form-post-size: ${MEDICAL_ORDER_MAX_FORM_POST_SIZE:2147483647}
+    max-swallow-size: ${MEDICAL_ORDER_MAX_SWALLOW_SIZE:-1}
 
 spring:
   application:
     name: medical-order-service
+  servlet:
+    multipart:
+      max-file-size: ${MEDICAL_ORDER_MAX_FILE_SIZE:2048MB}
+      max-request-size: ${MEDICAL_ORDER_MAX_REQUEST_SIZE:2048MB}
   rabbitmq:
     host: ${RABBITMQ_HOST:localhost}
     port: ${RABBITMQ_PORT:5672}

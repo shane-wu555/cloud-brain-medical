@@ -58,6 +58,13 @@ public class AuthController {
         authService.resetPassword(request, client(servletRequest));
     }
 
+    @PostMapping("/change-password")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void changePassword(@Valid @RequestBody ChangePasswordRequest request,
+            @RequestHeader("X-User-Id") String userId) {
+        authService.changePassword(userId, request.oldPassword(), request.newPassword());
+    }
+
     @PutMapping("/internal/users/{id}/real-name")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void markRealName(@PathVariable("id") String id,
@@ -95,5 +102,9 @@ public class AuthController {
     public record ResetPasswordRequest(
             @NotBlank @Pattern(regexp = "^1\\d{10}$", message = "手机号格式不正确") String phone,
             @NotBlank String smsCode,
+            @NotBlank @Size(min = 8, max = 72) String newPassword) {}
+
+    public record ChangePasswordRequest(
+            @NotBlank @Size(min = 8, max = 72) String oldPassword,
             @NotBlank @Size(min = 8, max = 72) String newPassword) {}
 }

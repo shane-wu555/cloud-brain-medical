@@ -9,7 +9,10 @@
       <div class="wks-nav__right">
         <span class="wks-nav__info">{{ doctorDept }}{{ doctorDept ? ' ｜ ' : '' }}{{ auth.user?.name }}</span>
         <span class="wks-nav__date">{{ today }} {{ dayOfWeek }}</span>
-        <button :class="['my-entry', showMySchedule && 'my-entry--active']" type="button" @click="showMySchedule = !showMySchedule">我的</button>
+        <button :class="['my-entry', showMySchedule && 'my-entry--active']" type="button" @click="showMySchedule = !showMySchedule">
+          <span v-if="!showMySchedule">我的</span>
+          <span v-else>返回工作台</span>
+        </button>
         <el-button size="small" text @click="logout" style="color:rgba(255,255,255,0.85)">退出</el-button>
       </div>
     </header>
@@ -87,19 +90,19 @@
             <div class="pat-info">
               <div class="pat-row1">
                 <span class="pat-name">{{ current.patientName }}</span>
-                <el-tag type="primary" size="small" effect="plain">
+                <el-tag size="small" effect="plain" class="pat-source-tag">
                   {{ current.source === 'ONLINE' ? '网上挂号' : '现场挂号' }}
                 </el-tag>
               </div>
               <div class="pat-row2">
-                <span><em>就诊科室</em>{{ current.departmentName }}</span>
-                <span><em>就诊号</em>{{ current.businessNo }}</span>
-                <span><em>就诊时间</em>{{ current.visitDate }}</span>
+                <span class="pat-meta-item"><em>就诊科室</em>{{ current.departmentName }}</span>
+                <span class="pat-meta-item"><em>就诊号</em>{{ current.businessNo }}</span>
+                <span class="pat-meta-item"><em>就诊时间</em>{{ current.visitDate }}</span>
               </div>
             </div>
             <div v-if="recordForm.allergyHistory" class="pat-allergy">
               <span class="pat-allergy__lbl">过敏史</span>
-              <el-tag type="danger" size="small">{{ recordForm.allergyHistory }}</el-tag>
+              <el-tag type="danger" size="small" effect="dark">{{ recordForm.allergyHistory }}</el-tag>
             </div>
           </div>
 
@@ -437,34 +440,49 @@
       </main>
 
       <!-- Right: AI panel -->
-      <aside class="wks-ai">
+      <aside v-if="!showMySchedule" class="wks-ai">
         <el-card shadow="never" class="ai-card">
           <template #header>
             <div class="ai-header">
-              <span>AI 临床助手</span>
-              <el-tag :type="aiFallback ? 'warning' : aiModel ? 'success' : 'info'" effect="plain" size="small">
+              <span class="ai-header__title">
+                <span class="ai-header__icon">AI</span>
+                临床助手
+              </span>
+              <el-tag :type="aiFallback ? 'warning' : aiModel ? 'success' : 'info'" effect="plain" size="small" class="ai-model-tag">
                 {{ aiModelLabel }}
               </el-tag>
             </div>
           </template>
           <div class="ai-messages" v-loading="aiLoading" element-loading-text="AI 分析中…">
             <div v-for="message in aiMessages" :key="message.id" :class="['ai-message', `ai-message--${message.kind}`]">
-              <span class="ai-msg-label">{{ message.label }}</span>
+              <div class="ai-msg-header">
+                <span class="ai-msg-dot"></span>
+                <span class="ai-msg-label">{{ message.label }}</span>
+              </div>
               <p>{{ message.content }}</p>
               <div class="ai-msg-actions">
-                <el-button v-if="message.kind === 'diagnosis'" size="small" type="primary" @click="applyDiagnosis(message)">填入诊断</el-button>
-                <el-button v-if="message.kind === 'medication'" size="small" type="success" @click="applyMedication(message)">采纳为处方</el-button>
-                <el-button v-if="message.kind === 'exam'" size="small" @click="applyExamItems(message)">推荐检查置顶</el-button>
-                <el-button v-if="message.kind === 'advice'" size="small" @click="applyAdvice(message)">填入建议</el-button>
+                <el-button v-if="message.kind === 'diagnosis'" size="small" type="primary" class="ai-btn" @click="applyDiagnosis(message)">填入诊断</el-button>
+                <el-button v-if="message.kind === 'medication'" size="small" type="primary" class="ai-btn" @click="applyMedication(message)">采纳为处方</el-button>
+                <el-button v-if="message.kind === 'exam'" size="small" type="primary" class="ai-btn" @click="applyExamItems(message)">推荐检查置顶</el-button>
+                <el-button v-if="message.kind === 'advice'" size="small" type="primary" class="ai-btn" @click="applyAdvice(message)">填入建议</el-button>
               </div>
             </div>
             <el-empty v-if="!aiLoading && !aiMessages.length" description="生成建议后在此显示" :image-size="60" />
           </div>
 
-          <el-input v-model="aiPrompt" type="textarea" :rows="3" placeholder="结合本次病历给出鉴别诊断、检查建议和风险提醒" />
-          <el-button type="primary" class="full ai-action" :disabled="!current" :loading="aiLoading" @click="generateAssistance">
-            {{ aiLoading ? 'AI 分析中…' : '生成辅助建议' }}
-          </el-button>
+          <div class="ai-input-area">
+            <el-input
+              v-model="aiPrompt"
+              type="textarea"
+              :rows="3"
+              placeholder="结合本次病历给出鉴别诊断、检查建议和风险提醒"
+              class="ai-textarea"
+            />
+            <el-button type="primary" class="ai-generate-btn" :disabled="!current" :loading="aiLoading" @click="generateAssistance">
+              <span v-if="!aiLoading">生成辅助建议</span>
+              <span v-else>AI 分析中…</span>
+            </el-button>
+          </div>
 
         </el-card>
       </aside>
@@ -1269,7 +1287,7 @@ watch(mainTab, (tab) => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 52px;
+  height: 56px;
   padding: 0 20px;
   background: linear-gradient(135deg, #0cbdcc 0%, #0899a5 100%);
   color: #fff;
@@ -1301,7 +1319,7 @@ watch(mainTab, (tab) => {
   display: flex;
   flex: 1;
   overflow: hidden;
-  height: calc(100vh - 52px);
+  height: calc(100vh - 56px);
 }
 
 /* ── Left sidebar ── */
@@ -1366,23 +1384,51 @@ watch(mainTab, (tab) => {
 
 /* Patient header */
 .patient-hdr {
-  background: #fff; border-radius: 8px; padding: 14px 18px;
-  display: flex; align-items: center; gap: 14px; margin-bottom: 12px;
-  box-shadow: 0 1px 3px rgb(0 0 0 / 7%);
+  background: linear-gradient(135deg, #f9fcfd 0%, #f0f8f9 50%, #e8f4f6 100%);
+  border: 1px solid #d0e8eb;
+  border-radius: 10px;
+  padding: 16px 20px;
+  display: flex; align-items: center; gap: 16px; margin-bottom: 12px;
+  box-shadow: 0 1px 4px rgba(12,189,204,.08);
 }
 .pat-avatar {
-  width: 46px; height: 46px; border-radius: 50%;
-  background: #ccf2f4; color: #0899a5;
-  font-size: 20px; font-weight: 700;
+  width: 52px; height: 52px; border-radius: 50%;
+  background: linear-gradient(135deg, #0cbdcc 0%, #0899a5 100%);
+  color: #fff;
+  font-size: 22px; font-weight: 700;
   display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(12,189,204,.25);
 }
 .pat-info { flex: 1; min-width: 0; }
-.pat-row1 { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-.pat-name { font-size: 18px; font-weight: 700; }
-.pat-row2 { display: flex; gap: 20px; flex-wrap: wrap; font-size: 13px; color: #374151; }
-.pat-row2 em { color: #9ca3af; font-style: normal; margin-right: 3px; }
-.pat-allergy { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
-.pat-allergy__lbl { font-size: 13px; color: #6b7280; }
+.pat-row1 { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.pat-name { font-size: 20px; font-weight: 700; color: #0e7b85; }
+.pat-source-tag {
+  background: linear-gradient(135deg, #0cbdcc 0%, #0899a5 100%) !important;
+  color: #fff !important;
+  border: none !important;
+  border-radius: 10px !important;
+  font-weight: 500;
+}
+.pat-row2 { display: flex; gap: 24px; flex-wrap: wrap; font-size: 13px; color: #374151; }
+.pat-meta-item {
+  display: flex; align-items: center; gap: 6px;
+  padding: 3px 10px;
+  background: rgba(255,255,255,.70);
+  border-radius: 6px;
+  border: 1px solid #e8f4f6;
+}
+.pat-row2 em {
+  color: #9ca3af; font-style: normal; font-size: 12px;
+  padding-right: 4px; border-right: 1px solid #e5e7eb;
+}
+.pat-allergy {
+  display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+  padding: 8px 14px;
+  background: rgba(254,242,242,.80);
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+}
+.pat-allergy__lbl { font-size: 12px; color: #dc2626; font-weight: 600; }
 
 /* Tab bar */
 .main-tabs {
@@ -1411,34 +1457,102 @@ watch(mainTab, (tab) => {
 
 /* ── AI panel ── */
 .wks-ai {
-  width: 360px; flex-shrink: 0;
+  width: 380px; flex-shrink: 0;
   display: flex; flex-direction: column;
-  overflow: hidden; padding: 12px;
-  border-left: 1px solid #e5e7eb; background: #f8fafc;
+  overflow: hidden; padding: 10px;
+  border-left: 1px solid #d8e4e8; background: #f5f7fb;
 }
 .ai-card {
-  border-color: #a8e8ec;
+  border: 1px solid #d0e8eb; border-radius: 12px;
   flex: 1; display: flex; flex-direction: column; overflow: hidden;
+  box-shadow: 0 1px 6px rgba(0,0,0,.04);
+}
+.ai-card :deep(.el-card__header) {
+  padding: 12px 16px;
+  border-bottom: 1px solid #e8f4f6;
+  background: linear-gradient(180deg, #f9fcfd 0%, #f0f8f9 100%);
 }
 .ai-card :deep(.el-card__body) {
   flex: 1; display: flex; flex-direction: column; overflow: hidden; padding: 14px;
 }
 .ai-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.ai-message p, .rx-item p { margin: 4px 0 0; font-size: 13px; }
-/* 消息区占满剩余空间并滚动；textarea 和按钮 flex-shrink:0 钉在底部 */
-.ai-messages { flex: 1; overflow-y: auto; margin-bottom: 10px; min-height: 80px; }
-.ai-card :deep(.el-textarea) { flex-shrink: 0; }
-.ai-action { margin-top: 8px; flex-shrink: 0; }
-.ai-message { margin-bottom: 10px; padding: 10px; border-left: 3px solid #6366f1; background: #eef2ff; border-radius: 0 4px 4px 0; }
-.ai-message--diagnosis { border-left-color: #6366f1; background: #eef2ff; }
-.ai-message--exam     { border-left-color: #0899a5; background: #e6f9fa; }
-.ai-message--medication { border-left-color: #16a34a; background: #f0fdf4; }
-.ai-message--risk     { border-left-color: #dc2626; background: #fef2f2; }
-.ai-message--advice   { border-left-color: #d97706; background: #fffbeb; }
-.ai-msg-label { font-weight: 700; font-size: 12px; }
-.ai-msg-actions { margin-top: 6px; }
+.ai-header__title { display: flex; align-items: center; gap: 6px; font-size: 15px; font-weight: 700; color: #0e7b85; }
+.ai-header__icon { font-size: 20px; line-height: 1; }
+.ai-model-tag { border-radius: 10px; }
+
+.ai-messages { flex: 1; overflow-y: auto; margin-bottom: 12px; min-height: 80px; padding-right: 2px; }
+.ai-message {
+  margin-bottom: 10px; padding: 12px 14px;
+  border-left: 4px solid #0cbdcc; border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0,0,0,.06);
+  transition: box-shadow .15s ease;
+}
+.ai-message:hover { box-shadow: 0 2px 10px rgba(0,0,0,.1); }
+.ai-message p, .rx-item p { margin: 4px 0 0; font-size: 13px; white-space: pre-wrap; line-height: 1.7; }
+.ai-message--diagnosis   { border-left-color: #0cbdcc; }
+.ai-message--exam        { border-left-color: #0899a5; }
+.ai-message--medication  { border-left-color: #10b981; }
+.ai-message--risk        { border-left-color: #ef4444; }
+.ai-message--advice      { border-left-color: #f59e0b; }
+.ai-msg-header { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
+.ai-msg-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+}
+.ai-message--diagnosis   .ai-msg-dot { background: #0cbdcc; }
+.ai-message--exam        .ai-msg-dot { background: #0899a5; }
+.ai-message--medication  .ai-msg-dot { background: #10b981; }
+.ai-message--risk        .ai-msg-dot { background: #ef4444; }
+.ai-message--advice      .ai-msg-dot { background: #f59e0b; }
+.ai-msg-label { font-weight: 700; font-size: 12px; color: #6b7280; text-transform: uppercase; letter-spacing: .3px; }
+.ai-msg-actions { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
+.ai-btn {
+  border-radius: 18px !important;
+  font-weight: 500 !important;
+}
+.ai-msg-actions :deep(.el-button--primary) {
+  background: #0cbdcc; border-color: #0cbdcc;
+}
+.ai-msg-actions :deep(.el-button--primary):hover {
+  background: #0899a5; border-color: #0899a5;
+}
+
+.ai-input-area {
+  flex-shrink: 0;
+  border-top: 1px solid #e8f4f6;
+  padding-top: 12px;
+}
+.ai-textarea :deep(.el-textarea__inner) {
+  border-radius: 10px !important;
+  border-color: #d0e8eb !important;
+  background: #f9fcfd !important;
+  font-size: 13px;
+  resize: none;
+}
+.ai-textarea :deep(.el-textarea__inner):focus {
+  border-color: #0cbdcc !important;
+  box-shadow: 0 0 0 2px rgba(12,189,204,.15) !important;
+}
+.ai-generate-btn {
+  width: 100%; margin-top: 10px;
+  border-radius: 10px !important;
+  height: 42px; font-size: 15px; font-weight: 600;
+  background: linear-gradient(135deg, #0cbdcc 0%, #0899a5 100%) !important;
+  border: none !important;
+  box-shadow: 0 3px 12px rgba(12,189,204,.30);
+  transition: box-shadow .2s ease, transform .15s ease;
+}
+.ai-generate-btn:hover:not(:disabled) {
+  box-shadow: 0 5px 18px rgba(12,189,204,.40);
+  transform: translateY(-1px);
+}
+.ai-generate-btn:active:not(:disabled) { transform: translateY(0); }
+.ai-generate-btn.is-disabled {
+  background: #d1d5db !important;
+  box-shadow: none;
+}
+
 .rx-item { margin-bottom: 10px; padding: 10px; border-left: 3px solid #16a34a; background: #f0fdf4; border-radius: 0 4px 4px 0; }
-.ai-action { margin-top: 8px; }
 .muted { color: #64748b; }
 .full { width: 100%; }
 .ai-exam-banner {

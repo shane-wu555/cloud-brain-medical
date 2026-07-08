@@ -62,3 +62,7 @@ export async function setStaffAccountActive(id: string, active: boolean) {
   const { data } = await http.put<StaffAccount>(`/auth/staff-accounts/${id}/active`, { active });
   return data;
 }
+
+export async function changeMyPassword(oldPassword: string, newPassword: string) {
+  await http.post('/auth/change-password', { oldPassword, newPassword });
+}
