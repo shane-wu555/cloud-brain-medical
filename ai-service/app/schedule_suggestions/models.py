@@ -24,8 +24,6 @@ def _normalize_period(value: Any) -> str:
         return "\u4e0a\u5348"
     if upper_text == "AFTERNOON":
         return "\u4e0b\u5348"
-    if upper_text in {"ALL_DAY", "FULL_DAY", "DAY"}:
-        return "\u5168\u5929"
     return text
 
 

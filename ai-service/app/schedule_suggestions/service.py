@@ -8,8 +8,7 @@ from app.core.llm import LlmError, chat_json, invalid_llm_output
 
 from .models import ScheduleSuggestion, ScheduleSuggestionRequest, ScheduleSuggestionResponse
 
-VALID_PERIODS = {"\u4e0a\u5348", "\u4e0b\u5348", "\u5168\u5929"}
-ALL_DAY = "\u5168\u5929"
+VALID_PERIODS = {"\u4e0a\u5348", "\u4e0b\u5348"}
 logger = logging.getLogger(__name__)
 
 
@@ -84,10 +83,9 @@ def _suggest_with_llm(request: ScheduleSuggestionRequest, config) -> ScheduleSug
 请严格输出 JSON 对象，字段为 suggestions。
 suggestions 每项包含 suggestionId、doctorId、doctorName、departmentId、roomId、roomName、workDate、period、capacity、requiresAdminConfirmation，不要输出排班理由。
 只参考 candidates 中的医生基础信息、unavailableSlots，以及 demands 中的 departmentId、roomId、workDate、period、expectedVisits；只有请求提供 backgroundSummary 时才参考历史流量摘要。
-unavailableSlots 由后端从 doctor_event 表按本次重排日期窗口展开，格式为 {date, period, type}。如果某医生存在 date=workDate 且 period 与需求 period 冲突的 unavailableSlot，就不能安排该医生；period=全天 与上午/下午互斥。
-同一医生同一日期同一时段只能安排一次；period=全天 与上午/下午互斥。
+unavailableSlots 由后端从 doctor_event 表按本次重排日期窗口展开，格式为 {date, period, type}。如果某医生存在 date=workDate 且 period 与需求 period 相同的 unavailableSlot，就不能安排该医生。
+同一医生同一日期同一时段只能安排一次；排班时段只允许上午或下午。
 同一 roomId 在同一日期同一时段必须有且仅有一个医生；如果 demand 提供 roomId，建议医生必须属于该 roomId。
-同一医生同一天尽量上午/下午状态一致：能排则优先排满当天，不能排则优先整天不排，除非可用性或诊室需求不允许。
 周一到周五客流较大的时段，可优先安排主任医师、副主任医师。
 capacity 必须在 1 到 70 之间。
 尽量考虑同诊室不同医生之间的负载均衡。
@@ -268,7 +266,7 @@ def _has_unavailable_slot(candidate, work_date: str, period: str) -> bool:
         slot_period = _normalize_period(slot.get("period", ""))
         if slot_date != work_date:
             continue
-        if slot_period == period or slot_period == "全天" or period == "全天":
+        if slot_period == period:
             return True
     return False
 
@@ -280,13 +278,11 @@ def _normalize_period(value) -> str:
         return "\u4e0a\u5348"
     if upper_text == "AFTERNOON":
         return "\u4e0b\u5348"
-    if upper_text in {"ALL_DAY", "FULL_DAY", "DAY"}:
-        return ALL_DAY
     return text
 
 
 def _period_order(period: str) -> int:
-    return {"上午": 0, "下午": 1, ALL_DAY: 2}.get(period, 9)
+    return {"上午": 0, "下午": 1}.get(period, 9)
 
 
 def _is_weekday(work_date: str) -> bool:
@@ -318,9 +314,7 @@ def _prefer_senior_on_weekday_peak(demand) -> bool:
 def _slot_conflicts(assigned_slots: set[tuple[str, str, str]], owner_id: str, work_date: str, period: str) -> bool:
     if not owner_id:
         return False
-    if period == ALL_DAY:
-        return any((owner_id, work_date, existing) in assigned_slots for existing in ("上午", "下午", ALL_DAY))
-    return (owner_id, work_date, period) in assigned_slots or (owner_id, work_date, ALL_DAY) in assigned_slots
+    return (owner_id, work_date, period) in assigned_slots
 
 
 def _reserve_slot(assigned_slots: set[tuple[str, str, str]], owner_id: str, work_date: str, period: str) -> None:
