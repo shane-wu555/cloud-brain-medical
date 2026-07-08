@@ -140,7 +140,7 @@ public class ScheduleController {
         List<AiDoctorCandidate> candidates=new ArrayList<>();
         List<AiScheduleDemand> demands=new ArrayList<>();
         for(DoctorCatalogRepository.Department department:targetDepartments) {
-            List<DoctorCatalogRepository.Doctor> doctors=repository.doctors(department.id());
+            List<DoctorCatalogRepository.Doctor> doctors=repository.doctors(department.id(), false);
             for(DoctorCatalogRepository.Doctor doctor:doctors) {
                 int historicalAverage=insight.trainingReady()?insight.doctorAverageVisits().getOrDefault(doctor.id(),0):0;
                 List<DoctorUnavailableSlot> unavailableSlots=events.stream()
@@ -535,42 +535,108 @@ public class ScheduleController {
         Map<String,Integer> assignedCounts=new HashMap<>();
         Set<String> assignedDoctorSlots=new HashSet<>();
         Set<String> assignedRoomSlots=new HashSet<>();
-        for(AiScheduleDemand demand:request.demands().stream()
-                .sorted(Comparator.comparingInt(AiScheduleDemand::expectedVisits).reversed()
-                        .thenComparing(AiScheduleDemand::workDate)
-                        .thenComparing(AiScheduleDemand::period)
-                        .thenComparing(demand -> Optional.ofNullable(demand.roomId()).orElse("")))
+        for(AiScheduleDemandGroup group:scheduleDemandGroups(request.demands()).stream()
+                .sorted(Comparator
+                        .comparing((AiScheduleDemandGroup group) -> !isWeekday(LocalDate.parse(group.workDate())))
+                        .thenComparing(Comparator.comparingInt(this::groupExpectedVisits).reversed())
+                        .thenComparing(AiScheduleDemandGroup::workDate)
+                        .thenComparing(group -> Optional.ofNullable(group.roomId()).orElse("")))
                 .toList()) {
-            boolean weekday=isWeekday(LocalDate.parse(demand.workDate()));
-            List<AiDoctorCandidate> available=request.candidates().stream()
-                    .filter(candidate -> demand.departmentId().equals(candidate.departmentId()))
-                    .filter(candidate -> demand.roomId()==null||demand.roomId().isBlank()||demand.roomId().equals(candidate.roomId()))
-                    .filter(candidate -> !hasSlotConflict(assignedDoctorSlots,candidate.doctorId(),demand.workDate(),demand.period()))
-                    .filter(candidate -> candidate.roomId()==null||candidate.roomId().isBlank()
-                            ||!hasSlotConflict(assignedRoomSlots,candidate.roomId(),demand.workDate(),demand.period()))
-                    .filter(candidate -> !hasUnavailableSlot(candidate,demand.workDate(),demand.period()))
-                    .sorted(Comparator
-                            .comparingInt((AiDoctorCandidate candidate) -> assignedCounts.getOrDefault(candidate.doctorId(),0))
-                            .thenComparingInt(candidate -> preferSeniorOnWeekdayPeak(demand)?-seniorTitlePriority(candidate):0)
-                            .thenComparingInt(candidate -> weekday?-doctorDemandScore(candidate):doctorDemandScore(candidate))
-                            .thenComparing(Comparator.comparingInt(AiDoctorCandidate::weeklyCapacity).reversed())
-                            .thenComparing(AiDoctorCandidate::doctorName))
-                    .toList();
-            if(available.isEmpty()) continue;
-            AiDoctorCandidate selected=available.get(0);
-            assignedCounts.merge(selected.doctorId(),1,Integer::sum);
-            reserveSlot(assignedDoctorSlots,selected.doctorId(),demand.workDate(),demand.period());
-            if(selected.roomId()!=null&&!selected.roomId().isBlank()) {
-                reserveSlot(assignedRoomSlots,selected.roomId(),demand.workDate(),demand.period());
+            AiScheduleDemand morning=group.morning();
+            AiScheduleDemand afternoon=group.afternoon();
+            if(morning!=null&&afternoon!=null) {
+                List<AiDoctorCandidate> pairedAvailable=availableCandidates(request.candidates(),morning,assignedDoctorSlots,assignedRoomSlots).stream()
+                        .filter(candidate -> !hasSlotConflict(assignedDoctorSlots,candidate.doctorId(),afternoon.workDate(),afternoon.period()))
+                        .filter(candidate -> candidate.roomId()==null||candidate.roomId().isBlank()
+                                ||!hasSlotConflict(assignedRoomSlots,candidate.roomId(),afternoon.workDate(),afternoon.period()))
+                        .filter(candidate -> !hasUnavailableSlot(candidate,afternoon.workDate(),afternoon.period()))
+                        .toList();
+                AiDoctorCandidate selected=selectScheduleCandidate(pairedAvailable,morning,assignedCounts);
+                if(selected!=null) {
+                    addLocalSuggestion(suggestions,assignedCounts,assignedDoctorSlots,assignedRoomSlots,selected,morning);
+                    addLocalSuggestion(suggestions,assignedCounts,assignedDoctorSlots,assignedRoomSlots,selected,afternoon);
+                    continue;
+                }
             }
-            int baseline=demand.historicalVisits()==null?demand.expectedVisits():demand.historicalVisits();
-            int capacity=Math.max(8,Math.min(60,Math.round(Math.max(demand.expectedVisits(),baseline)*1.15f)));
-            suggestions.add(new AiScheduleSuggestion("local-ai-schedule-"+UUID.randomUUID(),
-                    selected.doctorId(),selected.doctorName(),selected.departmentId(),
-                    selected.roomId(),selected.roomName(),demand.workDate(),demand.period(),capacity,
-                    true));
+            for(AiScheduleDemand demand:Arrays.asList(morning,afternoon)) {
+                if(demand==null) continue;
+                AiDoctorCandidate selected=selectScheduleCandidate(
+                        availableCandidates(request.candidates(),demand,assignedDoctorSlots,assignedRoomSlots),
+                        demand,
+                        assignedCounts);
+                if(selected!=null) {
+                    addLocalSuggestion(suggestions,assignedCounts,assignedDoctorSlots,assignedRoomSlots,selected,demand);
+                }
+            }
         }
         return new AiScheduleResponse("local-ai-schedule-record-"+UUID.randomUUID(),suggestions,"backend","local-balanced",true,List.of(),request.backgroundSummary());
+    }
+    private List<AiScheduleDemandGroup> scheduleDemandGroups(List<AiScheduleDemand> demands) {
+        Map<String,List<AiScheduleDemand>> grouped=Optional.ofNullable(demands).orElse(List.of()).stream()
+                .collect(Collectors.groupingBy(this::scheduleDemandGroupKey,LinkedHashMap::new,Collectors.toList()));
+        List<AiScheduleDemandGroup> result=new ArrayList<>();
+        for(List<AiScheduleDemand> items:grouped.values()) {
+            AiScheduleDemand anchor=items.get(0);
+            result.add(new AiScheduleDemandGroup(
+                    anchor.departmentId(),
+                    Optional.ofNullable(anchor.roomId()).orElse(""),
+                    anchor.roomName(),
+                    anchor.workDate(),
+                    selectPeriodDemand(items,"上午"),
+                    selectPeriodDemand(items,"下午")));
+        }
+        return result;
+    }
+    private String scheduleDemandGroupKey(AiScheduleDemand demand) {
+        return demand.departmentId()+":"+Optional.ofNullable(demand.roomId()).orElse("")+":"+demand.workDate();
+    }
+    private AiScheduleDemand selectPeriodDemand(List<AiScheduleDemand> demands,String period) {
+        return demands.stream()
+                .filter(demand -> period.equals(demand.period()))
+                .max(Comparator.comparingInt(AiScheduleDemand::expectedVisits)
+                        .thenComparing(demand -> Optional.ofNullable(demand.historicalVisits()).orElse(0)))
+                .orElse(null);
+    }
+    private int groupExpectedVisits(AiScheduleDemandGroup group) {
+        return (group.morning()==null?0:group.morning().expectedVisits())
+                +(group.afternoon()==null?0:group.afternoon().expectedVisits());
+    }
+    private List<AiDoctorCandidate> availableCandidates(List<AiDoctorCandidate> candidates,AiScheduleDemand demand,
+            Set<String> assignedDoctorSlots,Set<String> assignedRoomSlots) {
+        return Optional.ofNullable(candidates).orElse(List.of()).stream()
+                .filter(candidate -> demand.departmentId().equals(candidate.departmentId()))
+                .filter(candidate -> demand.roomId()==null||demand.roomId().isBlank()||demand.roomId().equals(candidate.roomId()))
+                .filter(candidate -> !hasSlotConflict(assignedDoctorSlots,candidate.doctorId(),demand.workDate(),demand.period()))
+                .filter(candidate -> candidate.roomId()==null||candidate.roomId().isBlank()
+                        ||!hasSlotConflict(assignedRoomSlots,candidate.roomId(),demand.workDate(),demand.period()))
+                .filter(candidate -> !hasUnavailableSlot(candidate,demand.workDate(),demand.period()))
+                .toList();
+    }
+    private AiDoctorCandidate selectScheduleCandidate(List<AiDoctorCandidate> candidates,AiScheduleDemand demand,Map<String,Integer> assignedCounts) {
+        boolean weekday=isWeekday(LocalDate.parse(demand.workDate()));
+        return candidates.stream()
+                .sorted(Comparator
+                        .comparingInt((AiDoctorCandidate candidate) -> assignedCounts.getOrDefault(candidate.doctorId(),0))
+                        .thenComparingInt(candidate -> weekday?-seniorTitlePriority(candidate):0)
+                        .thenComparingInt(candidate -> weekday?-doctorDemandScore(candidate):doctorDemandScore(candidate))
+                        .thenComparing(Comparator.comparingInt(AiDoctorCandidate::weeklyCapacity).reversed())
+                        .thenComparing(AiDoctorCandidate::doctorName))
+                .findFirst()
+                .orElse(null);
+    }
+    private void addLocalSuggestion(List<AiScheduleSuggestion> suggestions,Map<String,Integer> assignedCounts,
+            Set<String> assignedDoctorSlots,Set<String> assignedRoomSlots,AiDoctorCandidate selected,AiScheduleDemand demand) {
+        assignedCounts.merge(selected.doctorId(),1,Integer::sum);
+        reserveSlot(assignedDoctorSlots,selected.doctorId(),demand.workDate(),demand.period());
+        if(selected.roomId()!=null&&!selected.roomId().isBlank()) {
+            reserveSlot(assignedRoomSlots,selected.roomId(),demand.workDate(),demand.period());
+        }
+        int baseline=demand.historicalVisits()==null?demand.expectedVisits():demand.historicalVisits();
+        int capacity=Math.max(8,Math.min(60,Math.round(Math.max(demand.expectedVisits(),baseline)*1.15f)));
+        suggestions.add(new AiScheduleSuggestion("local-ai-schedule-"+UUID.randomUUID(),
+                selected.doctorId(),selected.doctorName(),selected.departmentId(),
+                selected.roomId(),selected.roomName(),demand.workDate(),demand.period(),capacity,
+                true));
     }
     private AiScheduleResponse augmentPartialAiSuggestions(AiScheduleRequest request,AiScheduleResponse response) {
         Set<String> coveredKeys=Optional.ofNullable(response.suggestions()).orElse(List.of()).stream()
@@ -685,6 +751,7 @@ public class ScheduleController {
     public record AiDoctorCandidate(String doctorId,String doctorName,String title,String departmentId,String roomId,String roomName,String specialty,int weeklyCapacity,int historicalAverageVisits,List<DoctorUnavailableSlot> unavailableSlots) {}
     public record DoctorUnavailableSlot(String date,String period,String type) {}
     public record AiScheduleDemand(String departmentId,String roomId,String roomName,String workDate,String period,int expectedVisits,Integer historicalVisits) {}
+    private record AiScheduleDemandGroup(String departmentId,String roomId,String roomName,String workDate,AiScheduleDemand morning,AiScheduleDemand afternoon) {}
     public record AiScheduleResponse(String aiRecordId,List<AiScheduleSuggestion> suggestions,String provider,String model,boolean fallbackUsed,List<Map<String,Object>> knowledgeSources,String backgroundSummary) {}
     public record AiScheduleTask(String taskId,String status,String message,LocalDateTime createdAt,LocalDateTime updatedAt,AiScheduleResponse result) {
         public static AiScheduleTask queued(String taskId) {
