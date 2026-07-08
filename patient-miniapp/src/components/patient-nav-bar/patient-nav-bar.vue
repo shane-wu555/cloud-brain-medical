@@ -38,7 +38,7 @@ function handleBack() {
 
 <style scoped>
 .patient-nav-bar {
-  padding-top: var(--status-bar-height);
+  padding-top: var(--status-bar-height, 0px);
   background: linear-gradient(135deg, var(--patient-theme) 0%, var(--patient-theme-strong) 100%);
   color: #fff;
 }

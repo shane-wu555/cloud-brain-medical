@@ -243,7 +243,7 @@ function goBooking() {
 
 <style scoped>
 .consultation-page {
-  height: calc(100vh - var(--status-bar-height) - 96rpx);
+  height: calc(100vh - var(--status-bar-height, 0px) - 96rpx);
   min-height: 0;
   padding: 0;
   background: var(--patient-theme-page-bg);
