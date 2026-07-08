@@ -54,7 +54,12 @@
           type="number"
           placeholder="请输入短信验证码"
         />
-        <text class="code-button" @tap="sendCode()">获取验证码</text>
+        <text
+          :class="['code-button', !canSendCode && 'code-button--disabled']"
+          @tap="sendCode()"
+        >
+          {{ codeButtonText }}
+        </text>
       </view>
 
       <view class="actions">
@@ -78,7 +83,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, onBeforeUnmount, ref } from 'vue';
 import { useAuthStore } from '../../stores/auth';
 
 type Mode = 'PASSWORD' | 'SMS' | 'REGISTER' | 'RESET';
@@ -91,6 +96,9 @@ const phone = ref('');
 const password = ref('');
 const name = ref('');
 const smsCode = ref('');
+const codeCountdown = ref(0);
+const sendingCode = ref(false);
+let codeTimer: ReturnType<typeof setInterval> | undefined;
 
 const loginTabs = [
   { value: 'PASSWORD' as Mode, label: '密码登录' },
@@ -125,8 +133,16 @@ const actionTabs = computed((): Array<{ value: ActionType; label: string }> => [
   { value: 'SUBMIT', label: submitLabel.value }
 ]);
 
+const canSendCode = computed(() => !sendingCode.value && codeCountdown.value <= 0);
+const codeButtonText = computed(() => {
+  if (sendingCode.value) return '发送中';
+  if (codeCountdown.value > 0) return `${codeCountdown.value}s后重发`;
+  return '获取验证码';
+});
+
 function switchMode(nextMode: Mode) {
   mode.value = nextMode;
+  stopCodeCountdown();
 }
 
 function handleAction(action: ActionType) {
@@ -157,9 +173,11 @@ function navigateToHome(successMessage: string) {
 }
 
 async function sendCode() {
+  if (!canSendCode.value) return;
   const normalizedPhone = currentPhone();
 
   try {
+    sendingCode.value = true;
     const purpose: SmsPurpose =
       mode.value === 'REGISTER'
         ? 'REGISTER'
@@ -167,10 +185,37 @@ async function sendCode() {
           ? 'RESET_PASSWORD'
           : 'LOGIN';
     await auth.sendCode(normalizedPhone, purpose);
+    startCodeCountdown(60);
+    uni.showToast({ title: '验证码已发送', icon: 'success' });
   } catch (error) {
     uni.showToast({ title: (error as Error).message, icon: 'none' });
+  } finally {
+    sendingCode.value = false;
   }
 }
+
+function startCodeCountdown(seconds?: number) {
+  stopCodeCountdown();
+  codeCountdown.value = Math.max(1, Math.min(Number(seconds) || 60, 300));
+  codeTimer = setInterval(() => {
+    codeCountdown.value -= 1;
+    if (codeCountdown.value <= 0) {
+      stopCodeCountdown();
+    }
+  }, 1000);
+}
+
+function stopCodeCountdown() {
+  if (codeTimer) {
+    clearInterval(codeTimer);
+    codeTimer = undefined;
+  }
+  codeCountdown.value = 0;
+}
+
+onBeforeUnmount(() => {
+  stopCodeCountdown();
+});
 
 async function submit() {
   const normalizedPhone = currentPhone();
@@ -395,6 +440,12 @@ async function submit() {
   font-size: 27rpx;
   font-weight: 700;
   box-sizing: border-box;
+}
+
+.code-button--disabled {
+  border-color: #d7e6e8;
+  background: #f1f5f6;
+  color: #94a3b8;
 }
 
 .actions {
