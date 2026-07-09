@@ -25,4 +25,10 @@ public class AppointmentPaymentClient {
                 .body(Map.of("patientId",patientId,"paymentOrderId",paymentOrderId))
                 .retrieve().toBodilessEntity();
     }
+    public void refund(String appointmentId, String patientId, String operatorId) {
+        client.post().uri("/api/internal/appointments/{id}/refund-confirmation", appointmentId)
+                .header("X-Internal-Api-Key", internalApiKey)
+                .body(Map.of("patientId", patientId, "operatorId", operatorId))
+                .retrieve().toBodilessEntity();
+    }
 }

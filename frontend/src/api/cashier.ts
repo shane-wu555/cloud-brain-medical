@@ -73,9 +73,37 @@ export async function confirmTestPayment(payload: {
   return (await http.post<PaymentOrder>('/payments/test-callback', payload)).data;
 }
 
-export async function getPaymentQrCode(target: string) {
+export async function markTestPaymentFailure(payload: {
+  businessType: BusinessType;
+  businessId: string;
+  patientId: string;
+  channel?: PaymentChannel;
+  channelTradeNo?: string;
+}) {
+  return (await http.post<PaymentOrder>('/payments/test-failure', payload)).data;
+}
+
+export async function getPaymentQrCode(params: {
+  paymentId: string;
+  channel: PaymentChannel;
+  target?: string;
+}) {
   return (await http.get<string>('/payments/qr-code', {
-    params: { target },
+    params,
+    responseType: 'text'
+  })).data;
+}
+
+export async function getRefundQrCode(params: {
+  businessType: BusinessType;
+  businessId: string;
+  patientId: string;
+  returnId?: string;
+  amount?: number;
+  channel: PaymentChannel;
+}) {
+  return (await http.get<string>('/refunds/qr-code', {
+    params,
     responseType: 'text'
   })).data;
 }

@@ -59,16 +59,21 @@ class AppointmentServiceTest {
     @Test void onlineAndWindowBothRejectExhaustedInventory() {
         when(slots.tryLock("schedule-slot-0800")).thenReturn(false);
         assertThatThrownBy(() -> service.lockOnline(request())).isInstanceOf(IllegalStateException.class);
-        when(slots.bookOffline("schedule-slot-0800")).thenReturn(false);
+        when(slots.tryLock("schedule-slot-0800")).thenReturn(false);
         assertThatThrownBy(() -> service.createOffline(request())).isInstanceOf(IllegalStateException.class);
     }
 
-    @Test void offlineRegistrationRecordsRequestedRegistrationFee() {
-        when(slots.bookOffline("schedule-slot-0800")).thenReturn(true);
+    @Test void offlineRegistrationCreatesPendingPaymentAppointment() {
+        when(slots.tryLock("schedule-slot-0800")).thenReturn(true);
+        when(appointments.save(any(Appointment.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        service.createOffline(request(new BigDecimal("40.00")));
+        Appointment created = service.createOffline(request(new BigDecimal("40.00")));
 
-        verify(events).enqueuePayment(any(Appointment.class), eq(new BigDecimal("40.00")), eq("cashier"));
+        assertThat(created.getSource()).isEqualTo(AppointmentSource.OFFLINE);
+        assertThat(created.getStatus()).isEqualTo(AppointmentStatus.PENDING_PAYMENT);
+        assertThat(created.getPaymentStatus()).isEqualTo(PaymentStatus.UNPAID);
+        verify(events, never()).enqueuePayment(any(Appointment.class), any(), any());
+        verify(events, never()).enqueueMedicalRecord(any(Appointment.class));
     }
 
     @Test void samePatientCannotBookSameStartTimeTwice() {
