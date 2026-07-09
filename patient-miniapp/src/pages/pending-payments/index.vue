@@ -525,20 +525,15 @@ function pendingAppointmentSortTime(item: Appointment) {
   return item.visitDate ? `${item.visitDate}T${startTime}:00` : item.createdAt || '';
 }
 
-function normalizeStartTime(value: Appointment['startTime']) {
-  if (!value) {
-    return '';
-  }
-  if (typeof value === 'string') {
-    return value.slice(0, 5);
-  }
-  if (Array.isArray(value) && value.length >= 2) {
+function normalizeStartTime(value: Appointment['startTime']): string {
+  if (!value) return '';
+  if (typeof value === 'string') return value.slice(0, 5);
+  if (Array.isArray(value)) {
+    if (value.length < 2) return '';
     return `${String(value[0]).padStart(2, '0')}:${String(value[1]).padStart(2, '0')}`;
   }
-  const hour = value.hour;
-  const minute = value.minute;
-  if (typeof hour === 'number' && typeof minute === 'number') {
-    return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+  if (typeof value.hour === 'number' && typeof value.minute === 'number') {
+    return `${String(value.hour).padStart(2, '0')}:${String(value.minute).padStart(2, '0')}`;
   }
   return '';
 }
@@ -968,6 +963,8 @@ onShow(load);
   align-items: baseline;
   gap: 10rpx;
 }
+
+.category-name {
   color: #334155;
   font-size: 26rpx;
   font-weight: 600;
@@ -982,7 +979,6 @@ onShow(load);
 .category-count {
   color: #64748b;
   font-size: 24rpx;
-  margin-left: 12rpx;
 }
 
 .item-row {

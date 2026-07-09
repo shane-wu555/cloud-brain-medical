@@ -114,20 +114,15 @@ function appointmentSortTime(appointment?: Appointment) {
   return `${appointment.visitDate}T${startTime}:00`;
 }
 
-function normalizeStartTime(value: Appointment['startTime']) {
-  if (!value) {
-    return '';
-  }
-  if (typeof value === 'string') {
-    return value.slice(0, 5);
-  }
-  if (Array.isArray(value) && value.length >= 2) {
+function normalizeStartTime(value: Appointment['startTime']): string {
+  if (!value) return '';
+  if (typeof value === 'string') return value.slice(0, 5);
+  if (Array.isArray(value)) {
+    if (value.length < 2) return '';
     return `${String(value[0]).padStart(2, '0')}:${String(value[1]).padStart(2, '0')}`;
   }
-  const hour = value.hour;
-  const minute = value.minute;
-  if (typeof hour === 'number' && typeof minute === 'number') {
-    return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+  if (typeof value.hour === 'number' && typeof value.minute === 'number') {
+    return `${String(value.hour).padStart(2, '0')}:${String(value.minute).padStart(2, '0')}`;
   }
   return '';
 }
