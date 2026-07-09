@@ -1,5 +1,6 @@
 package com.cloudbrain.patient.repository;
 
+import com.cloudbrain.patient.cache.PatientCacheService;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -19,8 +20,12 @@ import org.springframework.transaction.annotation.Transactional;
 public class PatientRepository {
     private static final int MAX_PATIENTS_PER_ACCOUNT = 5;
     private final JdbcTemplate jdbc;
+    private final PatientCacheService cache;
 
-    public PatientRepository(JdbcTemplate jdbc) { this.jdbc = jdbc; }
+    public PatientRepository(JdbcTemplate jdbc, PatientCacheService cache) {
+        this.jdbc = jdbc;
+        this.cache = cache;
+    }
 
     public Optional<PatientProfile> find(String patientId) {
         return jdbc.query(
@@ -115,6 +120,7 @@ public class PatientRepository {
                 values (?::uuid, ?, ?, ?, ?, ?, ?, true, now(), 'ONLINE')
                 """, id, phone == null ? "" : phone, name, idType, normalizedIdNumber, gender, birthDate);
         upsertBinding(accountId, id);
+        cache.evictAccount(accountId);
         return find(id).orElseThrow();
     }
 
@@ -136,11 +142,18 @@ public class PatientRepository {
     public PatientProfile bind(String accountId, String patientId) {
         if (!owns(accountId, patientId)) throw new IllegalArgumentException("Patient is not added to this account");
         upsertBinding(accountId, patientId);
+        cache.evictAccount(accountId);
         return find(patientId).orElseThrow();
     }
 
     public PatientAccountState accountState(String accountId) {
-        return new PatientAccountState(findByAccount(accountId), bound(accountId).orElse(null));
+        return cache.getAccountState(accountId)
+                .orElseGet(() -> {
+                    PatientAccountState state = new PatientAccountState(
+                            findByAccount(accountId), bound(accountId).orElse(null));
+                    cache.putAccountState(accountId, state);
+                    return state;
+                });
     }
 
     private void ensureCanAdd(String accountId, String existingPatientId) {

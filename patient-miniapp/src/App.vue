@@ -37,16 +37,16 @@ button {
 .card {
   margin-bottom: 24rpx;
   padding: 30rpx;
-  border: 1px solid rgba(219, 231, 240, 0.8);
+  border: 1px solid var(--patient-theme-border);
   border-radius: 18rpx;
   background: #fff;
-  box-shadow: 0 10rpx 30rpx rgba(8, 153, 165, 0.08);
+  box-shadow: 0 8rpx 22rpx rgba(80, 100, 95, 0.06);
 }
 
 .title {
   color: #0d3d5c;
   font-size: 44rpx;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.25;
 }
 
@@ -65,7 +65,7 @@ button {
   font-size: 30rpx;
   font-weight: 600;
   line-height: 78rpx;
-  box-shadow: 0 12rpx 28rpx rgba(12, 189, 204, 0.24);
+  box-shadow: 0 10rpx 24rpx rgba(12, 189, 204, 0.20);
 }
 
 .button[disabled] {

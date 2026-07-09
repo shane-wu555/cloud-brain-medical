@@ -1,6 +1,6 @@
-package com.cloudbrain.auth.config;
+package com.cloudbrain.patient.config;
 
-import com.cloudbrain.auth.entity.UserAccount;
+import com.cloudbrain.patient.repository.PatientRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.springframework.context.annotation.Bean;
@@ -19,13 +19,14 @@ public class RedisConfig {
     }
 
     @Bean
-    public RedisTemplate<String, UserAccount> userAccountRedisTemplate(RedisConnectionFactory connectionFactory) {
-        RedisTemplate<String, UserAccount> template = new RedisTemplate<>();
+    public RedisTemplate<String, PatientRepository.PatientAccountState> patientRedisTemplate(
+            RedisConnectionFactory connectionFactory) {
+        RedisTemplate<String, PatientRepository.PatientAccountState> template = new RedisTemplate<>();
         template.setConnectionFactory(connectionFactory);
         template.setKeySerializer(new StringRedisSerializer());
         template.setHashKeySerializer(new StringRedisSerializer());
-        Jackson2JsonRedisSerializer<UserAccount> valueSerializer =
-                new Jackson2JsonRedisSerializer<>(objectMapper(), UserAccount.class);
+        Jackson2JsonRedisSerializer<PatientRepository.PatientAccountState> valueSerializer =
+                new Jackson2JsonRedisSerializer<>(objectMapper(), PatientRepository.PatientAccountState.class);
         template.setValueSerializer(valueSerializer);
         template.setHashValueSerializer(valueSerializer);
         template.afterPropertiesSet();

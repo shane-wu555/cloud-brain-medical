@@ -85,7 +85,7 @@ const activeGroup = ref('门诊');
 
 const quickEntries = [
   { name: 'AI问诊建议', desc: '智能推荐科室', icon: 'stethoscope', tone: 'tone-disease', url: '/pages/consultation/index' },
-  { name: '按科室挂号', desc: '选择院区科室', icon: 'hospital', tone: 'tone-dept', url: '/pages/booking/index' },
+  { name: '预约挂号', desc: '选择院区科室', icon: 'hospital', tone: 'tone-dept', url: '/pages/booking/index' },
   { name: '就诊人管理', desc: '切换电子就诊卡', icon: 'user-round-plus', tone: 'tone-report', url: '/pages/real-name/index' },
   { name: '门诊缴费', desc: '挂号药品等缴费', icon: 'wallet-cards', tone: 'tone-payment', url: '/pages/pending-payments/index' }
 ];
@@ -95,19 +95,19 @@ const serviceGroups = [
     title: '门诊',
     items: [
       { name: '我的挂号', icon: 'calendar-days', iconBg: 'linear-gradient(135deg, #0cbdcc 0%, #0899a5 100%)', url: '/pages/appointments/index' },
-      { name: '待处置安排', icon: 'syringe', iconBg: 'linear-gradient(135deg, #ff9b7a 0%, #ff5c35 100%)', url: '/pages/disposals/index?mode=arrangement' },
-      { name: '待检查/检验安排', icon: 'microscope', iconBg: 'linear-gradient(135deg, #ffc928 0%, #ff9f1c 100%)', url: '/pages/medical-orders/index?mode=arrangement' },
-      { name: '待取药安排', icon: 'pill-bottle', iconBg: 'linear-gradient(135deg, #34d399 0%, #10b981 100%)', url: '/pages/prescriptions/index?mode=arrangement' }
+      { name: '待处置安排', icon: 'syringe', iconBg: 'linear-gradient(135deg, #E88870 0%, #D06050 100%)', url: '/pages/disposals/index?mode=arrangement' },
+      { name: '待检查/检验安排', icon: 'microscope', iconBg: 'linear-gradient(135deg, #F0A860 0%, #E08840 100%)', url: '/pages/medical-orders/index?mode=arrangement' },
+      { name: '待取药安排', icon: 'pill-bottle', iconBg: 'linear-gradient(135deg, #5CBF98 0%, #3DA878 100%)', url: '/pages/prescriptions/index?mode=arrangement' }
     ]
   },
   {
     title: '记录',
     items: [
-      { name: '检查检验报告', icon: 'microscope', iconBg: 'linear-gradient(135deg, #ffc928 0%, #ff9f1c 100%)', url: '/pages/medical-orders/index?mode=report' },
+      { name: '检查检验报告', icon: 'microscope', iconBg: 'linear-gradient(135deg, #F0A860 0%, #E08840 100%)', url: '/pages/medical-orders/index?mode=report' },
       { name: '电子病历', icon: 'clipboard-list', iconBg: 'linear-gradient(135deg, #0cbdcc 0%, #0899a5 100%)', url: '/pages/medical-records/index' },
       { name: '缴费退费记录', icon: 'wallet-cards', iconBg: 'linear-gradient(135deg, #2dd4bf 0%, #0ea5e9 100%)', url: '/pages/pending-payments/index?mode=record' },
-      { name: '处置记录', icon: 'syringe', iconBg: 'linear-gradient(135deg, #ff9b7a 0%, #ff5c35 100%)', url: '/pages/disposals/index?mode=record' },
-      { name: '取药退药记录', icon: 'pill-bottle', iconBg: 'linear-gradient(135deg, #34d399 0%, #10b981 100%)', url: '/pages/prescriptions/index?mode=record' }
+      { name: '处置记录', icon: 'syringe', iconBg: 'linear-gradient(135deg, #E88870 0%, #D06050 100%)', url: '/pages/disposals/index?mode=record' },
+      { name: '取药退药记录', icon: 'pill-bottle', iconBg: 'linear-gradient(135deg, #5CBF98 0%, #3DA878 100%)', url: '/pages/prescriptions/index?mode=record' }
     ]
   }
 ];
@@ -140,7 +140,14 @@ function go(url: string) {
 <style scoped>
 .home-page {
   padding-top: 0;
-  background: linear-gradient(180deg, #0cbdcc 0, #0899a5 256rpx, #eef8f8 256rpx, #eef8f8 100%);
+  background: linear-gradient(
+    180deg,
+    var(--patient-theme) 0%,
+    var(--patient-theme-strong) 160rpx,
+    var(--patient-theme-soft-alt) 320rpx,
+    var(--patient-theme-page-bg) 480rpx,
+    var(--patient-theme-page-bg) 100%
+  );
 }
 
 .top-band {
@@ -158,7 +165,7 @@ function go(url: string) {
   background: #fff;
   color: #9aa8ba;
   font-size: 30rpx;
-  box-shadow: 0 8rpx 24rpx rgba(22, 91, 163, 0.18);
+  box-shadow: 0 8rpx 26rpx rgba(80, 100, 95, 0.10);
 }
 
 .search-icon {
@@ -186,7 +193,7 @@ function go(url: string) {
   margin-bottom: 22rpx;
   border-radius: 18rpx;
   overflow: hidden;
-  box-shadow: 0 14rpx 34rpx rgba(31, 84, 140, 0.12);
+  box-shadow: 0 12rpx 30rpx rgba(80, 100, 95, 0.08);
 }
 
 .banner-image {
@@ -204,7 +211,7 @@ function go(url: string) {
   padding: 30rpx;
   border-radius: 18rpx;
   color: #fff;
-  box-shadow: 0 12rpx 28rpx rgba(47, 128, 237, 0.18);
+  box-shadow: 0 12rpx 30rpx rgba(80, 100, 95, 0.08);
 }
 
 .patient-card.bound {
@@ -212,12 +219,12 @@ function go(url: string) {
 }
 
 .patient-card.unbound {
-  background: linear-gradient(135deg, #64748b 0%, #94a3b8 100%);
+  background: linear-gradient(135deg, #7A8B99 0%, #A3B0BC 100%);
 }
 
 .patient-line {
   font-size: 34rpx;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .patient-subtitle {
@@ -256,7 +263,7 @@ function go(url: string) {
   padding: 28rpx 24rpx;
   border-radius: 18rpx;
   background: #fff;
-  box-shadow: 0 12rpx 28rpx rgba(31, 84, 140, 0.1);
+  box-shadow: 0 8rpx 22rpx rgba(80, 100, 95, 0.06);
   overflow: hidden;
 }
 
@@ -282,24 +289,24 @@ function go(url: string) {
   height: 84rpx;
   border-radius: 24rpx;
   background: rgba(255, 255, 255, 0.62);
-  box-shadow: inset 0 -6rpx 12rpx rgba(47, 128, 237, 0.08), 0 8rpx 18rpx rgba(31, 84, 140, 0.08);
+  box-shadow: inset 0 -4rpx 10rpx rgba(80, 100, 95, 0.05), 0 6rpx 14rpx rgba(80, 100, 95, 0.06);
   order: 2;
 }
 
 .tone-disease {
-  background: linear-gradient(135deg, #fff6d9 0%, #ffe3b0 100%);
+  background: linear-gradient(135deg, #E6F5F2 0%, #CDE8E3 100%);
 }
 
 .tone-dept {
-  background: linear-gradient(135deg, #e7f5ff 0%, #c7e8ff 100%);
+  background: linear-gradient(135deg, #E8F0FA 0%, #D1DFF2 100%);
 }
 
 .tone-report {
-  background: linear-gradient(135deg, #e9fff4 0%, #c8f5de 100%);
+  background: linear-gradient(135deg, #EAF5EC 0%, #D3E8D9 100%);
 }
 
 .tone-payment {
-  background: linear-gradient(135deg, #fff0e8 0%, #ffd9cb 100%);
+  background: linear-gradient(135deg, #F5F0EA 0%, #EBE2D8 100%);
 }
 
 .quick-name {
@@ -307,7 +314,7 @@ function go(url: string) {
   z-index: 1;
   color: #143450;
   font-size: 34rpx;
-  font-weight: 900;
+  font-weight: 600;
   line-height: 1.2;
 }
 
@@ -327,7 +334,7 @@ function go(url: string) {
   border: 2rpx solid var(--patient-theme-border);
   border-radius: 22rpx;
   background: #fff;
-  box-shadow: 0 16rpx 38rpx rgba(31, 84, 140, 0.12);
+  box-shadow: 0 8rpx 22rpx rgba(80, 100, 95, 0.06);
 }
 
 .tab-row {
@@ -350,7 +357,7 @@ function go(url: string) {
   border-radius: 0;
   color: rgba(255, 255, 255, 0.92);
   font-size: 34rpx;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .tab-item.active {
@@ -376,7 +383,7 @@ function go(url: string) {
 .service-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  row-gap: 38rpx;
+  row-gap: 28rpx;
   padding: 0 18rpx;
 }
 
@@ -395,13 +402,12 @@ function go(url: string) {
   height: 92rpx;
   border-radius: 24rpx;
   background: var(--patient-theme-soft);
-  box-shadow: inset 0 -8rpx 14rpx rgba(47, 128, 237, 0.08), 0 8rpx 18rpx rgba(47, 128, 237, 0.08);
+  box-shadow: inset 0 -6rpx 12rpx rgba(80, 100, 95, 0.06), 0 6rpx 16rpx rgba(80, 100, 95, 0.06);
 }
 
 .service-name {
   color: #2f3542;
   font-size: 27rpx;
-  font-weight: 600;
-  text-align: center;
+  font-weight: 500;
 }
 </style>

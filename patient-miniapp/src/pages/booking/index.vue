@@ -4,7 +4,37 @@
     <view v-if="aiConsultation" class="ai-card">
       <view class="ai-title">AI 推荐</view>
       <view class="ai-desc">{{ aiConsultation.summary }}</view>
-      <view class="ai-meta">推荐科室：{{ aiConsultation.recommendedDepartmentName }} · 风险等级：{{ aiConsultation.riskLevel }}</view>
+      <view class="ai-meta">推荐科室：{{ aiConsultation.recommendedDepartmentName }} · 风险等级：{{ riskText }}</view>
+    </view>
+
+    <view class="search-card">
+      <view class="search-row">
+        <view class="search-icon"></view>
+        <input
+          v-model="searchKeyword"
+          class="search-input"
+          placeholder="搜索医生姓名"
+          placeholder-class="search-placeholder"
+          @input="onSearchInput"
+        />
+        <text v-if="searchKeyword" class="search-clear" @tap="clearSearch">×</text>
+      </view>
+      <view v-if="searchKeyword && searchResults.length" class="search-results">
+        <view
+          v-for="doctor in searchResults"
+          :key="doctor.id"
+          class="search-result-item"
+          @tap="selectSearchedDoctor(doctor)"
+        >
+          <view class="result-main">
+            <text class="result-name">{{ doctor.name }}</text>
+            <text class="result-title">{{ doctor.title }}</text>
+          </view>
+          <text class="result-specialty" v-if="doctor.specialty">{{ doctor.specialty }}</text>
+          <text class="result-dept">{{ doctor.departmentName || '' }}</text>
+        </view>
+      </view>
+      <view v-else-if="searchKeyword && !searchResults.length" class="search-empty">未找到匹配的医生</view>
     </view>
 
     <view v-if="!isSearchDoctorEntry" class="section-card">
@@ -12,21 +42,23 @@
       <view v-if="isSearchDepartmentEntry" class="single-chip-row">
         <view class="dept-chip active">{{ selectedDepartment?.name }}</view>
       </view>
-      <scroll-view v-else scroll-x class="chip-scroll">
-        <view class="chip-row">
-          <view
-            v-for="department in departments"
-            :key="department.id"
-            :class="['dept-chip', selectedDepartmentId === department.id ? 'active' : '']"
-            @tap="selectDepartment(department.id)"
-          >
-            {{ department.name }}
-          </view>
+      <view v-else class="dept-grid">
+        <view
+          v-for="department in departments"
+          :key="department.id"
+          :class="['dept-chip', selectedDepartmentId === department.id ? 'active' : '']"
+          @tap="selectDepartment(department.id)"
+        >
+          {{ department.name }}
         </view>
-      </scroll-view>
+      </view>
     </view>
 
-    <view v-if="availableDates.length" class="date-strip">
+    <view v-if="loadingSchedules" class="empty-card">
+      <view class="empty-title">加载号源中…</view>
+      <view class="empty-desc">正在查询可挂号源，请稍候</view>
+    </view>
+    <view v-else-if="availableDates.length" class="date-strip">
       <scroll-view scroll-x>
         <view class="date-row">
           <view
@@ -42,18 +74,19 @@
         </view>
       </scroll-view>
     </view>
+    <view v-else-if="selectedDepartmentId && !loadingDepartments && !loadingSchedules" class="empty-card">
+      <view class="empty-title">暂无可挂号源</view>
+      <view class="empty-desc">该科室近期暂无排班，请选择其他科室或稍后再试</view>
+    </view>
 
     <view v-if="selectedSchedule" class="doctor-detail">
       <view class="doctor-banner">
         <view class="avatar">{{ selectedSchedule.doctorName.slice(0, 1) }}</view>
         <view>
           <view class="detail-name">{{ selectedSchedule.doctorName }}</view>
-          <view class="detail-meta">{{ selectedDepartment?.name }} · {{ doctorInfo(selectedSchedule.doctorId) }}</view>
+          <view class="detail-meta">{{ selectedDepartment?.name }} · {{ doctorTitle(selectedSchedule.doctorId) }}</view>
+          <view class="detail-specialty" v-if="doctorSpecialty(selectedSchedule.doctorId)">{{ doctorSpecialty(selectedSchedule.doctorId) }}</view>
         </view>
-      </view>
-
-      <view class="level-row">
-        <view><text class="accent-bar"></text>级别：{{ doctorInfo(selectedSchedule.doctorId) }}</view>
       </view>
 
       <view class="time-list">
@@ -79,11 +112,10 @@
         <view class="doctor-info">
           <view class="doctor-line">
             <text class="doctor">{{ schedule.doctorName }}</text>
-            <text class="doctor-title">{{ doctorInfo(schedule.doctorId) }}</text>
+            <text class="doctor-title">{{ doctorTitle(schedule.doctorId) }}</text>
           </view>
-          <view class="dept-line">{{ selectedDepartment?.name || '门诊科室' }}</view>
-          <view class="price-line">¥{{ registrationFeeText(schedule.doctorId) }}</view>
-          <view class="muted">擅长：{{ doctorInfo(schedule.doctorId) }}</view>
+          <view class="specialty-line" v-if="doctorSpecialty(schedule.doctorId)">{{ doctorSpecialty(schedule.doctorId) }}</view>
+          <view class="dept-line">{{ selectedDepartment?.name || '门诊科室' }} · ¥{{ registrationFeeText(schedule.doctorId) }}</view>
         </view>
         <view :class="['status-badge', schedule.available > 0 ? 'available' : 'full']">
           <text>{{ schedule.period }}</text>
@@ -206,11 +238,53 @@ const initialDepartmentId = ref('');
 const initialDoctorId = ref('');
 const focusedDoctorId = ref('');
 const isSearchDoctorEntry = ref(false);
+const loadingDepartments = ref(false);
+const loadingSchedules = ref(false);
+const searchKeyword = ref('');
 const EXCLUDED_PATIENT_DEPARTMENT_NAMES = ['检查科', '检验科', '处置科', '药房', '收费处', '系统管理'];
 
 const selectedDepartment = computed(() => departments.value.find((item) => item.id === selectedDepartmentId.value));
 const recommendedDoctorIds = computed(() => new Set((aiConsultation.value?.recommendedDoctors ?? []).map((item) => item.doctorId)));
-const BOOKABLE_DAY_SPAN = 7;
+const riskText = computed(() => {
+  const level = (aiConsultation.value?.riskLevel || '').toUpperCase();
+  if (level === 'HIGH' || level === '高') return '高风险';
+  if (level === 'MEDIUM' || level === '中') return '中风险';
+  return '低风险';
+});
+const BOOKABLE_DAY_SPAN = 14;
+
+const searchResults = computed(() => {
+  const kw = searchKeyword.value.trim();
+  if (!kw) return [];
+  return doctors.value
+    .filter((d) => d.name.includes(kw))
+    .slice(0, 6)
+    .map((d) => ({
+      ...d,
+      departmentName: departments.value.find((dept) => dept.id === d.departmentId)?.name || ''
+    }));
+});
+
+function onSearchInput() {
+  // reactive via searchKeyword binding
+}
+
+function clearSearch() {
+  searchKeyword.value = '';
+}
+
+function selectSearchedDoctor(doctor: Doctor & { departmentName: string }) {
+  searchKeyword.value = '';
+  if (doctor.departmentId && doctor.departmentId !== selectedDepartmentId.value) {
+    selectedDepartmentId.value = doctor.departmentId;
+    focusedDoctorId.value = doctor.id;
+    loadDepartmentResources();
+  } else {
+    focusedDoctorId.value = doctor.id;
+    syncSelectedDate();
+    openFocusedDoctorScheduleForDate();
+  }
+}
 
 function formatDateKey(date: Date) {
   const year = date.getFullYear();
@@ -271,6 +345,16 @@ function doctorInfo(doctorId: string) {
   }
   const extra = [doctor.title, doctor.specialty].filter(Boolean).join(' · ');
   return extra || '门诊医生';
+}
+
+function doctorTitle(doctorId: string) {
+  const doctor = doctorMap.value.get(doctorId);
+  return doctor?.title || '门诊医生';
+}
+
+function doctorSpecialty(doctorId: string) {
+  const doctor = doctorMap.value.get(doctorId);
+  return doctor?.specialty || '';
 }
 
 function isSeniorDoctorTitle(title: string) {
@@ -518,6 +602,7 @@ async function loadDepartmentResources() {
     return;
   }
 
+  loadingSchedules.value = true;
   const [doctorList, scheduleList] = await Promise.all([
     request<Record<string, unknown>[]>({ url: `/doctors?departmentId=${selectedDepartmentId.value}`, method: 'GET' }),
     request<Record<string, unknown>[]>({ url: `/schedules?departmentId=${selectedDepartmentId.value}`, method: 'GET' })
@@ -525,6 +610,7 @@ async function loadDepartmentResources() {
 
   doctors.value = doctorList.map(toDoctor);
   schedules.value = scheduleList.map(toSchedule);
+  loadingSchedules.value = false;
   if (initialDoctorId.value) {
     openInitialDoctorSchedule();
   } else {
@@ -623,6 +709,7 @@ async function confirmBooking() {
 }
 
 async function initialize() {
+  loadingDepartments.value = true;
   aiConsultation.value = uni.getStorageSync('last_ai_consultation') || undefined;
   const departmentList = await request<Record<string, unknown>[]>({ url: '/departments', method: 'GET' });
   departments.value = departmentList
@@ -630,6 +717,7 @@ async function initialize() {
     .filter((item) => item.id && item.name && isPatientSelectableDepartment(item));
   selectedDepartmentId.value = resolveInitialDepartmentId();
   await loadDepartmentResources();
+  loadingDepartments.value = false;
 }
 
 onLoad((options) => {
@@ -643,8 +731,118 @@ onMounted(initialize);
 
 <style scoped>
 .booking-page {
-  padding-top: 0;
+  padding: 20rpx 0 0;
   background: var(--patient-theme-page-bg);
+}
+
+.search-card {
+  margin-bottom: 22rpx;
+  padding: 20rpx 24rpx;
+  border-radius: 18rpx;
+  background: #fff;
+  box-shadow: 0 8rpx 22rpx rgba(80, 100, 95, 0.06);
+}
+
+.search-row {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  height: 72rpx;
+  padding: 0 18rpx;
+  border-radius: 14rpx;
+  background: var(--patient-theme-softest);
+  border: 1px solid var(--patient-theme-border);
+}
+
+.search-icon {
+  width: 24rpx;
+  height: 24rpx;
+  border: 3rpx solid #b6c2d1;
+  border-radius: 50%;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.search-icon::after {
+  content: "";
+  position: absolute;
+  right: -10rpx;
+  bottom: -8rpx;
+  width: 12rpx;
+  height: 3rpx;
+  border-radius: 999rpx;
+  background: #b6c2d1;
+  transform: rotate(45deg);
+}
+
+.search-input {
+  flex: 1;
+  font-size: 28rpx;
+  color: #1f2937;
+}
+
+.search-placeholder {
+  color: #9aa8ba;
+}
+
+.search-clear {
+  font-size: 34rpx;
+  color: #94a3b8;
+  padding: 0 8rpx;
+}
+
+.search-results {
+  margin-top: 16rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+}
+
+.search-result-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4rpx;
+  padding: 16rpx 18rpx;
+  border-radius: 12rpx;
+  background: #f8fafb;
+}
+
+.result-main {
+  display: flex;
+  align-items: baseline;
+  gap: 10rpx;
+}
+
+.result-name {
+  color: #111827;
+  font-size: 28rpx;
+  font-weight: 600;
+}
+
+.result-title {
+  color: #6b7280;
+  font-size: 24rpx;
+}
+
+.result-specialty {
+  color: #6b7280;
+  font-size: 24rpx;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.result-dept {
+  color: #94a3b8;
+  font-size: 22rpx;
+}
+
+.search-empty {
+  margin-top: 16rpx;
+  padding: 24rpx;
+  text-align: center;
+  color: #94a3b8;
+  font-size: 26rpx;
 }
 
 .ai-card,
@@ -656,10 +854,7 @@ onMounted(initialize);
   padding: 28rpx;
   border-radius: 18rpx;
   background: #fff;
-  box-shadow: 0 10rpx 30rpx rgba(31, 84, 140, 0.08);
-}
-
-.ai-card {
+  box-shadow: 0 8rpx 22rpx rgba(80, 100, 95, 0.06);
   border-left: 8rpx solid var(--patient-theme-strong);
 }
 
@@ -667,7 +862,7 @@ onMounted(initialize);
 .section-title {
   color: #172033;
   font-size: 34rpx;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .ai-desc {
@@ -685,13 +880,19 @@ onMounted(initialize);
 
 .chip-scroll {
   margin-top: 20rpx;
-  white-space: nowrap;
 }
 
 .single-chip-row {
   display: flex;
   justify-content: center;
   margin-top: 20rpx;
+}
+
+.dept-grid {
+  margin-top: 20rpx;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14rpx;
 }
 
 .chip-row,
@@ -701,13 +902,12 @@ onMounted(initialize);
 }
 
 .dept-chip {
-  flex-shrink: 0;
-  padding: 16rpx 28rpx;
-  border-radius: 999rpx;
+  padding: 16rpx 26rpx;
+  border-radius: 14rpx;
   background: #f1f6fd;
   color: #334155;
-  font-size: 28rpx;
-  font-weight: 700;
+  font-size: 27rpx;
+  font-weight: 500;
 }
 
 .dept-chip.active {
@@ -719,7 +919,7 @@ onMounted(initialize);
   margin: 0 -24rpx 22rpx;
   padding: 20rpx 24rpx;
   background: #fff;
-  box-shadow: 0 8rpx 20rpx rgba(31, 84, 140, 0.06);
+  box-shadow: 0 8rpx 22rpx rgba(80, 100, 95, 0.06);
 }
 
 .date-card {
@@ -743,7 +943,7 @@ onMounted(initialize);
   margin-top: 8rpx;
   color: var(--patient-theme-strong);
   font-size: 26rpx;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .date-card.active .date-status {
@@ -753,7 +953,7 @@ onMounted(initialize);
 .doctor-main {
   display: flex;
   gap: 20rpx;
-  align-items: flex-start;
+  align-items: center;
 }
 
 .avatar {
@@ -761,50 +961,64 @@ onMounted(initialize);
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  width: 104rpx;
-  height: 104rpx;
-  border-radius: 12rpx;
+  width: 88rpx;
+  height: 88rpx;
+  border-radius: 14rpx;
   background: linear-gradient(135deg, var(--patient-theme-soft) 0%, var(--patient-theme-soft-alt) 100%);
   color: var(--patient-theme-deep);
-  font-size: 42rpx;
-  font-weight: 900;
+  font-size: 36rpx;
+  font-weight: 600;
 }
 
 .doctor-info {
   flex: 1;
   min-width: 0;
+  overflow: hidden;
 }
 
 .doctor-line {
   display: flex;
   align-items: baseline;
-  gap: 14rpx;
-  flex-wrap: wrap;
+  gap: 12rpx;
 }
 
 .doctor {
   color: #111827;
-  font-size: 36rpx;
-  font-weight: 900;
+  font-size: 32rpx;
+  font-weight: 600;
+  white-space: nowrap;
 }
 
 .doctor-title {
-  color: #111827;
-  font-size: 27rpx;
-  font-weight: 700;
+  color: #6b7280;
+  font-size: 24rpx;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .dept-line {
-  margin-top: 10rpx;
-  color: #334155;
-  font-size: 28rpx;
+  margin-top: 6rpx;
+  color: #6b7280;
+  font-size: 26rpx;
+  white-space: nowrap;
+}
+
+.specialty-line {
+  margin-top: 4rpx;
+  color: #6b7280;
+  font-size: 24rpx;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .price-line,
 .slot-price {
   color: #e6821e;
   font-size: 32rpx;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .price-line {
@@ -815,17 +1029,17 @@ onMounted(initialize);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
-  min-width: 112rpx;
+  min-width: 96rpx;
   overflow: hidden;
   border: 2rpx solid;
   border-radius: 10rpx;
-  font-size: 27rpx;
-  font-weight: 800;
+  font-size: 24rpx;
+  font-weight: 600;
   text-align: center;
 }
 
 .status-badge text {
-  padding: 8rpx 14rpx;
+  padding: 6rpx 10rpx;
 }
 
 .status-badge.available {
@@ -851,19 +1065,18 @@ onMounted(initialize);
 .doctor-actions {
   display: flex;
   align-items: center;
-  min-height: 44rpx;
-  margin-top: 22rpx;
-  padding-top: 20rpx;
+  margin-top: 14rpx;
+  padding-top: 12rpx;
   border-top: 1px solid #edf2f7;
 }
 
 .recommend-tag {
-  padding: 7rpx 16rpx;
+  padding: 4rpx 14rpx;
   border-radius: 999rpx;
   background: #ecfdf5;
   color: #059669;
-  font-size: 24rpx;
-  font-weight: 700;
+  font-size: 22rpx;
+  font-weight: 600;
 }
 
 .doctor-detail {
@@ -882,13 +1095,20 @@ onMounted(initialize);
 
 .detail-name {
   font-size: 36rpx;
-  font-weight: 900;
+  font-weight: 600;
 }
 
 .detail-meta {
   margin-top: 12rpx;
   color: rgba(255, 255, 255, 0.86);
   font-size: 27rpx;
+}
+
+.detail-specialty {
+  margin-top: 8rpx;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 25rpx;
+  line-height: 1.4;
 }
 
 .level-row {
@@ -898,7 +1118,7 @@ onMounted(initialize);
   border-bottom: 1px solid #edf2f7;
   color: #1f2937;
   font-size: 31rpx;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 .accent-bar {
@@ -933,7 +1153,7 @@ onMounted(initialize);
 .time-value {
   color: #111827;
   font-size: 34rpx;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .slot-button {
@@ -950,7 +1170,7 @@ onMounted(initialize);
   background: #fff;
   color: #30a873;
   font-size: 26rpx;
-  font-weight: 800;
+  font-weight: 600;
   line-height: 1;
 }
 
@@ -1017,7 +1237,7 @@ onMounted(initialize);
   padding: 64rpx 36rpx 28rpx;
   color: #1f2937;
   font-size: 42rpx;
-  font-weight: 800;
+  font-weight: 600;
   text-align: center;
 }
 
@@ -1072,5 +1292,17 @@ onMounted(initialize);
   color: #64748b;
   font-size: 29rpx;
   text-align: center;
+}
+
+.empty-title {
+  color: #102033;
+  font-size: 30rpx;
+  font-weight: 600;
+  margin-bottom: 10rpx;
+}
+
+.empty-desc {
+  color: #94a3b8;
+  font-size: 26rpx;
 }
 </style>

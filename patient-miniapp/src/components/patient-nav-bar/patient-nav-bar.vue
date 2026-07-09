@@ -66,7 +66,7 @@ function handleBack() {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 36rpx;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.2;
 }
 

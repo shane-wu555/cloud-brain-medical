@@ -65,7 +65,7 @@ def _consult_with_llm(request: ConsultationRequest, config) -> ConsultationRespo
     system_prompt = """
 你是医院微信小程序的 AI 智能问诊模块，只做就诊前信息整理和分诊建议。
 请严格输出 JSON 对象，字段包括 summary、riskLevel、recommendedDepartmentId、recommendedDepartmentName、recommendedDoctors、suggestOfflineUrgent、recordDraft。
-也可以输出 needsFollowUp 和 followUpQuestions；当病程、部位、伴随症状、危险信号不清楚时应继续追问。
+也可以输出 needsFollowUp 和 followUpQuestions；当病程、部位、伴随症状、危险信号不清楚时应继续追问，但每轮最多只问 1-2 个最关键的问题。
 riskLevel 只能是 LOW、MEDIUM、HIGH。
 recommendedDoctors 最多 3 个，每项包含 doctorId、doctorName、reason；如果无法确定医生，可返回空数组。
 如果出现意识障碍、抽搐、突发剧烈头痛、偏瘫、言语不清等危险信号，riskLevel 必须为 HIGH，suggestOfflineUrgent 必须为 true。
@@ -99,7 +99,7 @@ recommendedDoctors 最多 3 个，每项包含 doctorId、doctorName、reason；
         ][:3],
         suggestOfflineUrgent=bool(payload.get("suggestOfflineUrgent")),
         needsFollowUp=bool(payload.get("needsFollowUp")),
-        followUpQuestions=[str(item) for item in payload.get("followUpQuestions", [])][:4],
+        followUpQuestions=[str(item) for item in payload.get("followUpQuestions", [])][:2],
         recordDraft=payload["recordDraft"],
         provider=result.provider,
         model=result.model,
@@ -176,4 +176,4 @@ def _follow_up_questions(request: ConsultationRequest, risk: str) -> list[str]:
         questions.append("请说明主要不适部位，以及是否伴随头痛、眩晕、恶心或肢体无力？")
     if not any(word in text for word in ("发热", "呕吐", "抽搐", "意识", "偏瘫", "言语", "外伤")):
         questions.append("是否存在发热、呕吐、抽搐、意识异常、肢体无力、言语不清或近期外伤？")
-    return questions[:3]
+    return questions[:2]

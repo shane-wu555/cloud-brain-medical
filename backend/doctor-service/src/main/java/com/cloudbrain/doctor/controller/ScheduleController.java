@@ -2,6 +2,7 @@ package com.cloudbrain.doctor.controller;
 
 import com.cloudbrain.doctor.repository.DoctorCatalogRepository;
 import com.cloudbrain.doctor.service.ScheduleInsightService;
+import com.cloudbrain.doctor.service.SlotInventoryService;
 import com.fasterxml.jackson.annotation.JsonAlias;
 import jakarta.annotation.PreDestroy;
 import java.time.LocalDate;
@@ -13,6 +14,8 @@ import java.util.concurrent.Executors;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
@@ -33,17 +36,18 @@ public class ScheduleController {
     private static final int MAX_AI_TASKS=100;
     private final DoctorCatalogRepository repository;
     private final ScheduleInsightService scheduleInsightService;
-    private final RestClient appointmentClient;
+    private final SlotInventoryService slotInventoryService;
     private final RestClient aiClient;
     private final String internalApiKey;
     private final ExecutorService aiTaskExecutor=Executors.newFixedThreadPool(2);
     private final Map<String,AiScheduleTask> aiTasks=new ConcurrentHashMap<>();
     public ScheduleController(DoctorCatalogRepository repository, ScheduleInsightService scheduleInsightService,
+            SlotInventoryService slotInventoryService,
             @Value("${internal.api-key}") String internalApiKey,
-            @Value("${services.appointment.base-url:http://localhost:8104}") String appointmentUrl,
             @Value("${services.ai.base-url:http://localhost:8000}") String aiUrl) {
-        this.repository=repository; this.scheduleInsightService=scheduleInsightService; this.internalApiKey=internalApiKey;
-        this.appointmentClient=RestClient.builder().baseUrl(appointmentUrl).build();
+        this.repository=repository; this.scheduleInsightService=scheduleInsightService;
+        this.slotInventoryService=slotInventoryService;
+        this.internalApiKey=internalApiKey;
         SimpleClientHttpRequestFactory aiRequestFactory=new SimpleClientHttpRequestFactory();
         aiRequestFactory.setConnectTimeout(10000);
         aiRequestFactory.setReadTimeout(180000);
@@ -58,7 +62,9 @@ public class ScheduleController {
     public Map<String,String> badRequest(IllegalArgumentException exception) {
         return Map.of("message",exception.getMessage());
     }
-    @GetMapping public List<ScheduleDto> list(@RequestParam(name="doctorId", required=false) String doctorId,
+    @GetMapping
+    @Cacheable(value = "scheduleList", key = "'list:' + #doctorId + ':' + #departmentId + ':' + #bookingWindowOnly")
+    public List<ScheduleDto> list(@RequestParam(name="doctorId", required=false) String doctorId,
             @RequestParam(name="departmentId", required=false) String departmentId,
             @RequestParam(name="bookingWindowOnly", defaultValue="true") boolean bookingWindowOnly) {
         Map<String,SlotDto> slots=slotsById();
@@ -75,6 +81,7 @@ public class ScheduleController {
                 .map(s -> dto(s,timeSlots.getOrDefault(s.id(),List.of()),slots)).toList();
     }
     @PostMapping @PreAuthorize("hasRole('ADMIN')")
+    @CacheEvict(value = "scheduleList", allEntries = true)
     public ScheduleDto create(@RequestBody CreateScheduleRequest request) {
         var s=repository.createSchedule(request.doctorId(),request.departmentId(),LocalDate.parse(request.workDate()),request.period(),request.capacity());
         syncSlots(repository.timeSlots(s.id()), Map.of()); return dto(s,repository.timeSlots(s.id()),Map.of());
@@ -263,6 +270,7 @@ public class ScheduleController {
         return published;
     }
     @PutMapping("/{id}/suspend") @PreAuthorize("hasRole('ADMIN')")
+    @CacheEvict(value = "scheduleList", allEntries = true)
     public ScheduleDto suspend(@PathVariable("id") String id,@RequestBody SuspendRequest request) {
         Map<String,SlotDto> slots=slotsById();
         List<DoctorCatalogRepository.ScheduleTimeSlot> timeSlots=repository.timeSlots(id);
@@ -276,18 +284,14 @@ public class ScheduleController {
         return dto(s,timeSlots,slots);
     }
     @PutMapping("/{id}/reschedule") @PreAuthorize("hasRole('ADMIN')")
+    @CacheEvict(value = "scheduleList", allEntries = true)
     public ScheduleDto reschedule(@PathVariable("id") String id,@RequestBody RescheduleRequest request) {
         var s=repository.reschedule(id,LocalDate.parse(request.workDate()),request.period());
         Map<String,SlotDto> slots=slotsById();
         return dto(s,repository.timeSlots(id),slots);
     }
     private void syncSlot(String id,int capacity) {
-        try {
-            appointmentClient.post().uri("/api/internal/appointment-slots")
-                    .header("X-Internal-Api-Key",internalApiKey).body(Map.of("scheduleId",id,"capacity",capacity)).retrieve().toBodilessEntity();
-        } catch (RestClientException exception) {
-            log.warn("Appointment slot sync failed: scheduleSlotId={}, capacity={}, message={}",id,capacity,exception.getMessage());
-        }
+        slotInventoryService.syncSlot(id, capacity);
     }
     private void syncSlots(List<DoctorCatalogRepository.ScheduleTimeSlot> timeSlots, Map<String,SlotDto> overrides) {
         for (DoctorCatalogRepository.ScheduleTimeSlot slot : timeSlots) {
@@ -300,22 +304,12 @@ public class ScheduleController {
         List<Map<String,Object>> payload=timeSlots.stream()
                 .map(slot -> Map.<String,Object>of("scheduleId",slot.id(),"capacity",slot.capacity()))
                 .toList();
-        try {
-            appointmentClient.post().uri("/api/internal/appointment-slots/batch")
-                    .header("X-Internal-Api-Key",internalApiKey).body(payload).retrieve().toBodilessEntity();
-        } catch (RestClientException exception) {
-            log.warn("Appointment slot batch sync failed: slots={}, message={}",payload.size(),exception.getMessage());
-        }
+        slotInventoryService.syncSlotsBatch(payload);
     }
     private List<SlotDto> slots() {
-        try {
-            var result=appointmentClient.get().uri("/api/internal/appointment-slots")
-                    .header("X-Internal-Api-Key",internalApiKey).retrieve().body(new ParameterizedTypeReference<List<SlotDto>>(){});
-            return result==null?List.of():result;
-        } catch (RestClientException exception) {
-            log.warn("Appointment slot inventory query failed; schedule list will use schedule capacity only: message={}",exception.getMessage());
-            return List.of();
-        }
+        return slotInventoryService.fetchSlots().stream()
+                .map(s -> new SlotDto(s.scheduleId(), s.capacity(), s.locked(), s.booked(), s.available()))
+                .toList();
     }
     private Map<String,SlotDto> slotsById() {
         return slots().stream()

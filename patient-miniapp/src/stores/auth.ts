@@ -105,7 +105,6 @@ export const useAuthStore = defineStore('auth', {
       this.user = mergeUser(result.user);
       uni.setStorageSync('access_token', result.token);
       uni.setStorageSync('current_user', this.user);
-      await this.loadProfile();
     },
     async register(phone: string, password: string, name: string, smsCode: string) {
       const result = await request<{ token: string; user: PatientUser }>({
@@ -117,7 +116,6 @@ export const useAuthStore = defineStore('auth', {
       this.user = mergeUser(result.user);
       uni.setStorageSync('access_token', result.token);
       uni.setStorageSync('current_user', this.user);
-      await this.loadProfile();
     },
     async sendCode(phone: string, purpose: 'REGISTER' | 'LOGIN' | 'RESET_PASSWORD') {
       return request<{ expiresIn: number; devCode?: string }>({
@@ -136,7 +134,6 @@ export const useAuthStore = defineStore('auth', {
       this.user = mergeUser(result.user);
       uni.setStorageSync('access_token', result.token);
       uni.setStorageSync('current_user', this.user);
-      await this.loadProfile();
     },
     async resetPassword(phone: string, smsCode: string, newPassword: string) {
       await request<void>({

@@ -47,13 +47,14 @@
     <view class="card">
       <view class="section-head">
         <view class="section-title">费用概览</view>
-        <view class="muted">先看总览，再逐项缴费</view>
       </view>
       <view class="category-grid">
         <view v-for="item in categorySummaries" :key="item.key" class="category-card">
-          <view class="category-name">{{ item.label }}</view>
+          <view class="category-left">
+            <text class="category-name">{{ item.label }}</text>
+            <text class="category-count">{{ item.count }} 项</text>
+          </view>
           <view class="category-amount">¥{{ amountText(item.amount) }}</view>
-          <view class="muted">{{ item.count }} 项</view>
         </view>
       </view>
     </view>
@@ -948,28 +949,40 @@ onShow(load);
 }
 
 .category-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  display: flex;
+  flex-direction: column;
   gap: 16rpx;
 }
 
 .category-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   padding: 18rpx;
   border-radius: 18rpx;
   background: #f8fafc;
 }
 
-.category-name {
+.category-left {
+  display: flex;
+  align-items: baseline;
+  gap: 10rpx;
+}
   color: #334155;
   font-size: 26rpx;
   font-weight: 600;
 }
 
 .category-amount {
-  margin: 10rpx 0 6rpx;
   color: #b45309;
   font-size: 32rpx;
   font-weight: 700;
+}
+
+.category-count {
+  color: #64748b;
+  font-size: 24rpx;
+  margin-left: 12rpx;
 }
 
 .item-row {
