@@ -3,9 +3,16 @@
     <div class="personal-center-layout">
       <aside class="personal-sidebar">
         <div class="personal-card">
-          <div class="personal-avatar">{{ doctorAvatar }}</div>
+          <div class="personal-avatar-wrap">
+            <div class="personal-avatar">
+              <img v-if="avatarDataUrl" :src="avatarDataUrl" alt="医生头像" />
+              <span v-else>{{ doctorAvatar }}</span>
+            </div>
+            <span class="personal-avatar-ring"></span>
+          </div>
           <strong>{{ doctorName }}</strong>
           <span>{{ doctorMeta }}</span>
+          <em>{{ roleLabel }}</em>
         </div>
         <nav class="personal-nav">
           <button
@@ -104,7 +111,10 @@
             </div>
 
             <div class="schedule-board__person">
-              <div class="doctor-avatar">{{ doctorAvatar }}</div>
+              <div class="doctor-avatar">
+                <img v-if="avatarDataUrl" :src="avatarDataUrl" alt="医生头像" />
+                <span v-else>{{ doctorAvatar }}</span>
+              </div>
               <div>
                 <strong>{{ doctorName }}</strong>
                 <em>{{ doctorMeta }}</em>
@@ -143,22 +153,45 @@
     </div>
 
         <div v-else class="profile-shell">
-          <!-- Profile banner -->
           <section class="profile-banner">
-            <div class="profile-banner__bg"></div>
+            <div class="profile-banner__bg">
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
             <div class="profile-banner__content">
-              <div class="profile-banner__avatar">{{ doctorAvatar }}</div>
+              <div class="profile-banner__avatar">
+                <img v-if="avatarDataUrl" :src="avatarDataUrl" alt="医生头像" />
+                <span v-else>{{ doctorAvatar }}</span>
+              </div>
               <div class="profile-banner__info">
+                <span class="profile-banner__eyebrow">门诊医生工作档案</span>
                 <h2>{{ auth.user?.name || '未设置姓名' }}</h2>
                 <div class="profile-banner__tags">
                   <span class="profile-banner__tag">{{ roleLabel }}</span>
                   <span class="profile-banner__tag profile-banner__tag--dept">{{ doctorMeta }}</span>
                 </div>
+                <div class="profile-avatar-actions">
+                  <button type="button" class="profile-avatar-btn" @click="openAvatarPicker">上传头像</button>
+                  <button v-if="avatarDataUrl" type="button" class="profile-avatar-btn profile-avatar-btn--text" @click="removeAvatar">移除</button>
+                  <input ref="avatarInputRef" class="avatar-file-input" type="file" accept="image/*" @change="handleAvatarChange" />
+                </div>
+              </div>
+              <div class="profile-banner__meta">
+                <span>今日值守</span>
+                <strong>{{ todayScheduleText }}</strong>
               </div>
             </div>
           </section>
 
-          <!-- Profile detail cards -->
+          <div class="profile-overview-grid">
+            <div v-for="item in profileStats" :key="item.label" class="profile-overview-card">
+              <span>{{ item.label }}</span>
+              <strong>{{ item.value }}</strong>
+              <em>{{ item.hint }}</em>
+            </div>
+          </div>
+
           <div class="profile-detail-grid">
             <div class="profile-detail-card">
               <div class="profile-detail-card__icon profile-detail-card__icon--id">工</div>
@@ -174,22 +207,54 @@
                 <strong>{{ auth.user?.username || '-' }}</strong>
               </div>
             </div>
+            <div class="profile-detail-card">
+              <div class="profile-detail-card__icon profile-detail-card__icon--role">岗</div>
+              <div class="profile-detail-card__body">
+                <span>岗位</span>
+                <strong>{{ roleLabel }}</strong>
+              </div>
+            </div>
+            <div class="profile-detail-card">
+              <div class="profile-detail-card__icon profile-detail-card__icon--phone">电</div>
+              <div class="profile-detail-card__body">
+                <span>联系电话</span>
+                <strong>{{ auth.user?.phone || '未填写' }}</strong>
+              </div>
+            </div>
           </div>
 
-          <!-- Change password -->
-          <section class="work-card profile-password-card">
-            <h3>修改密码</h3>
-            <el-form :model="pwdForm" label-position="top" class="pwd-form" @submit.prevent>
-              <el-form-item label="原密码">
-                <el-input v-model="pwdForm.oldPassword" type="password" show-password placeholder="输入原密码" />
-              </el-form-item>
-              <el-form-item label="新密码">
-                <el-input v-model="pwdForm.newPassword" type="password" show-password placeholder="至少8位，含字母和数字" />
-              </el-form-item>
-              <el-button type="primary" class="pwd-submit-btn" :loading="pwdLoading" @click="handleChangePassword">
-                确认修改
-              </el-button>
-            </el-form>
+          <section class="profile-security-layout">
+            <div class="work-card profile-password-card">
+              <div class="profile-section-title">
+                <span>账号安全</span>
+                <strong>修改密码</strong>
+              </div>
+              <el-form :model="pwdForm" label-position="top" class="pwd-form" @submit.prevent>
+                <el-form-item label="原密码">
+                  <el-input v-model="pwdForm.oldPassword" type="password" show-password placeholder="输入原密码" />
+                </el-form-item>
+                <el-form-item label="新密码">
+                  <el-input v-model="pwdForm.newPassword" type="password" show-password placeholder="至少8位，含字母和数字" />
+                </el-form-item>
+                <el-button type="primary" class="pwd-submit-btn" :loading="pwdLoading" @click="handleChangePassword">
+                  确认修改
+                </el-button>
+              </el-form>
+            </div>
+            <div class="profile-security-card">
+              <div>
+                <span>医师资质</span>
+                <strong>已认证</strong>
+              </div>
+              <div>
+                <span>账号状态</span>
+                <strong>正常使用</strong>
+              </div>
+              <div>
+                <span>登录身份</span>
+                <strong>{{ auth.user?.username || auth.user?.employeeNo || '-' }}</strong>
+              </div>
+            </div>
           </section>
         </div>
       </main>
@@ -210,6 +275,8 @@ const error = ref('');
 const schedules = ref<Schedule[]>([]);
 const weekOffset = ref(0);
 const activePersonalTab = ref<'schedule' | 'profile'>('schedule');
+const avatarInputRef = ref<HTMLInputElement | null>(null);
+const avatarDataUrl = ref('');
 const personalNavItems = [
   { key: 'schedule', label: '个人排班', icon: '日' },
   { key: 'profile', label: '个人信息', icon: '人' }
@@ -240,7 +307,8 @@ const rangeLabel = computed(() => {
   return `${dateLabel(first)} - ${dateLabel(last)}`;
 });
 const doctorName = computed(() => auth.user?.name || '当前医生');
-const doctorAvatar = computed(() => doctorName.value.slice(-1));
+const doctorAvatar = computed(() => doctorName.value.trim().slice(0, 1));
+const avatarStorageKey = computed(() => `doctor-avatar:${auth.user?.employeeNo || auth.user?.username || auth.user?.id || 'current'}`);
 const doctorMeta = computed(() => {
   const first = schedules.value[0];
   return first?.departmentName || first?.doctorId || auth.user?.employeeNo || auth.user?.username || '个人排班';
@@ -265,6 +333,28 @@ const totalAvailable = computed(() => weeklySchedules.value.reduce((sum, item) =
 const dutyDays = computed(() => new Set(weeklySchedules.value.map((item) => item.workDate)).size);
 const morningShiftCount = computed(() => weeklySchedules.value.filter((item) => periodKey(item.period) === 'morning').length);
 const afternoonShiftCount = computed(() => weeklySchedules.value.filter((item) => periodKey(item.period) === 'afternoon').length);
+const todaySchedules = computed(() => schedules.value.filter((item) => item.workDate === todayKey));
+const todayScheduleText = computed(() => {
+  if (!todaySchedules.value.length) return '暂无排班';
+  return todaySchedules.value.map((item) => `${periodLabel(item.period)}${statusLabel(item.status)}`).join(' / ');
+});
+const profileStats = computed(() => [
+  {
+    label: '本周班次',
+    value: totalShifts.value,
+    hint: `${morningShiftCount.value} 个上午 / ${afternoonShiftCount.value} 个下午`
+  },
+  {
+    label: isOutpatientDoctor.value ? '可预约号源' : '值班天数',
+    value: isOutpatientDoctor.value ? totalAvailable.value : dutyDays.value,
+    hint: isOutpatientDoctor.value ? `总号源 ${totalCapacity.value}` : '按自然日统计'
+  },
+  {
+    label: '今日安排',
+    value: todaySchedules.value.length,
+    hint: todayScheduleText.value
+  }
+]);
 const scheduleBoardStyle = computed(() => ({
   gridTemplateColumns: `180px repeat(${weekDays.value.length}, minmax(146px, 1fr))`
 }));
@@ -344,17 +434,30 @@ function periodKey(period: string) {
   return value.toLowerCase();
 }
 
+function periodLabel(period: string) {
+  const key = periodKey(period);
+  if (key === 'morning') return '上午';
+  if (key === 'afternoon') return '下午';
+  return '';
+}
+
 function statusLabel(status?: string) {
   const labels = isOutpatientDoctor.value ? {
     ACTIVE: '可预约',
+    PUBLISHED: '出诊',
     SUSPENDED: '已停诊',
-    FULL: '已约满'
+    FULL: '已约满',
+    CLOSED: '已停诊',
+    CANCELLED: '已取消'
   } : {
     ACTIVE: '正常排班',
+    PUBLISHED: '正常排班',
     SUSPENDED: '已暂停',
-    FULL: '已排满'
+    FULL: '已排满',
+    CLOSED: '已暂停',
+    CANCELLED: '已取消'
   };
-  return (labels as Record<string, string>)[status || ''] ?? (status || (isOutpatientDoctor.value ? '可预约' : '正常排班'));
+  return (labels as Record<string, string>)[status || ''] ?? (isOutpatientDoctor.value ? '出诊' : '正常排班');
 }
 
 function shiftClasses(schedule: Schedule | undefined, period: string) {
@@ -398,7 +501,47 @@ async function handleChangePassword() {
   }
 }
 
-onMounted(loadSchedule);
+function openAvatarPicker() {
+  avatarInputRef.value?.click();
+}
+
+function handleAvatarChange(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = '';
+  if (!file) return;
+  if (!file.type.startsWith('image/')) {
+    ElMessage.warning('请上传图片格式的头像');
+    return;
+  }
+  if (file.size > 2 * 1024 * 1024) {
+    ElMessage.warning('头像图片不能超过 2MB');
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    const result = String(reader.result || '');
+    avatarDataUrl.value = result;
+    localStorage.setItem(avatarStorageKey.value, result);
+    ElMessage.success('头像已更新');
+  };
+  reader.onerror = () => {
+    ElMessage.error('头像读取失败，请重新选择图片');
+  };
+  reader.readAsDataURL(file);
+}
+
+function removeAvatar() {
+  avatarDataUrl.value = '';
+  localStorage.removeItem(avatarStorageKey.value);
+  ElMessage.success('头像已移除');
+}
+
+onMounted(() => {
+  avatarDataUrl.value = localStorage.getItem(avatarStorageKey.value) || '';
+  loadSchedule();
+});
 </script>
 
 <style scoped>
@@ -415,31 +558,45 @@ onMounted(loadSchedule);
 .personal-center-layout {
   height: 100%;
   display: grid;
-  grid-template-columns: 236px minmax(0, 1fr);
-  gap: 16px;
+  grid-template-columns: 254px minmax(0, 1fr);
+  gap: 20px;
   min-height: 0;
 }
 
 .personal-sidebar {
   min-height: 0;
-  padding: 14px;
+  padding: 16px;
   border: 1px solid #d0e8eb;
   border-radius: 10px;
-  background: #fff;
-  box-shadow: 0 1px 6px rgba(12,189,204,.06);
+  background:
+    linear-gradient(180deg, rgba(230,249,250,.92), rgba(255,255,255,.96) 38%),
+    #fff;
+  box-shadow: 0 12px 30px rgba(15, 118, 110, .08);
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
 }
 
 .personal-card {
-  padding: 14px 4px 18px;
+  padding: 18px 4px 20px;
   border-bottom: 1px solid #e8f4f6;
   text-align: center;
 }
 
+.personal-avatar-wrap {
+  position: relative;
+  width: 82px;
+  height: 82px;
+  margin: 0 auto 14px;
+  display: grid;
+  place-items: center;
+}
+
 .personal-card .personal-avatar {
+  position: relative;
+  z-index: 1;
   width: 60px;
   height: 60px;
-  margin: 0 auto 12px;
   border-radius: 50%;
   display: grid;
   place-items: center;
@@ -447,11 +604,58 @@ onMounted(loadSchedule);
   color: #fff;
   font-size: 22px;
   font-weight: 800;
-  box-shadow: 0 3px 12px rgba(12,189,204,.25);
+  box-shadow: 0 10px 22px rgba(12,189,204,.28);
+  overflow: hidden;
+}
+
+.personal-card .personal-avatar img,
+.profile-banner__avatar img,
+.doctor-avatar img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.personal-card .personal-avatar span,
+.profile-banner__avatar span,
+.doctor-avatar span {
+  line-height: 1;
+}
+
+.personal-avatar-ring {
+  position: absolute;
+  inset: 7px;
+  border: 1px solid rgba(12,189,204,.26);
+  border-radius: 50%;
+}
+
+.personal-avatar-ring::before,
+.personal-avatar-ring::after {
+  content: "";
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #f59e0b;
+  box-shadow: 0 0 0 5px rgba(245,158,11,.14);
+}
+
+.personal-avatar-ring::before {
+  top: 5px;
+  right: 8px;
+}
+
+.personal-avatar-ring::after {
+  left: 7px;
+  bottom: 8px;
+  background: #2f91b4;
+  box-shadow: 0 0 0 5px rgba(47,145,180,.13);
 }
 
 .personal-card strong,
-.personal-card span {
+.personal-card span,
+.personal-card em {
   display: block;
 }
 
@@ -467,14 +671,26 @@ onMounted(loadSchedule);
   overflow-wrap: anywhere;
 }
 
+.personal-card em {
+  width: fit-content;
+  margin: 10px auto 0;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: #eef8f4;
+  color: #18715b;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 700;
+}
+
 .personal-nav {
   display: grid;
-  gap: 6px;
-  padding-top: 14px;
+  gap: 8px;
+  padding-top: 16px;
 }
 
 .personal-nav__item {
-  height: 44px;
+  height: 48px;
   border: 1px solid transparent;
   border-radius: 8px;
   padding: 0 12px;
@@ -508,8 +724,10 @@ onMounted(loadSchedule);
 .personal-nav__item:hover,
 .personal-nav__item--active {
   border-color: #a8e8ec;
-  background: linear-gradient(135deg, #f0f8f9 0%, #e6f9fa 100%);
+  background:
+    linear-gradient(135deg, rgba(240,248,249,.96) 0%, rgba(230,249,250,.94) 100%);
   color: #0e7b85;
+  box-shadow: 0 8px 18px rgba(12,189,204,.10);
 }
 
 .personal-nav__item--active span {
@@ -529,54 +747,95 @@ onMounted(loadSchedule);
 }
 
 .profile-shell {
-  max-width: 980px;
+  max-width: 1120px;
   margin: 0 auto;
 }
 
 /* ── Profile Banner ── */
 .profile-banner {
   position: relative;
-  border-radius: 12px;
+  border-radius: 10px;
   overflow: hidden;
-  margin-bottom: 20px;
+  margin-bottom: 16px;
   background: #fff;
-  box-shadow: 0 2px 12px rgba(12,189,204,.10);
+  border: 1px solid #d0e8eb;
+  box-shadow: 0 8px 22px rgba(15, 118, 110, .07);
 }
 .profile-banner__bg {
-  height: 100px;
-  background: linear-gradient(135deg, #0cbdcc 0%, #0899a5 50%, #0e7b85 100%);
+  display: none;
+}
+
+.profile-banner__bg span {
+  position: absolute;
+  height: 1px;
+  background: rgba(255,255,255,.24);
+  transform: rotate(-18deg);
+  transform-origin: left center;
+}
+
+.profile-banner__bg span:nth-child(1) {
+  width: 420px;
+  left: 64px;
+  top: 34px;
+}
+
+.profile-banner__bg span:nth-child(2) {
+  width: 520px;
+  right: 60px;
+  top: 72px;
+}
+
+.profile-banner__bg span:nth-child(3) {
+  width: 260px;
+  right: 170px;
+  bottom: 22px;
 }
 .profile-banner__content {
   display: flex;
-  align-items: flex-end;
-  gap: 18px;
-  padding: 0 24px 20px;
-  margin-top: -36px;
+  align-items: center;
+  gap: 20px;
+  padding: 22px 28px;
+  margin-top: 0;
   position: relative;
   z-index: 1;
 }
 .profile-banner__avatar {
-  width: 72px; height: 72px;
+  width: 70px; height: 70px;
   border-radius: 50%;
   background: linear-gradient(135deg, #0cbdcc, #0899a5);
   color: #fff;
-  font-size: 28px; font-weight: 800;
+  font-size: 26px; font-weight: 800;
   display: flex; align-items: center; justify-content: center;
-  border: 4px solid #fff;
-  box-shadow: 0 4px 16px rgba(12,189,204,.30);
+  border: 4px solid #e6f9fa;
+  box-shadow: 0 8px 18px rgba(12,189,204,.20);
   flex-shrink: 0;
+  overflow: hidden;
 }
+
+.profile-banner__info {
+  min-width: 0;
+  flex: 1;
+}
+
+.profile-banner__eyebrow {
+  display: block;
+  margin-bottom: 5px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .profile-banner__info h2 {
   margin: 0 0 8px;
-  font-size: 22px; font-weight: 700;
+  font-size: 26px; font-weight: 750;
   color: #0e7b85;
 }
 .profile-banner__tags {
   display: flex; gap: 8px; flex-wrap: wrap;
 }
 .profile-banner__tag {
-  padding: 3px 12px;
-  border-radius: 12px;
+  padding: 5px 12px;
+  border-radius: 999px;
   font-size: 12px; font-weight: 600;
   background: linear-gradient(135deg, #0cbdcc, #0899a5);
   color: #fff;
@@ -586,21 +845,130 @@ onMounted(loadSchedule);
   color: #0899a5;
 }
 
+.profile-avatar-actions {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.profile-avatar-btn {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid #a8e8ec;
+  border-radius: 8px;
+  background: #f0fdf9;
+  color: #0e7b85;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease, color .15s ease;
+}
+
+.profile-avatar-btn:hover {
+  border-color: #0cbdcc;
+  background: #e6f9fa;
+  color: #0899a5;
+}
+
+.profile-avatar-btn--text {
+  background: #fff;
+  border-color: #e5e7eb;
+  color: #64748b;
+}
+
+.avatar-file-input {
+  display: none;
+}
+
+.profile-banner__meta {
+  min-width: 160px;
+  padding: 14px 16px;
+  border: 1px solid #d0e8eb;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #fff, #f9fcfd);
+  text-align: right;
+}
+
+.profile-banner__meta span,
+.profile-banner__meta strong {
+  display: block;
+}
+
+.profile-banner__meta span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.profile-banner__meta strong {
+  margin-top: 6px;
+  color: #0e7b85;
+  font-size: 16px;
+}
+
+.profile-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.profile-overview-card {
+  min-height: 104px;
+  padding: 16px 18px;
+  border: 1px solid #d0e8eb;
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.94), rgba(249,252,253,.98)),
+    #fff;
+  box-shadow: 0 8px 22px rgba(15, 118, 110, .07);
+  box-sizing: border-box;
+}
+
+.profile-overview-card span,
+.profile-overview-card strong,
+.profile-overview-card em {
+  display: block;
+}
+
+.profile-overview-card span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.profile-overview-card strong {
+  margin-top: 8px;
+  color: #0e7b85;
+  font-size: 28px;
+  line-height: 1;
+}
+
+.profile-overview-card em {
+  margin-top: 10px;
+  color: #64748b;
+  font-size: 12px;
+  font-style: normal;
+  overflow-wrap: anywhere;
+}
+
 /* ── Profile Detail Cards ── */
 .profile-detail-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+  gap: 12px;
 }
 .profile-detail-card {
   display: flex;
   align-items: center; gap: 14px;
+  min-height: 88px;
   padding: 18px 20px;
   border: 1px solid #d0e8eb;
-  border-radius: 10px;
+  border-radius: 8px;
   background: linear-gradient(135deg, #f9fcfd 0%, #fff 60%);
   box-shadow: 0 1px 4px rgba(12,189,204,.06);
   transition: box-shadow .15s ease, transform .15s ease;
+  box-sizing: border-box;
 }
 .profile-detail-card:hover {
   box-shadow: 0 4px 16px rgba(12,189,204,.12);
@@ -615,32 +983,68 @@ onMounted(loadSchedule);
 }
 .profile-detail-card__icon--id      { background: #e6f9fa; color: #0899a5; }
 .profile-detail-card__icon--account { background: #eff6ff; color: #3b82f6; }
+.profile-detail-card__icon--role    { background: #f0fdf4; color: #16a34a; }
+.profile-detail-card__icon--phone   { background: #fff7ed; color: #ea580c; }
 .profile-detail-card__body span {
   display: block;
-  font-size: 12px; color: #9ca3af; font-weight: 500;
-  text-transform: uppercase; letter-spacing: .3px; margin-bottom: 4px;
+  font-size: 12px; color: #94a3b8; font-weight: 600;
+  margin-bottom: 5px;
 }
 .profile-detail-card__body strong {
   font-size: 15px; color: #374151; font-weight: 600;
+  overflow-wrap: anywhere;
 }
 
 /* ── Change password ── */
+.profile-security-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 14px;
+  margin-top: 16px;
+}
+
 .profile-password-card {
-  margin-top: 20px;
   padding: 24px;
 }
-.profile-password-card h3 {
-  margin: 0 0 18px;
-  font-size: 16px; font-weight: 700;
+
+.profile-section-title {
+  margin-bottom: 18px;
+}
+
+.profile-section-title span,
+.profile-section-title strong {
+  display: block;
+}
+
+.profile-section-title span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.profile-section-title strong {
+  margin-top: 4px;
+  font-size: 18px;
   color: #0e7b85;
 }
 .pwd-form :deep(.el-form-item__label) {
   font-size: 13px; color: #64748b;
 }
+
+.pwd-form :deep(.el-input__wrapper) {
+  min-height: 40px;
+  border-radius: 8px;
+  box-shadow: 0 0 0 1px #dbe7ea inset;
+}
+
+.pwd-form :deep(.el-input__wrapper.is-focus) {
+  box-shadow: 0 0 0 1px #0cbdcc inset, 0 0 0 3px rgba(12,189,204,.12);
+}
+
 .pwd-submit-btn {
   width: 100%;
   height: 42px;
-  border-radius: 10px;
+  border-radius: 8px;
   font-size: 15px; font-weight: 600;
   background: linear-gradient(135deg, #0cbdcc 0%, #0899a5 100%);
   border: none;
@@ -650,6 +1054,47 @@ onMounted(loadSchedule);
 .pwd-submit-btn:hover {
   box-shadow: 0 5px 18px rgba(12,189,204,.40);
   opacity: .95;
+}
+
+.profile-security-card {
+  padding: 18px;
+  border: 1px solid #d0e8eb;
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(240,248,249,.95), rgba(255,255,255,.98)),
+    #fff;
+  box-shadow: 0 1px 6px rgba(12,189,204,.08);
+}
+
+.profile-security-card div {
+  padding: 0 0 14px;
+  border-bottom: 1px solid #e8f4f6;
+}
+
+.profile-security-card div + div {
+  padding-top: 14px;
+}
+
+.profile-security-card div:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.profile-security-card span,
+.profile-security-card strong {
+  display: block;
+}
+
+.profile-security-card span {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.profile-security-card strong {
+  margin-top: 6px;
+  color: #0f172a;
+  font-size: 15px;
+  overflow-wrap: anywhere;
 }
 
 .schedule-header {
@@ -939,6 +1384,7 @@ onMounted(loadSchedule);
   background: linear-gradient(135deg, #dbeafe, #ccfbf1);
   color: #0f766e;
   font-weight: 700;
+  overflow: hidden;
 }
 
 .schedule-board__person strong {
@@ -1104,6 +1550,19 @@ onMounted(loadSchedule);
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .profile-banner__content {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .profile-banner__meta {
+    width: 100%;
+    text-align: left;
+  }
+
+  .profile-overview-grid,
+  .profile-detail-grid,
+  .profile-security-layout,
   .profile-grid {
     grid-template-columns: 1fr;
   }

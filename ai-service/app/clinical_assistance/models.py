@@ -6,11 +6,15 @@ from pydantic import BaseModel, Field
 class ClinicalAssistanceRequest(BaseModel):
     appointment_id: str = Field(alias="appointmentId")
     patient_id: str = Field(alias="patientId")
+    assistance_type: str = Field(default="initial", alias="assistanceType")
     chief_complaint: str = Field(default="", alias="chiefComplaint")
     present_illness: str = Field(default="", alias="presentIllness")
     past_history: str = Field(default="", alias="pastHistory")
     allergy_history: str = Field(default="", alias="allergyHistory")
+    diagnosis: str = ""
     prompt: str = ""
+    historical_records: list[dict] = Field(default_factory=list, alias="historicalRecords")
+    report_results: list[dict] = Field(default_factory=list, alias="reportResults")
     available_exam_items: list[dict] = Field(default_factory=list, alias="availableExamItems")
     available_drugs: list[dict] = Field(default_factory=list, alias="availableDrugs")
 

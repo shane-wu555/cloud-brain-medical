@@ -82,6 +82,14 @@ public class MedicalOrderController {
                 request.summary(), request.createdByType(), request.aiRecordId());
     }
 
+    @PostMapping("/{id}/report-pending")
+    @PreAuthorize("hasAnyRole('CHECK_DOCTOR','LAB_DOCTOR','DISPOSAL_DOCTOR')")
+    public MedicalOrder reportPending(@PathVariable("id") String id, @RequestBody ReportPendingRequest request,
+            JwtAuthenticationToken authentication) {
+        return service.markReportPending(id, authentication.getToken().getSubject(), authentication.getToken().getClaimAsString("role"),
+                request.summary());
+    }
+
     @PostMapping("/{id}/miss")
     @PreAuthorize("hasAnyRole('CHECK_DOCTOR','LAB_DOCTOR','DISPOSAL_DOCTOR')")
     public MedicalOrder miss(@PathVariable("id") String id, JwtAuthenticationToken authentication) {
@@ -94,5 +102,8 @@ public class MedicalOrderController {
     }
 
     public record CompleteRequest(String summary, String createdByType, String aiRecordId) {
+    }
+
+    public record ReportPendingRequest(String summary) {
     }
 }

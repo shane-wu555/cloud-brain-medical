@@ -181,8 +181,18 @@ public class MedicalOrderRepository {
                     result_confirmed_by = ?,
                     result_confirmed_at = now(),
                     completed_at = now()
-                where id = ?::uuid and status = 'IN_PROGRESS' and room_id = ?
+                where id = ?::uuid and status in ('IN_PROGRESS','REPORT_PENDING') and room_id = ?
                 """, summary, sourceType, aiRecordId, staffId, id, roomId) == 1;
+    }
+
+    public boolean markReportPending(String id, String roomId, String staffId, String summary) {
+        return jdbcTemplate.update("""
+                update medical_order
+                set status = 'REPORT_PENDING',
+                    result_summary = ?,
+                    executing_staff_id = coalesce(executing_staff_id, ?)
+                where id = ?::uuid and status = 'IN_PROGRESS' and room_id = ?
+                """, summary, staffId, id, roomId) == 1;
     }
 
     private static class Mapper implements RowMapper<MedicalOrder> {

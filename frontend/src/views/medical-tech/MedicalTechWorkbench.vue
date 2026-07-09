@@ -9,7 +9,9 @@
       <div class="wks-nav__right">
         <span class="wks-nav__info">{{ auth.user?.name }}</span>
         <span class="wks-nav__date">{{ today }} {{ dayOfWeek }}</span>
-        <button :class="['my-entry', showMySchedule && 'my-entry--active']" type="button" @click="showMySchedule = !showMySchedule">我的</button>
+        <button :class="['my-entry', showMySchedule && 'my-entry--active']" type="button" @click="showMySchedule = !showMySchedule">
+          {{ showMySchedule ? '返回工作台' : '我的' }}
+        </button>
         <el-button size="small" text @click="logout" style="color:rgba(255,255,255,0.85)">退出</el-button>
       </div>
     </header>
@@ -342,6 +344,9 @@
                   <button class="ct-act" :disabled="!aiTaskId" @click="pollAi()">
                     刷新 AI
                   </button>
+                  <button class="ct-act" :disabled="!current || current.status !== 'IN_PROGRESS'" @click="markPatientDone">
+                    患者检查完成
+                  </button>
                   <button class="ct-act ct-act--publish" :disabled="selectedFilmSlices.length === 0" @click="exportSelectedFilm">
                     导出所选胶片 {{ selectedFilmSlices.length || '' }}
                   </button>
@@ -620,7 +625,7 @@
       </main>
 
       <!-- Right: AI panel -->
-      <aside class="wks-ai">
+      <aside v-if="!showMySchedule" class="wks-ai">
         <el-card shadow="never" class="ai-card">
           <template #header>
             <div class="ai-header">
@@ -778,7 +783,7 @@ import { useAuthStore } from '../../store/auth';
 import {
   callMedicalOrder, confirmReport, createReportDraft as saveReportDraft,
   createSpecimen, downloadAttachment, getAttachments, getLabResults, getMedicalOrders, getReports, getSpecimens, missMedicalOrder,
-  refreshAiTask, saveLabResults, startMedicalOrder,
+  markMedicalOrderReportPending, refreshAiTask, saveLabResults, startMedicalOrder,
   submitCt, transitionSpecimen, uploadAttachment,
   type AiMedicalTask, type LaboratoryResultItem, type MedicalAttachment, type MedicalOrder, type Specimen
 } from '../../api/medical-order';
@@ -979,7 +984,7 @@ const aiJudgementEmptyText = computed(() => '');
 const aiDiagnosisDisabled = computed(() => !current.value || !file.value || aiSubmitting.value || aiStatus.value === 'PROCESSING');
 const aiDiagnosisButtonText = computed(() => {
   if (!current.value) return '请选择检查';
-  if (!file.value) return '上传影像后开始诊断';
+  if (!file.value) return '开始诊断';
   if (aiStatus.value === 'PROCESSING') return '正在诊断';
   if (aiStatus.value === 'COMPLETED') return '重新诊断';
   if (aiStatus.value === 'FAILED') return '重新诊断';
@@ -1575,14 +1580,16 @@ const filteredOrders = computed(() => {
 });
 
 function statusLabel(s: string) {
-  return { WAITING: '待执行', CALLED: '已叫号', IN_PROGRESS: '执行中', COMPLETED: '已完成', MISSED: '过号' }[s] ?? s;
+  return { WAITING: '待执行', CALLED: '已叫号', IN_PROGRESS: '执行中', REPORT_PENDING: '待报告', COMPLETED: '已完成', MISSED: '过号' }[s] ?? s;
 }
 
 function orderStatusLabel(order: MedicalOrder) {
   if (order.status === 'COMPLETED') return `${formatOrderType(order.orderType)}已完成`;
+  if (order.status === 'REPORT_PENDING') return `${formatOrderType(order.orderType)}待报告`;
   if (isPathologyItem(order)) {
     if (order.status === 'WAITING') return '待接收送检';
     if (order.status === 'IN_PROGRESS') return '已接收送检';
+    if (order.status === 'REPORT_PENDING') return '病理待报告';
   }
   return statusLabel(order.status);
 }
@@ -1591,6 +1598,7 @@ function statusTagType(s: string): '' | 'primary' | 'success' | 'info' | 'warnin
   if (s === 'WAITING') return 'warning';
   if (s === 'CALLED') return 'primary';
   if (s === 'IN_PROGRESS') return 'primary';
+  if (s === 'REPORT_PENDING') return 'info';
   if (s === 'COMPLETED') return 'success';
   return 'info';
 }
@@ -1760,6 +1768,19 @@ async function start(row: MedicalOrder) {
 
 async function miss(row: MedicalOrder) {
   await missMedicalOrder(row.id);
+  await loadOrders();
+}
+
+async function markPatientDone() {
+  if (!current.value || current.value.status !== 'IN_PROGRESS') return;
+  const summary = role.value === 'CHECK_DOCTOR'
+    ? '患者检查已完成，待发布正式报告'
+    : role.value === 'LAB_DOCTOR'
+      ? '患者采样/检验执行已完成，待发布正式报告'
+      : '处置执行已完成，待发布记录';
+  const updated = await markMedicalOrderReportPending(current.value.id, { summary });
+  current.value = updated;
+  ElMessage.success('患者执行已完成，当前状态为待报告');
   await loadOrders();
 }
 
@@ -2120,7 +2141,12 @@ async function prepareSpecimen() {
     specimenId.value = specimen.id;
     await transitionSpecimen(specimen.id, 'COLLECTED');
     specimensByOrder.value = { ...specimensByOrder.value, [current.value.id]: [{ ...specimen, status: 'COLLECTED' }] };
-    ElMessage.success('采样已完成，样本已送检');
+    if (current.value.status === 'IN_PROGRESS') {
+      const updated = await markMedicalOrderReportPending(current.value.id, { summary: '采样已完成，样本已送检，待发布正式报告' });
+      current.value = updated;
+    }
+    ElMessage.success('采样已完成，样本已送检，当前状态为待报告');
+    await loadOrders();
   } finally {
     samplingSubmitting.value = false;
   }

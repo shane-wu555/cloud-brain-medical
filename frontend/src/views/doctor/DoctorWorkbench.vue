@@ -139,14 +139,12 @@
 
               <div class="med-doc__row">
                 <span class="med-doc__lbl med-doc__lbl--w">过去史</span>
-                <input class="med-doc__input" v-model="recordForm.pastHistory" style="flex:2" :readonly="isRecordLocked" />
-                <span class="med-doc__lbl" style="margin-left:14px;white-space:nowrap">过敏史</span>
-                <input class="med-doc__input" v-model="recordForm.allergyHistory" style="flex:1" :readonly="isRecordLocked" />
+                <input class="med-doc__input" v-model="recordForm.pastHistory" :readonly="isRecordLocked" />
               </div>
 
-              <div class="med-doc__row med-doc__row--top">
-                <span class="med-doc__lbl med-doc__lbl--w">现病史</span>
-                <textarea class="med-doc__area" v-model="recordForm.presentIllness" rows="2" :readonly="isRecordLocked" />
+              <div class="med-doc__row">
+                <span class="med-doc__lbl med-doc__lbl--w">过敏史</span>
+                <input class="med-doc__input" v-model="recordForm.allergyHistory" :readonly="isRecordLocked" />
               </div>
 
               <!-- 辅助检查：已确认报告 + 已开医嘱，始终显示 -->
@@ -475,13 +473,19 @@
               v-model="aiPrompt"
               type="textarea"
               :rows="3"
-              placeholder="结合本次病历给出鉴别诊断、检查建议和风险提醒"
+              placeholder="可补充症状、体征、用药禁忌或医生关注点"
               class="ai-textarea"
             />
-            <el-button type="primary" class="ai-generate-btn" :disabled="!current" :loading="aiLoading" @click="generateAssistance">
-              <span v-if="!aiLoading">生成辅助建议</span>
-              <span v-else>AI 分析中…</span>
-            </el-button>
+            <div class="ai-generate-actions">
+              <el-button type="primary" class="ai-generate-btn" :disabled="!current || aiLoading" :loading="aiLoading && aiLoadingMode === 'initial'" @click="generateInitialAssistance">
+                初诊分析
+              </el-button>
+              <el-button class="ai-generate-btn ai-generate-btn--secondary" :disabled="!current || aiLoading" :loading="aiLoading && aiLoadingMode === 'post_report'" @click="generatePostReportAssistance">
+                处方建议
+              </el-button>
+            </div>
+            <div v-if="aiLoading" class="ai-running-text"> 
+            </div>
           </div>
 
         </el-card>
@@ -601,9 +605,10 @@ type AiDrugSuggestion = {
 
 const manualRxItems = ref<RxDraftItem[]>([]);
 
-const aiPrompt = ref('结合当前病历给出鉴别诊断方向和进一步检查建议');
+const aiPrompt = ref('结合当前病历补充分析建议');
 const aiMessages = ref<Array<ClinicalSuggestion & { id: string }>>([]);
 const aiLoading = ref(false);
+const aiLoadingMode = ref<'initial' | 'post_report' | ''>('');
 const aiModel = ref('');
 const aiFallback = ref(false);
 const diagnosisSource = ref<'HUMAN' | 'AI'>('HUMAN');
@@ -1056,60 +1061,124 @@ async function submitOrders() {
   }
 }
 
-async function generateAssistance() {
+async function generateInitialAssistance() {
   if (!current.value) return;
   aiLoading.value = true;
+  aiLoadingMode.value = 'initial';
   try {
-    // 确保目录已加载
     if (!medicalItems.value.length) {
       medicalItems.value = (await getMedicalItems()).filter(i => i.category !== 'DRUG');
     }
+    if (!historyRecords.value.length) {
+      try {
+        historyRecords.value = await getPatientHistory(current.value.patientId, current.value.id, historyReason.value);
+      } catch {
+        historyRecords.value = [];
+      }
+    }
+    const result = await getClinicalAssistance({
+      appointmentId: current.value.id,
+      patientId: current.value.patientId,
+      assistanceType: 'initial',
+      chiefComplaint: recordForm.chiefComplaint,
+      presentIllness: recordForm.presentIllness,
+      pastHistory: recordForm.pastHistory,
+      allergyHistory: recordForm.allergyHistory,
+      prompt: aiPrompt.value || '根据现有病历、过往病历和医院检查项目，给出基本诊断方向和建议检查项目',
+      historicalRecords: historyRecords.value.slice(0, 5).map(toAiHistoryRecord),
+      availableExamItems: medicalItems.value.map(i => ({ code: i.code, name: i.name, category: i.category })),
+    });
+    applyAiResult(result);
+  } catch (e: any) {
+    const msg = (e as any)?.response?.data?.detail ?? (e as any)?.message ?? '请检查 AI 服务是否启动，或网络超时';
+    ElMessage.error({ message: `AI 生成失败：${msg}`, duration: 6000 });
+    console.error('[AI] generateInitialAssistance error:', e);
+  } finally {
+    aiLoading.value = false;
+    aiLoadingMode.value = '';
+  }
+}
+
+async function generatePostReportAssistance() {
+  if (!current.value) return;
+  aiLoading.value = true;
+  aiLoadingMode.value = 'post_report';
+  try {
     if (!drugs.value.length) {
       drugs.value = await getDrugs();
     }
     const result = await getClinicalAssistance({
       appointmentId: current.value.id,
       patientId: current.value.patientId,
+      assistanceType: 'post_report',
       chiefComplaint: recordForm.chiefComplaint,
       presentIllness: recordForm.presentIllness,
       pastHistory: recordForm.pastHistory,
       allergyHistory: recordForm.allergyHistory,
-      prompt: aiPrompt.value,
-      availableExamItems: medicalItems.value.map(i => ({ code: i.code, name: i.name, category: i.category })),
+      diagnosis: recordForm.diagnosis,
+      prompt: aiPrompt.value || (formalReports.value.length
+        ? '根据已发布报告结果、现有诊断和医院药品目录，给出后续建议和处方建议'
+        : '患者无需进一步检查或暂未开检查，请根据当前诊断、病历和医院药品目录，给出处方建议'),
+      reportResults: formalReports.value.map(toAiReportResult),
       availableDrugs: drugs.value.map(d => ({ drugName: d.drugName, specification: d.specification })),
     });
-    aiModel.value = result.model;
-    aiFallback.value = result.fallbackUsed;
-    aiMessages.value = result.suggestions.map((suggestion, index) => ({
-      id: index === 0 ? result.aiRecordId : `${result.aiRecordId}-${index}`,
-      ...suggestion
-    }));
-
-    const examMsg = result.suggestions.find(s => s.kind === 'exam');
-    if (examMsg?.metadata?.projectNames?.length) {
-      aiRecommendedNames.value = examMsg.metadata.projectNames as string[];
-    }
-
-    const medMsg = result.suggestions.find(s => s.kind === 'medication');
-    if (medMsg?.metadata?.drugs?.length) {
-      rxSuggestions.value = (medMsg.metadata.drugs as AiDrugSuggestion[]).map(suggestion => {
-        const drug = matchDrugForSuggestion(suggestion);
-        return drug ? normalizeAiRxSuggestion(suggestion, drug) : { ...suggestion, note: suggestion.note ?? '' };
-      });
-      rxAiRecordId.value = result.aiRecordId;
-    }
-    if (result.suggestions.length) {
-      ElMessage.success(`已生成 ${result.suggestions.length} 条临床建议`);
-    } else {
-      ElMessage.warning('AI 未返回建议内容，请稍后重试');
-    }
+    applyAiResult(result);
   } catch (e: any) {
     const msg = (e as any)?.response?.data?.detail ?? (e as any)?.message ?? '请检查 AI 服务是否启动，或网络超时';
     ElMessage.error({ message: `AI 生成失败：${msg}`, duration: 6000 });
-    console.error('[AI] generateAssistance error:', e);
+    console.error('[AI] generatePostReportAssistance error:', e);
   } finally {
     aiLoading.value = false;
+    aiLoadingMode.value = '';
   }
+}
+
+function applyAiResult(result: Awaited<ReturnType<typeof getClinicalAssistance>>) {
+  aiModel.value = result.model;
+  aiFallback.value = result.fallbackUsed;
+  aiMessages.value = result.suggestions.map((suggestion, index) => ({
+    id: index === 0 ? result.aiRecordId : `${result.aiRecordId}-${index}`,
+    ...suggestion
+  }));
+
+  const examMsg = result.suggestions.find(s => s.kind === 'exam');
+  if (examMsg?.metadata?.projectNames?.length) {
+    aiRecommendedNames.value = examMsg.metadata.projectNames as string[];
+  }
+
+  const medMsg = result.suggestions.find(s => s.kind === 'medication');
+  if (medMsg?.metadata?.drugs?.length) {
+    rxSuggestions.value = (medMsg.metadata.drugs as AiDrugSuggestion[]).map(suggestion => {
+      const drug = matchDrugForSuggestion(suggestion);
+      return drug ? normalizeAiRxSuggestion(suggestion, drug) : { ...suggestion, note: suggestion.note ?? '' };
+    });
+    rxAiRecordId.value = result.aiRecordId;
+  }
+  if (result.suggestions.length) {
+    ElMessage.success(`已生成 ${result.suggestions.length} 条临床建议`);
+  } else {
+    ElMessage.warning('AI 未返回建议内容，请稍后重试');
+  }
+}
+
+function toAiHistoryRecord(record: MedicalRecord) {
+  return {
+    visitDate: record.visitDate,
+    chiefComplaint: record.chiefComplaint || record.aiTriageSummary,
+    diagnosis: record.diagnosis || record.preliminaryDiagnosis,
+    treatmentPlan: record.treatmentPlan
+  };
+}
+
+function toAiReportResult(report: MedicalReport) {
+  const orderId = report.medicalOrderId ?? report.orderId;
+  const order = currentOrders.value.find(item => item.id === orderId);
+  return {
+    reportType: report.reportType,
+    itemName: order?.itemName || report.reportType,
+    conclusion: report.conclusion,
+    findings: report.findings
+  };
 }
 
 function applyDiagnosis(message: ClinicalSuggestion & { id: string }) {
@@ -1227,7 +1296,7 @@ function applyReportToRecord(report: MedicalReport) {
     : line;
   reportDialogVisible.value = false;
   mainTab.value = 'record';
-  ElMessage.success('已导入至现病史');
+  ElMessage.success('报告结论已记录');
 }
 
 function printRecord() {
@@ -1533,16 +1602,30 @@ watch(mainTab, (tab) => {
   border-color: #0cbdcc !important;
   box-shadow: 0 0 0 2px rgba(12,189,204,.15) !important;
 }
+.ai-generate-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+.ai-generate-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
 .ai-generate-btn {
-  width: 100%; margin-top: 10px;
+  width: 100%;
   border-radius: 10px !important;
   height: 42px; font-size: 15px; font-weight: 600;
   background: linear-gradient(135deg, #0cbdcc 0%, #0899a5 100%) !important;
+  color: #fff !important;
   border: none !important;
   box-shadow: 0 3px 12px rgba(12,189,204,.30);
   transition: box-shadow .2s ease, transform .15s ease;
 }
+.ai-generate-btn :deep(span) {
+  color: #fff !important;
+}
 .ai-generate-btn:hover:not(:disabled) {
+  color: #fff !important;
   box-shadow: 0 5px 18px rgba(12,189,204,.40);
   transform: translateY(-1px);
 }
@@ -1550,6 +1633,12 @@ watch(mainTab, (tab) => {
 .ai-generate-btn.is-disabled {
   background: #d1d5db !important;
   box-shadow: none;
+}
+.ai-running-text {
+  margin-top: 8px;
+  color: #64748b;
+  font-size: 12px;
+  text-align: center;
 }
 
 .rx-item { margin-bottom: 10px; padding: 10px; border-left: 3px solid #16a34a; background: #f0fdf4; border-radius: 0 4px 4px 0; }

@@ -161,6 +161,21 @@ public class MedicalOrderService {
         return get(id);
     }
 
+    @Transactional
+    public MedicalOrder markReportPending(String id, String actorId, String role, String summary) {
+        MedicalOrder order = get(id);
+        validateExecutor(order.orderType(), role);
+        MedicalOrderRepository.StaffRoom staffRoom = staffRoom(actorId);
+        if (!staffRoom.roomId().equals(order.roomId())) {
+            throw new AccessDeniedException("医技单未分配给当前执行房间");
+        }
+        String text = summary == null || summary.isBlank() ? "患者执行已完成，待发布正式报告" : summary;
+        if (!repository.markReportPending(id, staffRoom.roomId(), staffRoom.staffId(), text)) {
+            throw new IllegalStateException("只有执行中的医技单可以标记为待报告");
+        }
+        return get(id);
+    }
+
     private MedicalOrder get(String id) {
         return repository.findById(id).orElseThrow(() -> new IllegalArgumentException("医技申请不存在"));
     }

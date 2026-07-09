@@ -21,11 +21,15 @@ export interface ClinicalAssistanceResponse {
 export async function getClinicalAssistance(payload: {
   appointmentId: string;
   patientId: string;
+  assistanceType?: 'initial' | 'post_report';
   chiefComplaint: string;
   presentIllness: string;
   pastHistory?: string;
   allergyHistory?: string;
+  diagnosis?: string;
   prompt: string;
+  historicalRecords?: Array<Record<string, any>>;
+  reportResults?: Array<Record<string, any>>;
   availableExamItems?: Array<{ code: string; name: string; category: string }>;
   availableDrugs?: Array<{ drugName: string; specification?: string }>;
 }) {
