@@ -12,6 +12,7 @@ import com.google.zxing.WriterException;
 import com.google.zxing.common.BitMatrix;
 import com.google.zxing.qrcode.QRCodeWriter;
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel;
+import jakarta.servlet.http.HttpServletRequest;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
@@ -32,6 +33,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.util.HtmlUtils;
+import org.springframework.web.util.UriComponentsBuilder;
+import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 @RestController
 @RequestMapping("/api")
@@ -45,6 +48,7 @@ public class CashierController {
     private final PrescriptionPaymentClient prescriptionClient;
     private final PatientAccessClient patientAccessClient;
     private final AuditPublisher auditPublisher;
+    private final String publicScanBaseUrl;
 
     public CashierController(CashierRepository repository,
             AppointmentPaymentClient appointmentClient,
@@ -52,7 +56,8 @@ public class CashierController {
             PrescriptionPaymentClient prescriptionClient,
             PatientAccessClient patientAccessClient,
             AuditPublisher auditPublisher,
-            @Value("${payment.test-mode-enabled:false}") boolean testModeEnabled) {
+            @Value("${payment.test-mode-enabled:false}") boolean testModeEnabled,
+            @Value("${payment.public-scan-base-url:}") String publicScanBaseUrl) {
         this.repository = repository;
         this.appointmentClient = appointmentClient;
         this.medicalOrderClient = medicalOrderClient;
@@ -60,6 +65,7 @@ public class CashierController {
         this.patientAccessClient = patientAccessClient;
         this.auditPublisher = auditPublisher;
         this.testModeEnabled = testModeEnabled;
+        this.publicScanBaseUrl = normalizeBaseUrl(publicScanBaseUrl);
     }
 
     @PostMapping("/payments/orders")
@@ -256,16 +262,123 @@ public class CashierController {
         }
     }
 
+    @GetMapping(value = "/refunds/scan-entry", produces = MediaType.TEXT_HTML_VALUE)
+    @Transactional
+    public ResponseEntity<String> refundScanEntry(
+            @RequestParam("businessType") String businessType,
+            @RequestParam("businessId") String businessId,
+            @RequestParam("patientId") String patientId,
+            @RequestParam(name = "returnId", required = false) String returnId,
+            @RequestParam(name = "amount", required = false) BigDecimal amount,
+            @RequestParam("channel") String channel) {
+        try {
+            ensureTestModeEnabled();
+            String normalizedChannel = normalizeChannel(channel, false);
+            if ("APPOINTMENT".equalsIgnoreCase(businessType)) {
+                appointmentClient.refund(businessId, patientId, "PUBLIC_SCAN");
+                return htmlResponse(scanResultPage(
+                        true,
+                        refundChannelLabel(normalizedChannel),
+                        "Refund code accepted. The appointment cancellation and refund are now synced."));
+            }
+            if ("PRESCRIPTION".equalsIgnoreCase(businessType)) {
+                if (returnId == null || returnId.isBlank()) {
+                    throw new IllegalArgumentException("returnId must not be blank");
+                }
+                processDrugReturnRefund(returnId, businessId, patientId, amount, "Drug return refund via scan", "PUBLIC_SCAN");
+                return htmlResponse(scanResultPage(
+                        true,
+                        refundChannelLabel(normalizedChannel),
+                        "Refund code accepted. The drug return refund is now synced."));
+            }
+            throw new IllegalArgumentException("Unsupported refund business type");
+        } catch (Exception error) {
+            TransactionAspectSupport.currentTransactionStatus().setRollbackOnly();
+            return ResponseEntity.badRequest()
+                    .contentType(MediaType.TEXT_HTML)
+                    .cacheControl(CacheControl.noStore())
+                    .body(scanResultPage(false, refundChannelLabel(channel), errorMessage(error, "Refund scan failed. Please refresh the code and try again.")));
+        }
+    }
+
     @GetMapping(value = "/payments/qr-code", produces = "image/svg+xml")
-    public ResponseEntity<String> qrCode(@RequestParam("target") String target) {
+    public ResponseEntity<String> qrCode(
+            @RequestParam(name = "target", required = false) String target,
+            @RequestParam(name = "paymentId", required = false) String paymentId,
+            @RequestParam(name = "channel", required = false) String channel,
+            HttpServletRequest request) {
         ensureTestModeEnabled();
-        String content = target == null ? "" : target.trim();
+        String content = resolveQrContent(target, paymentId, channel, request);
         if (content.isBlank()) throw new IllegalArgumentException("target 不能为空");
         if (content.length() > 2048) throw new IllegalArgumentException("二维码内容过长");
         return ResponseEntity.ok()
                 .contentType(SVG_MEDIA_TYPE)
                 .cacheControl(CacheControl.noStore())
                 .body(renderQrCodeSvg(content));
+    }
+
+    @GetMapping(value = "/refunds/qr-code", produces = "image/svg+xml")
+    public ResponseEntity<String> refundQrCode(
+            @RequestParam("businessType") String businessType,
+            @RequestParam("businessId") String businessId,
+            @RequestParam("patientId") String patientId,
+            @RequestParam(name = "returnId", required = false) String returnId,
+            @RequestParam(name = "amount", required = false) BigDecimal amount,
+            @RequestParam(name = "channel", required = false) String channel,
+            HttpServletRequest request) {
+        ensureTestModeEnabled();
+        String normalizedChannel = normalizeChannel(channel, false);
+        UriComponentsBuilder builder = UriComponentsBuilder.fromUriString(resolveScanBaseUrl(request))
+                .path("/api/refunds/scan-entry")
+                .queryParam("businessType", businessType.trim())
+                .queryParam("businessId", businessId.trim())
+                .queryParam("patientId", patientId.trim())
+                .queryParam("channel", normalizedChannel);
+        if (returnId != null && !returnId.isBlank()) {
+            builder.queryParam("returnId", returnId.trim());
+        }
+        if (amount != null) {
+            builder.queryParam("amount", amount);
+        }
+        String content = builder.build().toUriString();
+        return ResponseEntity.ok()
+                .contentType(SVG_MEDIA_TYPE)
+                .cacheControl(CacheControl.noStore())
+                .body(renderQrCodeSvg(content));
+    }
+
+    private CashierRepository.Refund processDrugReturnRefund(
+            String returnId,
+            String prescriptionId,
+            String patientId,
+            BigDecimal amount,
+            String reason,
+            String operatorId) {
+        var payment = repository.findOptionalByBusiness("PRESCRIPTION", prescriptionId);
+        if (payment.isEmpty() || (!"PAID".equals(payment.get().status()) && !"REFUNDED".equals(payment.get().status()))) {
+            throw new IllegalStateException("Prescription payment is not refundable");
+        }
+        CashierRepository.Refund refund = repository.recordRefund(
+                "PRESCRIPTION",
+                prescriptionId,
+                patientId,
+                amount,
+                reason == null || reason.isBlank() ? "Drug return refund" : reason,
+                operatorId);
+        prescriptionClient.completeDrugReturn(returnId, operatorId, refund.id());
+        auditPublisher.publish(
+                "PAYMENT_REFUND",
+                "REFUND",
+                refund.id(),
+                patientId,
+                prescriptionId,
+                operatorId,
+                "SYSTEM",
+                Map.of(
+                        "businessType", refund.businessType(),
+                        "amount", refund.amount(),
+                        "status", refund.status()));
+        return refund;
     }
 
     private void confirmBusinessPayment(CashierRepository.Payment payment) {
@@ -282,6 +395,32 @@ public class CashierController {
 
     private void ensureTestModeEnabled() {
         if (!testModeEnabled) throw new IllegalStateException("测试支付未启用");
+    }
+
+    private String resolveQrContent(String target, String paymentId, String channel, HttpServletRequest request) {
+        String explicitTarget = target == null ? "" : target.trim();
+        if (!explicitTarget.isBlank()) {
+            return explicitTarget;
+        }
+        if (paymentId == null || paymentId.isBlank()) {
+            throw new IllegalArgumentException("paymentId must not be blank");
+        }
+        String normalizedChannel = normalizeChannel(channel, false);
+        return UriComponentsBuilder.fromUriString(resolveScanBaseUrl(request))
+                .path("/api/payments/scan-entry")
+                .queryParam("paymentId", paymentId.trim())
+                .queryParam("channel", normalizedChannel)
+                .build()
+                .toUriString();
+    }
+
+    private String resolveScanBaseUrl(HttpServletRequest request) {
+        if (!publicScanBaseUrl.isBlank()) {
+            return publicScanBaseUrl;
+        }
+        return ServletUriComponentsBuilder.fromContextPath(request)
+                .build()
+                .toUriString();
     }
 
     private String normalizeChannel(String channel, boolean allowSimulated) {
@@ -301,6 +440,13 @@ public class CashierController {
                 businessType.toLowerCase(),
                 businessId,
                 System.currentTimeMillis());
+    }
+
+    private String normalizeBaseUrl(String baseUrl) {
+        if (baseUrl == null) {
+            return "";
+        }
+        return baseUrl.trim().replaceAll("/+$", "");
     }
 
     private ResponseEntity<String> htmlResponse(String html) {
@@ -429,6 +575,16 @@ public class CashierController {
             case "ALIPAY" -> "支付宝支付";
             case "MEDICAL_INSURANCE" -> "医保卡支付";
             case "SIMULATED" -> "模拟支付";
+            default -> channel;
+        };
+    }
+
+    private String refundChannelLabel(String channel) {
+        if (channel == null || channel.isBlank()) return "Refund QR";
+        return switch (channel.toUpperCase()) {
+            case "WECHAT" -> "WeChat Refund Code";
+            case "ALIPAY" -> "Alipay Refund Code";
+            case "MEDICAL_INSURANCE" -> "Insurance Refund Code";
             default -> channel;
         };
     }

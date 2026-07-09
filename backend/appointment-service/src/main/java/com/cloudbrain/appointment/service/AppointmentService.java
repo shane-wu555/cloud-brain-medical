@@ -89,15 +89,16 @@ public class AppointmentService {
         validateBookingWindow(request.visitDate());
         LocalTime startTime = parseStartTime(request);
         validateNoRepeatedAppointment(request, startTime);
-        if (!slotInventoryRepository.bookOffline(request.scheduleId())) {
+        if (!slotInventoryRepository.tryLock(request.scheduleId())) {
             throw new IllegalStateException("当前号源已约满或排班不存在");
         }
-        Appointment appointment = buildAppointment(request, AppointmentSource.OFFLINE, AppointmentStatus.WAITING, PaymentStatus.PAID, startTime);
-        appointment.markPaid("OFFLINE_WINDOW");
-        saveNewAppointment(appointment);
-        integrationEventRepository.enqueuePayment(appointment, registrationFee(request), "cashier");
-        integrationEventRepository.enqueueMedicalRecord(appointment);
-        return appointment;
+        Appointment appointment = buildAppointment(
+                request,
+                AppointmentSource.OFFLINE,
+                AppointmentStatus.PENDING_PAYMENT,
+                PaymentStatus.UNPAID,
+                startTime);
+        return saveNewAppointment(appointment);
     }
 
     @Transactional

@@ -27,6 +27,13 @@ public class InternalAppointmentController {
         if(!internalApiKey.equals(key)) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,"内部接口认证失败");
         return service.failPayment(id,request.patientId());
     }
+    @PostMapping("/{id}/refund-confirmation")
+    public Appointment refund(@PathVariable("id") String id,@RequestHeader(name="X-Internal-Api-Key",required=false) String key,
+            @RequestBody RefundConfirmation request) {
+        if(!internalApiKey.equals(key)) throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,"鍐呴儴鎺ュ彛璁よ瘉澶辫触");
+        service.validatePatientAccess(id,request.patientId(),"PATIENT");
+        return service.cancel(id,true);
+    }
     @PostMapping("/{id}/revisit") public Appointment revisit(@PathVariable("id") String id,@RequestHeader(name="X-Internal-Api-Key",required=false)String key){if(!internalApiKey.equals(key))throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);return service.enterRevisit(id);}
     @GetMapping("/scheduling-history-summary")
     public Object schedulingHistorySummary(@RequestHeader(name="X-Internal-Api-Key",required=false) String key,
@@ -36,4 +43,5 @@ public class InternalAppointmentController {
     }
     public record PaymentConfirmation(String patientId,String paymentMethod,String paymentOrderId) {}
     public record PaymentFailure(String patientId,String paymentOrderId) {}
+    public record RefundConfirmation(String patientId,String operatorId) {}
 }
