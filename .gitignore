@@ -10,10 +10,19 @@ __pycache__/
 .idea/
 .vscode/
 
-# 训练中间产物（不提交）
+# Local deployment/package artifacts
+/deploy/
+/scripts/
+/*.tar.gz
+/mc.exe
+/mc-linux-amd64
+/minio-linux-amd64
+/hs_err_pid*.log
+/logs/
+
+# Training intermediate artifacts
 ai-service/training/__pycache__/
 /tmp/ct_models/
 
-# 模型文件提交到 git（小文件，团队共享）
-# ai-service/models/*.onnx  ← 不忽略，直接提交
-
+# Model files are committed to git for team sharing.
+# ai-service/models/*.onnx is intentionally not ignored.

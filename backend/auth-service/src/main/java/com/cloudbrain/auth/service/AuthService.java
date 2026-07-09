@@ -216,7 +216,7 @@ public class AuthService {
     public void changePassword(String userId, String oldPassword, String newPassword) {
         UserAccount account = repository.findById(userId)
                 .orElseThrow(() -> new IllegalArgumentException("账号不存在"));
-        if (!passwordEncoder.matches(oldPassword, account.getPasswordHash())) {
+        if (!passwordEncoder.matches(oldPassword, account.getPassword())) {
             throw new IllegalArgumentException("原密码不正确");
         }
         validatePassword(newPassword);
