@@ -1,5 +1,5 @@
 from app.core.rag import search_memory
-from app.schedule_suggestions.models import DoctorCandidate, ScheduleDemand, ScheduleSuggestionRequest
+from app.schedule_suggestions.models import DoctorCandidate, ScheduleDemand, ScheduleSuggestion, ScheduleSuggestionRequest
 import app.schedule_suggestions.service as schedule_service
 
 
@@ -66,6 +66,73 @@ def test_schedule_mock_uses_slot_level_unavailability(monkeypatch):
 
     assert len(response.suggestions) == 1
     assert response.suggestions[0].period == "下午"
+
+
+def test_schedule_mock_pairs_morning_and_afternoon_when_possible(monkeypatch):
+    monkeypatch.delenv("AI_RAG_DATABASE_URL", raising=False)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+
+    request = ScheduleSuggestionRequest(
+        candidates=[
+            DoctorCandidate(doctorId="doctor-1", doctorName="张医生", departmentId="dept-general", roomId="room-1"),
+            DoctorCandidate(doctorId="doctor-2", doctorName="李医生", departmentId="dept-general", roomId="room-1"),
+        ],
+        demands=[
+            ScheduleDemand(departmentId="dept-general", roomId="room-1", workDate="2026-07-08", period="上午"),
+            ScheduleDemand(departmentId="dept-general", roomId="room-1", workDate="2026-07-08", period="下午"),
+        ],
+    )
+
+    response = schedule_service._mock_suggest(request)
+
+    assert len(response.suggestions) == 2
+    assert {item.period for item in response.suggestions} == {"上午", "下午"}
+    assert len({item.doctor_id for item in response.suggestions}) == 1
+
+
+def test_schedule_llm_suggestions_are_repaired_to_same_day_pairs(monkeypatch):
+    monkeypatch.delenv("AI_RAG_DATABASE_URL", raising=False)
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+
+    request = ScheduleSuggestionRequest(
+        candidates=[
+            DoctorCandidate(doctorId="doctor-1", doctorName="张医生", departmentId="dept-general", roomId="room-1"),
+            DoctorCandidate(doctorId="doctor-2", doctorName="李医生", departmentId="dept-general", roomId="room-1"),
+        ],
+        demands=[
+            ScheduleDemand(departmentId="dept-general", roomId="room-1", workDate="2026-07-08", period="上午"),
+            ScheduleDemand(departmentId="dept-general", roomId="room-1", workDate="2026-07-08", period="下午"),
+        ],
+    )
+    split_suggestions = [
+        ScheduleSuggestion(
+            suggestionId="s1",
+            doctorId="doctor-1",
+            doctorName="张医生",
+            departmentId="dept-general",
+            roomId="room-1",
+            roomName="诊室一",
+            workDate="2026-07-08",
+            period="上午",
+            capacity=20,
+        ),
+        ScheduleSuggestion(
+            suggestionId="s2",
+            doctorId="doctor-2",
+            doctorName="李医生",
+            departmentId="dept-general",
+            roomId="room-1",
+            roomName="诊室一",
+            workDate="2026-07-08",
+            period="下午",
+            capacity=20,
+        ),
+    ]
+
+    repaired = schedule_service._prefer_same_doctor_pairs(split_suggestions, request)
+
+    assert len({item.doctor_id for item in repaired}) == 1
+    assert {item.period for item in repaired} == {"上午", "下午"}
 
 
 def test_schedule_mock_limits_one_doctor_per_room_period(monkeypatch):

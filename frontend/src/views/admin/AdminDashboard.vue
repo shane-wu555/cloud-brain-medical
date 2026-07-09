@@ -380,6 +380,9 @@
             <el-input v-model.trim="doctorKeyword" class="head-search" clearable placeholder="搜索姓名/工号/科室" />
             <el-button type="primary" @click="queryDoctors">查询</el-button>
             <el-button @click="resetDoctorSearch">重置</el-button>
+            <el-select v-model="doctorRoleFilter" clearable placeholder="全部角色">
+              <el-option v-for="option in accountRoleOptions" :key="option.value" :label="option.label" :value="option.value" />
+            </el-select>
             <el-button type="primary" @click="openDoctorCreate">新增医生</el-button>
           </div>
 
@@ -387,6 +390,7 @@
             <el-table :data="filteredDoctors" empty-text="暂无医生账号">
               <el-table-column prop="employeeNo" label="工号" width="120" />
               <el-table-column prop="name" label="姓名" width="120" />
+              <el-table-column prop="departmentName" label="科室" width="150" />
               <el-table-column label="登录账号" width="120">
                 <template #default="{ row }">{{ accountByEmployeeNo(row.employeeNo)?.username || row.employeeNo }}</template>
               </el-table-column>
@@ -755,6 +759,7 @@ const aiScheduleBoardWeekOffset = ref(0);
 const manualScheduleBoardWeekOffset = ref(0);
 const selectedDoctorId = ref('');
 const doctorKeyword = ref('');
+const doctorRoleFilter = ref('');
 const eventKeyword = ref('');
 const eventTypeFilter = ref('');
 const doctorDialogVisible = ref(false);
@@ -888,12 +893,15 @@ const filteredScheduleDoctors = computed(() =>
 
 const filteredDoctors = computed(() => {
   const keyword = doctorKeyword.value.trim().toLowerCase();
-  if (!keyword) return doctors.value;
-  return doctors.value.filter((doctor) =>
-    [doctor.employeeNo, doctor.name, doctor.departmentName, doctor.roomName, doctor.specialty]
-      .filter((value): value is string => Boolean(value))
-      .some((value) => value.toLowerCase().includes(keyword))
-  );
+  return doctors.value.filter((doctor) => {
+    const matchesRole = !doctorRoleFilter.value || doctor.roleType === doctorRoleFilter.value;
+    const matchesKeyword =
+      !keyword ||
+      [doctor.employeeNo, doctor.name, doctor.departmentName, doctor.roomName, doctor.specialty]
+        .filter((value): value is string => Boolean(value))
+        .some((value) => value.toLowerCase().includes(keyword));
+    return matchesRole && matchesKeyword;
+  });
 });
 
 const filteredDoctorEvents = computed(() => {
@@ -1049,6 +1057,7 @@ function queryDoctors() {
 
 function resetDoctorSearch() {
   doctorKeyword.value = '';
+  doctorRoleFilter.value = '';
 }
 
 async function loadAccounts() {
