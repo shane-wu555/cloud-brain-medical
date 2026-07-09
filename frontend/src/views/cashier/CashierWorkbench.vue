@@ -235,6 +235,11 @@
             <el-table-column label="就诊时间" min-width="170">
               <template #default="{ row }">{{ row.visitDate }} {{ normalizeStartTime(row.startTime) || row.period }}</template>
             </el-table-column>
+            <el-table-column label="挂号费" width="120" align="right">
+              <template #default="{ row }">
+                <strong class="amount">￥{{ amountText(appointmentRecordAmount(row)) }}</strong>
+              </template>
+            </el-table-column>
             <el-table-column label="状态" min-width="110">
               <template #default="{ row }">
                 <el-tag :type="appointmentTagType(row)" effect="plain" size="small">{{ appointmentStatusLabel(row) }}</el-tag>
@@ -243,7 +248,15 @@
             <el-table-column label="操作" width="150" fixed="right">
               <template #default="{ row }">
                 <el-button type="primary" link @click="printRegistrationSlip(row)">打印</el-button>
-                <el-button v-if="canRefundAppointment(row)" type="danger" link @click="refund(row)">退号</el-button>
+                <el-button
+                  v-if="canRefundAppointment(row)"
+                  type="danger"
+                  link
+                  :loading="refundingAppointmentId === row.id && refundDialog.visible"
+                  @click="refund(row)"
+                >
+                  退号并退费
+                </el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -355,7 +368,7 @@
             </el-table-column>
             <el-table-column label="操作" width="120" fixed="right">
               <template #default="{ row }">
-                <el-button type="primary" link :loading="refundingReturnId === row.id" @click="refundDrug(row)">退费完成</el-button>
+                <el-button type="primary" link :loading="refundingReturnId === row.id && refundDialog.visible" @click="refundDrug(row)">退费</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -363,7 +376,7 @@
       </main>
     </div>
 
-    <el-dialog v-model="qrDialog.visible" title="扫码缴费" width="460px" @closed="resetQrDialog">
+    <el-dialog v-model="qrDialog.visible" title="扫码缴费" width="460px" @closed="handleQrDialogClosed">
       <div v-if="qrDialog.item" class="qr-dialog">
         <div class="qr-meta">
           <strong>{{ qrDialog.item.patientName }} · {{ feeTypeLabel(qrDialog.item.feeType) }}</strong>
@@ -400,23 +413,72 @@
         </div>
         <el-alert
           v-if="qrDialog.status === 'PAID'"
-          title="二维码已被识别，缴费成功"
+          :title="qrDialog.flow === 'registration' ? '二维码已被识别，挂号收费成功' : '二维码已被识别，缴费成功'"
           type="success"
           :closable="false"
         />
         <p v-else class="qr-hint">
           {{ currentQrChannel.hint }}。
         </p>
-        <p v-if="scanBaseUrlNotice" class="qr-hint qr-hint--warn">
-          当前未配置扫码基地址，二维码将使用本页地址。手机扫码测试时，请在 frontend/.env.local 配置
-          VITE_PAYMENT_SCAN_BASE_URL 为当前电脑的局域网访问地址。
+      </div>
+      <template #footer>
+        <span class="qr-footer-status">
+          {{ qrDialog.status === 'PAID' ? (qrDialog.flow === 'registration' ? '挂号收费成功' : '缴费成功') : '等待扫码完成' }}
+        </span>
+        <el-button @click="qrDialog.visible = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="refundDialog.visible" title="扫码退费" width="460px" @closed="resetRefundDialog">
+      <div v-if="refundDialog.target" class="qr-dialog">
+        <div class="qr-meta">
+          <strong>{{ refundDialog.target.patientName }} · {{ refundDialog.target.title }}</strong>
+          <span>{{ refundDialog.target.subtitle }}</span>
+          <em>￥{{ amountText(currentRefundAmount) }}</em>
+          <span class="qr-meta__insurance">当前展示付款码，请扫码完成退费</span>
+        </div>
+        <div class="qr-channel-picker">
+          <button
+            v-for="option in refundChannelOptions"
+            :key="option.value"
+            type="button"
+            :class="['qr-channel-button', refundDialog.channel === option.value && 'qr-channel-button--active']"
+            :disabled="refundDialog.status === 'REFUNDED'"
+            @click="changeRefundChannel(option.value)"
+          >
+            <strong>{{ option.action }}</strong>
+            <span>{{ option.label }}</span>
+          </button>
+        </div>
+        <div class="qr-card" :data-channel="refundDialog.channel">
+          <div class="qr-card__header">
+            <span>{{ currentRefundChannel.label }}</span>
+            <em>{{ refundDialog.status === 'REFUNDED' ? '已完成' : '等待扫码' }}</em>
+          </div>
+          <div v-if="refundDialog.qrLoading" class="payment-qr payment-qr--loading">付款码生成中...</div>
+          <div v-else-if="refundDialog.qrSvg" class="payment-qr" v-html="refundDialog.qrSvg" />
+          <el-alert
+            v-else
+            :title="refundDialog.qrError || '付款码生成失败，请关闭后重新打开退费弹窗'"
+            type="error"
+            :closable="false"
+          />
+        </div>
+        <el-alert
+          v-if="refundDialog.status === 'REFUNDED'"
+          :title="refundDialog.target.successTitle"
+          type="success"
+          :closable="false"
+        />
+        <p v-else class="qr-hint">
+          {{ currentRefundChannel.refundHint }}。
         </p>
       </div>
       <template #footer>
         <span class="qr-footer-status">
-          {{ qrDialog.status === 'PAID' ? '缴费成功' : '等待扫码完成' }}
+          {{ refundDialog.status === 'REFUNDED' ? (refundDialog.target?.successFooter || '退费成功') : '等待扫码完成' }}
         </span>
-        <el-button @click="qrDialog.visible = false">关闭</el-button>
+        <el-button @click="refundDialog.visible = false">关闭</el-button>
       </template>
     </el-dialog>
 
@@ -442,18 +504,19 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
-import { ElMessage, ElMessageBox } from 'element-plus';
+import { ElMessage } from 'element-plus';
 import { useRouter } from 'vue-router';
 import { useAuthStore } from '../../store/auth';
-import { cancelAppointment, createOfflineAppointment, getAppointments, type Appointment } from '../../api/appointment';
+import { createOfflineAppointment, getAppointments, type Appointment } from '../../api/appointment';
 import { getDepartments, getDoctors, getSchedules, type Department, type Doctor, type Schedule } from '../../api/doctor';
 import { getMedicalOrders, type MedicalOrder } from '../../api/medical-order';
 import { getDrugReturns, getPrescriptions, type DrugReturnOrder, type Prescription } from '../../api/pharmacy';
 import {
   createPaymentOrder,
+  getRefundQrCode,
   getPaymentQrCode,
   getPayments,
-  refundDrugReturn,
+  markTestPaymentFailure,
   type BusinessType,
   type PaymentChannel,
   type PaymentOrder
@@ -492,6 +555,23 @@ interface ScheduleOption {
   slot: NonNullable<Schedule['timeSlots']>[number];
 }
 
+interface RefundDialogTarget {
+  key: string;
+  businessType: BusinessType;
+  businessId: string;
+  patientId: string;
+  patientName: string;
+  amount: number;
+  title: string;
+  subtitle: string;
+  returnId?: string;
+  returnNo?: string;
+  pollType: 'appointment' | 'drugReturn';
+  successTitle: string;
+  successFooter: string;
+  successToast: string;
+}
+
 const router = useRouter();
 const auth = useAuthStore();
 
@@ -518,6 +598,7 @@ const drugReturns = ref<DrugReturnOrder[]>([]);
 const refundingReturnId = ref('');
 const paymentRecords = ref<PaymentOrder[]>([]);
 const patientProfiles = ref<PatientProfile[]>([]);
+const refundingAppointmentId = ref('');
 
 const selectedDepartmentId = ref('');
 const selectedDoctorId = ref('');
@@ -542,6 +623,7 @@ const qrDialog = reactive({
   visible: false,
   checking: false,
   status: '' as '' | 'PENDING' | 'PAID',
+  flow: 'payment' as 'payment' | 'registration',
   paymentId: '',
   channel: 'WECHAT' as PaymentChannel,
   qrSvg: '',
@@ -550,6 +632,17 @@ const qrDialog = reactive({
   item: undefined as PendingFeeItem | undefined
 });
 let qrStatusTimer: number | undefined;
+const refundDialog = reactive({
+  visible: false,
+  checking: false,
+  status: '' as '' | 'PENDING' | 'REFUNDED',
+  channel: 'WECHAT' as PaymentChannel,
+  qrSvg: '',
+  qrLoading: false,
+  qrError: '',
+  target: undefined as RefundDialogTarget | undefined
+});
+let refundStatusTimer: number | undefined;
 
 const idTypeOptions: Array<{ label: string; value: IdType }> = [
   { label: '居民身份证', value: 'ID_CARD' },
@@ -583,9 +676,14 @@ const nowTimestamp = ref(Date.now());
 let nowTimer: number | undefined;
 
 const paymentChannelOptions: Array<{ value: PaymentChannel; action: string; label: string; hint: string }> = [
-  { value: 'WECHAT', action: '按微信支付', label: '微信支付', hint: '请使用微信扫一扫当前二维码' },
-  { value: 'ALIPAY', action: '按支付宝支付', label: '支付宝支付', hint: '请使用支付宝扫一扫当前二维码' },
-  { value: 'MEDICAL_INSURANCE', action: '使用医保卡支付', label: '医保卡支付', hint: '请使用医保终端或扫码设备识别当前二维码' }
+  { value: 'WECHAT', action: '使用微信支付', label: '微信支付', hint: '请使用微信扫一扫当前二维码' },
+  { value: 'ALIPAY', action: '使用支付宝支付', label: '支付宝支付', hint: '请使用支付宝扫一扫当前二维码' },
+  { value: 'MEDICAL_INSURANCE', action: '使用医保账户支付', label: '医保账户支付', hint: '请使用医保终端或扫码设备识别当前二维码' }
+];
+const refundChannelOptions: Array<{ value: PaymentChannel; action: string; label: string; refundHint: string }> = [
+  { value: 'WECHAT', action: '使用微信获取退费', label: '微信付款码', refundHint: '请使用微信扫一扫平台付款码获得退费' },
+  { value: 'ALIPAY', action: '使用支付宝获取退费', label: '支付宝付款码', refundHint: '请使用支付宝扫一扫平台付款码获得退费' },
+  { value: 'MEDICAL_INSURANCE', action: '使用医保获取退费', label: '医保退费码', refundHint: '请使用医保终端或扫码设备识别当前退费码获得退费' }
 ];
 
 const navItems = computed(() => [
@@ -763,50 +861,74 @@ const currentQrAmount = computed(() => {
   if (!qrDialog.item) return 0;
   return qrDialog.channel === 'MEDICAL_INSURANCE' ? qrDialog.item.insuranceAmount : qrDialog.item.amount;
 });
-
-const configuredScanBaseUrl = (import.meta.env.VITE_PAYMENT_SCAN_BASE_URL ?? '').trim().replace(/\/+$/, '');
-
-const paymentScanBaseUrl = computed(() => {
-  if (configuredScanBaseUrl) return configuredScanBaseUrl;
-  if (typeof window === 'undefined') return '';
-  return window.location.origin;
-});
-
-const qrScanUrl = computed(() => {
-  if (!qrDialog.paymentId || !paymentScanBaseUrl.value) return '';
-  const url = new URL('/api/payments/scan-entry', paymentScanBaseUrl.value);
-  url.searchParams.set('paymentId', qrDialog.paymentId);
-  url.searchParams.set('channel', qrDialog.channel);
-  return url.toString();
+const currentRefundChannel = computed(
+  () => refundChannelOptions.find(item => item.value === refundDialog.channel) ?? refundChannelOptions[0]
+);
+const currentRefundAmount = computed(() => {
+  return refundDialog.target?.amount ?? 0;
 });
 
 const scanBaseUrlNotice = computed(() => {
-  if (configuredScanBaseUrl) return false;
   if (typeof window === 'undefined') return false;
   return ['localhost', '127.0.0.1'].includes(window.location.hostname);
 });
 
 async function loadQrSvg() {
-  if (!qrDialog.visible || !qrScanUrl.value) return;
-  const target = qrScanUrl.value;
+  if (!qrDialog.visible || !qrDialog.paymentId) return;
+  const requestKey = `${qrDialog.paymentId}:${qrDialog.channel}`;
   qrDialog.qrLoading = true;
   qrDialog.qrError = '';
   qrDialog.qrSvg = '';
   try {
-    const svg = await getPaymentQrCode(target);
-    if (target === qrScanUrl.value) {
+    const svg = await getPaymentQrCode({
+      paymentId: qrDialog.paymentId,
+      channel: qrDialog.channel
+    });
+    if (requestKey === `${qrDialog.paymentId}:${qrDialog.channel}`) {
       if (!svg.trim().startsWith('<svg')) {
         throw new Error('二维码接口未返回有效 SVG，请确认 cashier-service 和 gateway-service 已重启');
       }
       qrDialog.qrSvg = svg;
     }
   } catch (error) {
-    if (target === qrScanUrl.value) {
+    if (requestKey === `${qrDialog.paymentId}:${qrDialog.channel}`) {
       qrDialog.qrError = errorMessage(error, '二维码生成失败，请确认后端和网关服务已重启');
     }
   } finally {
-    if (target === qrScanUrl.value) {
+    if (requestKey === `${qrDialog.paymentId}:${qrDialog.channel}`) {
       qrDialog.qrLoading = false;
+    }
+  }
+}
+
+async function loadRefundQrSvg() {
+  if (!refundDialog.visible || !refundDialog.target) return;
+  const requestKey = `${refundDialog.target.key}:${refundDialog.channel}`;
+  refundDialog.qrLoading = true;
+  refundDialog.qrError = '';
+  refundDialog.qrSvg = '';
+  try {
+    const svg = await getRefundQrCode({
+      businessType: refundDialog.target.businessType,
+      businessId: refundDialog.target.businessId,
+      patientId: refundDialog.target.patientId,
+      returnId: refundDialog.target.returnId,
+      amount: refundDialog.target.amount,
+      channel: refundDialog.channel
+    });
+    if (requestKey === `${refundDialog.target.key}:${refundDialog.channel}`) {
+      if (!svg.trim().startsWith('<svg')) {
+        throw new Error('付款码接口未返回有效 SVG，请确认 cashier-service 和 gateway-service 已重启');
+      }
+      refundDialog.qrSvg = svg;
+    }
+  } catch (error) {
+    if (requestKey === `${refundDialog.target.key}:${refundDialog.channel}`) {
+      refundDialog.qrError = errorMessage(error, '付款码生成失败，请确认后端和网关服务已重启');
+    }
+  } finally {
+    if (requestKey === `${refundDialog.target?.key}:${refundDialog.channel}`) {
+      refundDialog.qrLoading = false;
     }
   }
 }
@@ -857,14 +979,16 @@ async function loadPaymentsPage() {
 async function loadAppointmentRecordsPage() {
   loadingAll.value = true;
   try {
-    const [appointmentsResult, doctorsResult, schedulesResult] = await Promise.allSettled([
+    const [appointmentsResult, doctorsResult, schedulesResult, paymentsResult] = await Promise.allSettled([
       getAppointments(),
       getDoctors(),
-      getSchedules()
+      getSchedules(),
+      getPayments({ businessType: 'APPOINTMENT' })
     ]);
     appointments.value = unwrap(appointmentsResult, [], '挂号记录');
     doctors.value = unwrap(doctorsResult, doctors.value, '医生列表');
     schedules.value = unwrap(schedulesResult, schedules.value, '排班列表');
+    paymentRecords.value = unwrap(paymentsResult, [], '挂号费支付记录');
     await syncPatientProfiles();
   } finally {
     loadingAll.value = false;
@@ -1085,7 +1209,7 @@ function matchesPatientSearch(patientId: string, patientName: string, text: stri
   return `${patientName} ${text}`.toLowerCase().includes(keyword);
 }
 
-async function openQr(item: PendingFeeItem) {
+async function openQr(item: PendingFeeItem, flow: 'payment' | 'registration' = 'payment') {
   qrPreparingKey.value = item.businessKey;
   try {
     const channel = defaultQrChannel();
@@ -1098,6 +1222,7 @@ async function openQr(item: PendingFeeItem) {
     });
     qrDialog.item = item;
     qrDialog.checking = false;
+    qrDialog.flow = flow;
     qrDialog.paymentId = payment.id;
     qrDialog.channel = channel;
     qrDialog.status = 'PENDING';
@@ -1134,11 +1259,19 @@ async function changeQrChannel(channel: PaymentChannel) {
     });
     qrDialog.paymentId = payment.id;
     qrDialog.channel = channel;
+    await loadQrSvg();
   } catch (error) {
     ElMessage.error(errorMessage(error, '切换支付方式失败'));
   } finally {
     qrDialog.qrLoading = false;
   }
+}
+
+async function changeRefundChannel(channel: PaymentChannel) {
+  if (refundDialog.status === 'REFUNDED' || !refundDialog.target) return;
+  if (refundDialog.channel === channel) return;
+  refundDialog.channel = channel;
+  await loadRefundQrSvg();
 }
 
 function startQrStatusPolling() {
@@ -1152,6 +1285,19 @@ function startQrStatusPolling() {
 function stopQrStatusPolling() {
   if (qrStatusTimer) window.clearInterval(qrStatusTimer);
   qrStatusTimer = undefined;
+}
+
+function startRefundStatusPolling() {
+  stopRefundStatusPolling();
+  void syncRefundStatus();
+  refundStatusTimer = window.setInterval(() => {
+    void syncRefundStatus();
+  }, 1500);
+}
+
+function stopRefundStatusPolling() {
+  if (refundStatusTimer) window.clearInterval(refundStatusTimer);
+  refundStatusTimer = undefined;
 }
 
 async function syncQrPaymentStatus() {
@@ -1176,12 +1322,45 @@ async function syncQrPaymentStatus() {
   }
 }
 
+async function syncRefundStatus() {
+  if (!refundDialog.visible || !refundDialog.target || refundDialog.status === 'REFUNDED') return;
+  refundDialog.checking = true;
+  try {
+    if (refundDialog.target.pollType === 'appointment') {
+      const list = await getAppointments();
+      const appointment = list.find(item => item.id === refundDialog.target?.businessId);
+      if (appointment?.paymentStatus === 'REFUNDED') {
+        await handleRefundSuccess();
+      }
+    } else {
+      const list = await getDrugReturns({ returnNo: refundDialog.target.returnNo });
+      const order = list.find(item => item.id === refundDialog.target?.key);
+      if (order?.status === 'RETURN_REFUNDED') {
+        await handleRefundSuccess();
+      }
+    }
+  } catch (error) {
+    if (isUnauthorized(error)) {
+      stopRefundStatusPolling();
+      redirectToLogin();
+    }
+  } finally {
+    refundDialog.checking = false;
+  }
+}
+
 async function handleQrPaymentSuccess(payment: PaymentOrder, paidItem: PendingFeeItem) {
   if (qrDialog.status === 'PAID') return;
   qrDialog.status = 'PAID';
   qrDialog.paymentId = payment.id;
   stopQrStatusPolling();
   await loadPaymentsPage();
+  if (qrDialog.flow === 'registration' && paidItem.businessType === 'APPOINTMENT') {
+    await Promise.all([loadSchedules(), refreshAppointments()]);
+    lastAppointment.value = appointments.value.find(item => item.id === paidItem.businessId) ?? lastAppointment.value;
+    ElMessage.success('挂号并收费成功');
+    return;
+  }
   if (paidItem.businessType === 'MEDICAL_ORDER') {
     const executor = medicalOrderExecutor(paidItem.businessId);
     ElMessage.success(executor ? `缴费成功，分配至：${executor}` : '缴费成功');
@@ -1190,16 +1369,39 @@ async function handleQrPaymentSuccess(payment: PaymentOrder, paidItem: PendingFe
   }
 }
 
+async function handleQrDialogClosed() {
+  const shouldAbortRegistration = qrDialog.flow === 'registration' && qrDialog.status !== 'PAID' && qrDialog.item;
+  const item = qrDialog.item;
+  resetQrDialog();
+  if (shouldAbortRegistration && item) {
+    await abortRegistrationAppointment(item);
+  }
+}
+
 function resetQrDialog() {
   stopQrStatusPolling();
   qrDialog.checking = false;
   qrDialog.status = '';
+  qrDialog.flow = 'payment';
   qrDialog.paymentId = '';
   qrDialog.channel = defaultQrChannel();
   qrDialog.qrSvg = '';
   qrDialog.qrLoading = false;
   qrDialog.qrError = '';
   qrDialog.item = undefined;
+}
+
+function resetRefundDialog() {
+  stopRefundStatusPolling();
+  refundDialog.checking = false;
+  refundDialog.status = '';
+  refundDialog.channel = defaultQrChannel();
+  refundDialog.qrSvg = '';
+  refundDialog.qrLoading = false;
+  refundDialog.qrError = '';
+  refundDialog.target = undefined;
+  refundingAppointmentId.value = '';
+  refundingReturnId.value = '';
 }
 
 function idTypeLabel(value?: string) {
@@ -1360,8 +1562,64 @@ async function confirmPatient() {
   }
 }
 
+function buildRegistrationPendingItem(appointment: Appointment): PendingFeeItem {
+  const amount = registrationFee(appointment.doctorId);
+  return {
+    businessKey: `APPOINTMENT:${appointment.id}`,
+    businessType: 'APPOINTMENT',
+    businessId: appointment.id,
+    patientId: appointment.patientId,
+    patientName: appointment.patientName,
+    feeType: 'REGISTRATION',
+    title: `${appointment.departmentName} · ${appointment.doctorName}`,
+    description: `${appointment.visitDate} ${normalizeStartTime(appointment.startTime) || appointment.period} · ${appointment.businessNo}`,
+    amount,
+    insuranceAmount: insuranceAmount('REGISTRATION', amount),
+    sortTime: `${appointment.visitDate} ${normalizeStartTime(appointment.startTime) || '00:00'}`
+  };
+}
+
+async function refreshAppointments() {
+  appointments.value = await getAppointments();
+  await syncPatientProfiles();
+}
+
+async function resolveAppointmentRefundAmount(row: Appointment) {
+  const payments = await getPayments({
+    businessId: row.id,
+    businessType: 'APPOINTMENT'
+  });
+  const payment = payments.find(item => ['PAID', 'REFUNDED'].includes(item.status)) ?? payments[0];
+  return Number(payment?.amount ?? registrationFee(row.doctorId));
+}
+
+function openRefundDialog(target: RefundDialogTarget) {
+  refundDialog.target = target;
+  refundDialog.checking = false;
+  refundDialog.channel = defaultQrChannel();
+  refundDialog.status = 'PENDING';
+  refundDialog.visible = true;
+  void loadRefundQrSvg();
+  startRefundStatusPolling();
+}
+
+async function abortRegistrationAppointment(item: PendingFeeItem) {
+  try {
+    await markTestPaymentFailure({
+      businessType: item.businessType,
+      businessId: item.businessId,
+      patientId: item.patientId
+    });
+    await Promise.all([loadSchedules(), refreshAppointments()]);
+    ElMessage.warning('未完成扫码缴费，本次挂号已取消');
+  } catch (error) {
+    ElMessage.error(errorMessage(error, '挂号未支付，自动取消失败'));
+  }
+}
+
 async function register() {
   registering.value = true;
+  let appointment: Appointment | undefined;
   try {
     const profile = await ensurePatientProfile();
     const option = selectedScheduleOption.value;
@@ -1370,7 +1628,8 @@ async function register() {
     if (!isFutureScheduleSlot(option)) throw new Error('该号源已过期，请刷新后重新选择');
     if (!isRegistrationDepartment(option.schedule.departmentId)) throw new Error('该科室不支持窗口挂号');
     const department = departments.value.find(item => item.id === option.schedule.departmentId);
-    lastAppointment.value = await createOfflineAppointment({
+    lastAppointment.value = undefined;
+    appointment = await createOfflineAppointment({
       scheduleId: option.slot.id,
       patientId: patientProfileId(profile),
       patientName: profile.name,
@@ -1385,9 +1644,11 @@ async function register() {
       triageSummary: '窗口线下挂号',
       registrationFee: registrationFee(option.schedule.doctorId)
     });
-    ElMessage.success('挂号并收款成功');
-    await loadSchedules();
+    await openQr(buildRegistrationPendingItem(appointment), 'registration');
   } catch (error) {
+    if (appointment) {
+      await abortRegistrationAppointment(buildRegistrationPendingItem(appointment));
+    }
     ElMessage.error(errorMessage(error, '线下挂号失败'));
   } finally {
     registering.value = false;
@@ -1395,33 +1656,64 @@ async function register() {
 }
 
 async function refund(row: Appointment) {
+  refundingAppointmentId.value = row.id;
   try {
-    await ElMessageBox.confirm(`确认退号并处理退款？${row.businessNo}`, '退号确认', { type: 'warning' });
-    await cancelAppointment(row.id);
-    ElMessage.success('退号成功，退款记录已生成');
-    await Promise.all([loadSchedules(), loadAppointmentRecordsPage()]);
+    const amount = await resolveAppointmentRefundAmount(row);
+    openRefundDialog({
+      key: row.id,
+      businessType: 'APPOINTMENT',
+      businessId: row.id,
+      patientId: row.patientId,
+      patientName: row.patientName,
+      amount,
+      title: '挂号费',
+      subtitle: `${row.departmentName} · ${row.doctorName}`,
+      pollType: 'appointment',
+      successTitle: '付款码已识别，退号退费成功',
+      successFooter: '退号退费成功',
+      successToast: '扫码退费成功，已完成退号'
+    });
   } catch (error) {
-    if (error !== 'cancel') ElMessage.error(errorMessage(error, '退号失败'));
+    ElMessage.error(errorMessage(error, '退号失败'));
+    refundingAppointmentId.value = '';
   }
+}
+
+async function handleRefundSuccess() {
+  if (!refundDialog.target || refundDialog.status === 'REFUNDED') return;
+  const target = refundDialog.target;
+  refundDialog.status = 'REFUNDED';
+  stopRefundStatusPolling();
+  if (target.pollType === 'appointment') {
+    await Promise.all([loadSchedules(), refreshAppointments()]);
+  } else {
+    await loadDrugReturnRefundPage();
+  }
+  ElMessage.success(target.successToast);
 }
 
 async function refundDrug(row: DrugReturnOrder) {
   refundingReturnId.value = row.id;
   try {
-    await ElMessageBox.confirm(`确认完成退药退费？${row.returnNo}`, '退药退费确认', { type: 'warning' });
-    await refundDrugReturn({
-      returnId: row.id,
-      prescriptionId: row.prescriptionId,
+    openRefundDialog({
+      key: row.id,
+      businessType: 'PRESCRIPTION',
+      businessId: row.prescriptionId,
       patientId: row.patientId,
-      amount: row.totalAmount,
-      reason: `退药单 ${row.returnNo}`
+      patientName: row.patientName,
+      amount: Number(row.totalAmount ?? 0),
+      title: '退药退费',
+      subtitle: `${row.returnNo} · ${row.prescriptionNo}`,
+      returnId: row.id,
+      returnNo: row.returnNo,
+      pollType: 'drugReturn',
+      successTitle: '付款码已识别，退药退费成功',
+      successFooter: '退药退费成功',
+      successToast: '扫码退费成功，退药状态已同步'
     });
-    ElMessage.success('退费完成，退药状态已同步');
-    await loadDrugReturnRefundPage();
   } catch (error) {
-    if (error !== 'cancel') ElMessage.error(errorMessage(error, '退药退费失败'));
-  } finally {
     refundingReturnId.value = '';
+    ElMessage.error(errorMessage(error, '退药退费失败'));
   }
 }
 
@@ -1432,7 +1724,7 @@ function printRegistrationSlip(row: Appointment) {
 }
 
 function canRefundAppointment(row: Appointment) {
-  return !['CANCELLED', 'FINISHED', 'IN_VISIT'].includes(row.status);
+  return row.paymentStatus === 'PAID' && !['CANCELLED', 'FINISHED', 'IN_VISIT'].includes(row.status);
 }
 
 function appointmentPatientIdNumber(row: Appointment) {
@@ -1442,6 +1734,14 @@ function appointmentPatientIdNumber(row: Appointment) {
 function appointmentRoomName(row: Appointment) {
   const slotId = row.slotId || row.scheduleId || '';
   return slotRoomNameMap.value.get(slotId) || doctorMap.value.get(row.doctorId)?.roomName || '-';
+}
+
+function appointmentRecordAmount(row: Appointment) {
+  const payment = paymentRecords.value
+    .filter(item => item.businessType === 'APPOINTMENT' && item.businessId === row.id)
+    .filter(item => ['PAID', 'REFUNDED', 'PENDING'].includes(item.status))
+    .sort((left, right) => (right.paidAt || right.createdAt || '').localeCompare(left.paidAt || left.createdAt || ''))[0];
+  return Number(payment?.amount ?? registrationFee(row.doctorId));
 }
 
 function summarize(key: FeeType, label: string) {
@@ -1654,8 +1954,8 @@ watch(() => qrDialog.visible, (visible) => {
   if (!visible) stopQrStatusPolling();
 });
 
-watch(qrScanUrl, () => {
-  void loadQrSvg();
+watch(() => refundDialog.visible, (visible) => {
+  if (!visible) stopRefundStatusPolling();
 });
 
 watch(registrationDepartments, (options) => {
@@ -1681,6 +1981,7 @@ onBeforeUnmount(() => {
   if (nowTimer) window.clearInterval(nowTimer);
   if (autoSearchTimer) window.clearTimeout(autoSearchTimer);
   stopQrStatusPolling();
+  stopRefundStatusPolling();
 });
 </script>
 

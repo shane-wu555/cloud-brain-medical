@@ -28,11 +28,13 @@ public class SecurityConfig {
     }
     @Bean SecurityFilterChain chain(HttpSecurity http, JwtAuthenticationConverter converter) throws Exception {
         return http.csrf(csrf -> csrf.disable()).sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .authorizeHttpRequests(a -> a.requestMatchers(
+                        .authorizeHttpRequests(a -> a.requestMatchers(
                                 "/actuator/health",
                                 "/api/internal/**",
                                 "/api/payments/scan-entry",
-                                "/api/payments/qr-code")
+                                "/api/payments/qr-code",
+                                "/api/refunds/scan-entry",
+                                "/api/refunds/qr-code")
                         .permitAll()
                         .anyRequest()
                         .authenticated())
