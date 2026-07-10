@@ -1,6 +1,6 @@
 <template>
   <patient-nav-bar title="AI 智能问诊" />
-  <view class="page consultation-page">
+  <view class="page consultation-page" :style="{ height: consultationPageHeight }">
     <scroll-view class="chat-panel" scroll-y :scroll-into-view="scrollAnchor">
       <view class="intro">
         <view class="intro-icon">🤒</view>
@@ -147,6 +147,7 @@ interface ChatMessage {
 }
 
 const auth = useAuthStore();
+const statusBarHeight = uni.getSystemInfoSync().statusBarHeight ?? 0;
 const input = ref('');
 const loading = ref(false);
 const consultationId = ref('');
@@ -163,6 +164,7 @@ const messages = ref<ChatMessage[]>([
 
 const quickSymptoms = ['头晕', '恶心', '发烧', '头痛', '咳嗽', '腹痛', '胸闷', '乏力'];
 const selectedSymptoms = ref<string[]>([]);
+const consultationPageHeight = computed(() => `calc(100vh - ${statusBarHeight}px - 96rpx)`);
 
 const placeholder = computed(() =>
   consultationId.value ? '补充回答 AI 的追问...' : '例如：头痛 2 天，伴有恶心，夜间加重...'
@@ -342,7 +344,6 @@ function formatDateLabel(dateStr: string) {
 
 <style scoped>
 .consultation-page {
-  height: calc(100vh - var(--status-bar-height, 0px) - 96rpx);
   min-height: 0;
   padding: 0;
   background: var(--patient-theme-page-bg);
