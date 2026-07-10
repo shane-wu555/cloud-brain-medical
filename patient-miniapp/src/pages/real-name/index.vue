@@ -5,27 +5,25 @@
       <view class="block-title"><text></text>就诊人信息</view>
       <view v-if="auth.patients.length" class="patient-list">
         <view v-for="patient in auth.patients" :key="patient.id" class="patient-row">
-          <view>
-            <view class="patient-name">{{ patient.name }}</view>
-            <view class="muted">{{ idTypeLabel(patient.idType) }} {{ patient.idNumber }}</view>
-            <view class="muted">{{ genderLabel(patient.gender) }} · {{ patient.birthDate || '未填出生日期' }}</view>
-            <view :class="['insurance-status', patient.medicalInsuranceBound && 'insurance-status--bound']">
-              {{ patient.medicalInsuranceBound ? patient.medicalInsuranceNo || '已绑定医保电子凭证' : '未绑定医保卡' }}
+          <view class="patient-top">
+            <view class="patient-info">
+              <view class="patient-name">{{ patient.name }}</view>
+              <view class="patient-meta">{{ patient.idNumber }}</view>
+              <view class="patient-meta">{{ genderLabel(patient.gender) }} · {{ patient.birthDate || '未填出生日期' }}</view>
             </view>
-          </view>
-          <view class="patient-actions">
             <text
-              class="mini-action"
-              :disabled="auth.boundPatient?.id === patient.id"
+              :class="['bind-btn', auth.boundPatient?.id === patient.id ? 'bind-btn--bound' : '']"
               @tap="bind(patient.id)"
             >
               {{ auth.boundPatient?.id === patient.id ? '已绑定' : '绑定' }}
             </text>
+          </view>
+          <view class="patient-actions">
             <text
-              :class="['mini-action', 'insurance-action', patient.medicalInsuranceBound && 'insurance-action--done']"
+              :class="['insurance-btn', patient.medicalInsuranceBound && 'insurance-btn--done']"
               @tap="bindInsurance(patient.id)"
             >
-              {{ patient.medicalInsuranceBound ? '已认证' : '微信医保认证' }}
+              {{ patient.medicalInsuranceBound ? '已医保认证' : '微信医保认证' }}
             </text>
           </view>
         </view>
@@ -265,22 +263,23 @@ function fillBirthDateFromIdCard() {
 <style scoped>
 .patient-page {
   padding-top: 0;
+  padding-bottom: 40rpx;
   background: var(--patient-theme-page-bg);
 }
 
 .form-card {
-  margin-bottom: 24rpx;
-  padding: 0 30rpx;
-  border-radius: 18rpx;
+  margin: 28rpx 0 0;
+  padding: 26rpx 30rpx 30rpx;
+  border-radius: 20rpx;
   background: #fff;
-  box-shadow: 0 10rpx 30rpx rgba(31, 84, 140, 0.08);
+  box-shadow: 0 8rpx 26rpx rgba(31, 84, 140, 0.06);
 }
 
 .block-title {
   display: flex;
   align-items: center;
   gap: 14rpx;
-  padding: 30rpx 0 18rpx;
+  padding: 0 0 20rpx;
   color: var(--patient-theme-strong);
   font-size: 34rpx;
   font-weight: 800;
@@ -296,72 +295,113 @@ function fillBirthDateFromIdCard() {
 .patient-list {
   display: flex;
   flex-direction: column;
+  gap: 18rpx;
 }
 
 .patient-row {
   display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+  padding: 24rpx 26rpx;
+  border-radius: 16rpx;
+  background: var(--patient-theme-softest);
+  border: 1px solid var(--patient-theme-border);
+}
+
+.patient-top {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
   justify-content: space-between;
-  align-items: center;
-  gap: 20rpx;
-  padding: 24rpx 0;
-  border-bottom: 1px solid #e2e8f0;
+  gap: 18rpx;
+}
+
+.patient-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+}
+
+.patient-name {
+  color: #0d3d5c;
+  font-size: 34rpx;
+  font-weight: 700;
+  letter-spacing: 0.5rpx;
+}
+
+.patient-meta {
+  color: #5d6f82;
+  font-size: 27rpx;
+  line-height: 1.5;
+  letter-spacing: 0.3rpx;
 }
 
 .patient-actions {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 12rpx;
+  flex-direction: row;
+}
+
+.bind-btn {
   flex-shrink: 0;
-}
-
-.patient-name {
-  color: #0f172a;
-  font-size: 32rpx;
-  font-weight: 700;
-}
-
-.mini-action {
-  display: inline-block;
-  min-width: 120rpx;
-  padding: 14rpx 20rpx;
-  border-radius: 999rpx;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 110rpx;
+  height: 56rpx;
+  padding: 0 22rpx;
+  border-radius: 12rpx;
   background: var(--patient-theme-soft);
   color: var(--patient-theme-strong);
-  font-size: 24rpx;
+  font-size: 26rpx;
   font-weight: 700;
-  text-align: center;
+  letter-spacing: 0.5rpx;
+  box-shadow: 0 4rpx 10rpx rgba(8, 153, 165, 0.08);
 }
 
-.insurance-action {
-  min-width: 176rpx;
-  background: #ecfdf5;
-  color: #0f766e;
-}
-
-.insurance-action--done {
+.bind-btn--bound {
   background: #f1f5f9;
   color: #64748b;
 }
 
-.insurance-status {
+.insurance-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 66rpx;
+  border-radius: 14rpx;
+  background: #ecfdf5;
+  color: #0f766e;
+  font-size: 27rpx;
+  font-weight: 700;
+  letter-spacing: 0.5rpx;
+}
+
+.insurance-btn--done {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.insurance-tag {
   display: inline-block;
-  margin-top: 10rpx;
-  padding: 6rpx 14rpx;
+  padding: 4rpx 12rpx;
   border-radius: 999rpx;
   background: #fff7ed;
   color: #c2410c;
-  font-size: 23rpx;
-  font-weight: 700;
+  font-size: 22rpx;
+  font-weight: 600;
+  align-self: flex-start;
 }
 
-.insurance-status--bound {
+.insurance-tag--bound {
   background: #dcfce7;
   color: #166534;
 }
 
 .empty {
-  padding: 20rpx 0 34rpx;
+  padding: 20rpx 0 10rpx;
   color: #64748b;
   font-size: 28rpx;
 }
@@ -370,15 +410,19 @@ function fillBirthDateFromIdCard() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 104rpx;
-  border-bottom: 1px solid #e8edf3;
+  min-height: 96rpx;
+  border-bottom: 1px solid #eef2f6;
+}
+
+.form-row:last-of-type {
+  border-bottom: none;
 }
 
 .field-label {
   flex-shrink: 0;
   color: #2f3542;
-  font-size: 32rpx;
-  font-weight: 700;
+  font-size: 31rpx;
+  font-weight: 600;
 }
 
 .required {
@@ -389,7 +433,7 @@ function fillBirthDateFromIdCard() {
   flex: 1;
   min-width: 0;
   color: #1f2937;
-  font-size: 31rpx;
+  font-size: 30rpx;
   text-align: right;
 }
 
@@ -399,7 +443,7 @@ function fillBirthDateFromIdCard() {
 
 .field-value {
   color: #2f3542;
-  font-size: 31rpx;
+  font-size: 30rpx;
 }
 
 .birth-row {
@@ -414,34 +458,34 @@ function fillBirthDateFromIdCard() {
   flex: 1;
   min-width: 0;
   color: #2f3542;
-  font-size: 30rpx;
+  font-size: 29rpx;
 }
 
 .birth-input {
   width: 76rpx;
-  height: 64rpx;
+  height: 60rpx;
   border-radius: 10rpx;
   background: var(--patient-theme-softest);
   color: #1f2937;
-  font-size: 30rpx;
+  font-size: 29rpx;
   text-align: center;
 }
 
 .year-input {
-  width: 120rpx;
+  width: 114rpx;
 }
 
 .chevron {
-  margin-left: 12rpx;
+  margin-left: 10rpx;
   color: #a9b2bf;
-  font-size: 48rpx;
+  font-size: 46rpx;
   vertical-align: -4rpx;
 }
 
 .submit-button {
   height: 86rpx;
-  margin: 34rpx 0 30rpx;
-  border-radius: 12rpx;
+  margin: 30rpx 0 12rpx;
+  border-radius: 14rpx;
   background: linear-gradient(135deg, var(--patient-theme) 0%, var(--patient-theme-strong) 100%);
   color: #fff;
   font-size: 32rpx;

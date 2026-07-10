@@ -10,6 +10,7 @@ type MedicalIconName =
   | 'calendar-days'
   | 'clipboard-list'
   | 'flask-conical'
+  | 'home'
   | 'hospital'
   | 'microscope'
   | 'pill-bottle'

@@ -18,7 +18,7 @@ function toError(error: unknown, url: string): Error {
 export async function request<T>(options: UniApp.RequestOptions): Promise<T> {
   const url = `${API_BASE_URL}${options.url}`;
   const requestPath = typeof options.url === 'string' ? options.url : '';
-  const isAuthRequest = requestPath.startsWith('/auth/');
+  const isAuthRequest = requestPath.startsWith('/auth/') && requestPath !== '/auth/change-password';
   const token = isAuthRequest ? '' : uni.getStorageSync('access_token');
 
   return new Promise<T>((resolve, reject) => {

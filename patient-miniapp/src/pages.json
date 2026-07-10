@@ -2,6 +2,9 @@
   "pages": [
     { "path": "pages/login/index", "style": { "navigationBarTitleText": "患者登录" } },
     { "path": "pages/home/index", "style": { "navigationBarTitleText": "智慧云脑诊疗" } },
+    { "path": "pages/visit-records/index", "style": { "navigationBarTitleText": "就诊记录" } },
+    { "path": "pages/my/index", "style": { "navigationBarTitleText": "我的" } },
+    { "path": "pages/profile/index", "style": { "navigationBarTitleText": "个人信息" } },
     { "path": "pages/real-name/index", "style": { "navigationBarTitleText": "就诊人管理" } },
     { "path": "pages/consultation/index", "style": { "navigationBarTitleText": "AI 智能问诊" } },
     { "path": "pages/search/index", "style": { "navigationBarTitleText": "搜索" } },
@@ -18,5 +21,26 @@
     "navigationBarBackgroundColor": "#0899a5",
     "navigationStyle": "custom",
     "backgroundColor": "#eef8f8"
+  },
+  "tabBar": {
+    "custom": true,
+    "color": "#9aa8ba",
+    "selectedColor": "#0899a5",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "white",
+    "list": [
+      {
+        "pagePath": "pages/home/index",
+        "text": "首页"
+      },
+      {
+        "pagePath": "pages/visit-records/index",
+        "text": "就诊记录"
+      },
+      {
+        "pagePath": "pages/my/index",
+        "text": "我的"
+      }
+    ]
   }
 }

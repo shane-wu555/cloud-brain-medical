@@ -1,0 +1,233 @@
+<template>
+  <patient-nav-bar title="就诊记录" />
+  <view class="page records-page">
+    <view v-if="loading" class="loading-hint">加载中...</view>
+
+    <block v-else-if="groupedRecords.length">
+      <view v-for="group in groupedRecords" :key="group.label" class="record-group">
+        <view class="group-label">{{ group.label }}</view>
+        <view
+          v-for="item in group.items"
+          :key="item.id"
+          class="card record-item"
+          @tap="goDetail(item)"
+        >
+          <view class="record-header">
+            <view class="record-dept">{{ item.departmentName }}</view>
+            <view :class="['status-tag', item.status]">{{ statusLabel(item.status) }}</view>
+          </view>
+          <view class="record-meta">
+            <text>{{ item.doctorName }}</text>
+            <text class="record-date">{{ item.visitDate }}</text>
+          </view>
+          <view v-if="item.type" class="record-type-tag">{{ item.type }}</view>
+        </view>
+      </view>
+    </block>
+
+    <view v-else class="empty-hint">暂无就诊记录</view>
+  </view>
+
+  <patient-tab-bar current="records" />
+</template>
+
+<script setup lang="ts">
+import { computed, ref } from 'vue';
+import { onShow } from '@dcloudio/uni-app';
+import { request } from '../../api/http';
+import { useAuthStore } from '../../stores/auth';
+
+interface VisitRecord {
+  id: string;
+  doctorName: string;
+  departmentName: string;
+  visitDate: string;
+  status: string;
+  type?: string;
+}
+
+const auth = useAuthStore();
+const records = ref<VisitRecord[]>([]);
+const loading = ref(true);
+
+const groupedRecords = computed(() => {
+  const groups: Record<string, VisitRecord[]> = {};
+  for (const r of records.value) {
+    const label = r.visitDate ? r.visitDate.slice(0, 7) : '';
+    if (!label) continue;
+    if (!groups[label]) groups[label] = [];
+    groups[label].push(r);
+  }
+  return Object.entries(groups)
+    .sort((a, b) => b[0].localeCompare(a[0]))
+    .map(([label, items]) => {
+      items.sort((a, b) => b.visitDate.localeCompare(a.visitDate));
+      return { label, items };
+    });
+});
+
+function statusLabel(status: string) {
+  const map: Record<string, string> = {
+    DRAFT: '待完善',
+    ACTIVE: '就诊中',
+    ARCHIVED: '已归档',
+    COMPLETED: '已完成',
+    CANCELLED: '已取消',
+    PENDING: '待就诊',
+    PENDING_PAYMENT: '待缴费',
+    WAITING: '待就诊',
+    CONFIRMED: '已确认',
+    IN_PROGRESS: '进行中',
+    REFUNDED: '已退费',
+    FAILED: '已失效',
+    PAID: '已缴费',
+    UNPAID: '未缴费'
+  };
+  return map[status] || status;
+}
+
+onShow(async () => {
+  if (!auth.token) {
+    uni.reLaunch({ url: '/pages/login/index' });
+    return;
+  }
+  loading.value = true;
+  try {
+    await auth.loadProfile();
+    const patient = auth.boundPatient;
+    if (!patient) {
+      records.value = [];
+      return;
+    }
+    const [appointments, medicalRecords] = await Promise.all([
+      request<any[]>({ url: `/appointments?patientId=${encodeURIComponent(patient.id)}`, method: 'GET' }).catch(() => []),
+      request<any[]>({ url: `/medical-records?patientId=${encodeURIComponent(patient.id)}`, method: 'GET' }).catch(() => [])
+    ]);
+    const merged: VisitRecord[] = [
+      ...(Array.isArray(appointments) ? appointments : [])
+        .filter((a: any) => a.scheduledDate || a.appointmentDate)
+        .map((a: any) => ({
+          doctorName: a.doctorName || '',
+          departmentName: a.departmentName || '',
+          visitDate: a.scheduledDate || a.appointmentDate || '',
+          status: a.status || 'PENDING',
+          id: a.id || '',
+          type: '挂号'
+        })),
+      ...(Array.isArray(medicalRecords) ? medicalRecords : [])
+        .filter((m: any) => m.visitDate)
+        .map((m: any) => ({
+          doctorName: m.doctorName || '',
+          departmentName: m.departmentName || '',
+          visitDate: m.visitDate || '',
+          status: m.status || 'ACTIVE',
+          id: m.id || '',
+          type: '就诊'
+        }))
+    ];
+    records.value = merged.sort((a, b) => (b.visitDate || '').localeCompare(a.visitDate || ''));
+  } catch (e: any) {
+    uni.showToast({ title: e?.message || '加载失败', icon: 'none' });
+  } finally {
+    loading.value = false;
+  }
+});
+
+function goDetail(item: VisitRecord) {
+  if (item.type === '就诊') {
+    uni.navigateTo({ url: '/pages/medical-records/index' });
+  } else {
+    uni.navigateTo({ url: '/pages/appointments/index' });
+  }
+}
+</script>
+
+<style scoped>
+.records-page {
+  padding-bottom: 140rpx;
+}
+
+.loading-hint,
+.empty-hint {
+  text-align: center;
+  color: #9aa8ba;
+  font-size: 28rpx;
+  padding: 80rpx 0;
+}
+
+.record-group {
+  margin-bottom: 28rpx;
+}
+
+.group-label {
+  color: #718096;
+  font-size: 26rpx;
+  font-weight: 600;
+  margin-bottom: 16rpx;
+  padding-left: 6rpx;
+}
+
+.record-item {
+  margin-bottom: 16rpx;
+}
+
+.record-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12rpx;
+}
+
+.record-dept {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #143450;
+}
+
+.record-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #718096;
+  font-size: 26rpx;
+  margin-bottom: 8rpx;
+}
+
+.record-type-tag {
+  display: inline-block;
+  padding: 4rpx 14rpx;
+  border-radius: 999rpx;
+  background: var(--patient-theme-soft);
+  color: var(--patient-theme-strong);
+  font-size: 22rpx;
+  font-weight: 500;
+}
+
+.status-tag {
+  padding: 4rpx 12rpx;
+  border-radius: 999rpx;
+  font-size: 22rpx;
+}
+
+.status-tag.ACTIVE,
+.status-tag.PENDING {
+  background: #ecfeff;
+  color: #0f766e;
+}
+
+.status-tag.COMPLETED,
+.status-tag.ARCHIVED {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.status-tag.CANCELLED {
+  background: #fff5f5;
+  color: #c53030;
+}
+
+.status-tag.DRAFT {
+  background: #fff7ed;
+  color: #c2410c;
+}
+</style>

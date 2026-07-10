@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <patient-nav-bar :title="mode === 'record' ? '缴费退费记录' : '待缴费项目'" />
   <view class="page">
     <view v-if="mode === 'record'">
@@ -6,7 +6,7 @@
         v-for="item in sortedFinancialRecords"
         :key="`${item.kind}-${item.id}`"
         :class="['card', 'item-row', 'payment-record', { payable: isPendingFinancialRecord(item), refund: item.kind === 'refund' }]"
-        @click="openPendingPayment(item)"
+        @tap="openPendingPayment(item)"
       >
         <view class="item-main">
           <view class="item-title">{{ paymentRecordTitle(item) }}</view>
@@ -59,97 +59,102 @@
       </view>
     </view>
 
-    <view v-if="registrationItems.length" class="card">
+    <view v-if="registrationItems.length" class="card fee-card fee-registration">
       <view class="section-head">
+        <view class="section-icon reg-icon">号</view>
         <view class="section-title">挂号费</view>
-        <view class="muted">{{ registrationItems.length }} 项</view>
+        <view class="section-count">{{ registrationItems.length }} 项</view>
       </view>
       <view v-for="item in registrationItems" :key="item.businessId" class="item-row">
         <view class="item-main">
           <view class="item-title">{{ item.title }}</view>
           <view class="item-desc">{{ item.description }}</view>
-          <view v-if="item.note" class="muted">{{ item.note }}</view>
+          <view v-if="item.note" class="pending-badge">{{ item.note }}</view>
         </view>
         <view class="item-actions">
           <view class="amount">¥{{ amountText(item.amount) }}</view>
           <view class="insurance-price">医保参考 ¥{{ amountText(item.insuranceAmount) }}</view>
-          <button class="button mini-pay" @click="openPaymentDialog(item)">去缴费</button>
+          <button class="button mini-pay" @tap="openPaymentDialog(item)">去缴费</button>
         </view>
       </view>
     </view>
 
-    <view v-if="checkItems.length" class="card">
+    <view v-if="checkItems.length" class="card fee-card fee-check">
       <view class="section-head">
+        <view class="section-icon check-icon">查</view>
         <view class="section-title">检查费</view>
-        <view class="muted">{{ checkItems.length }} 项</view>
+        <view class="section-count">{{ checkItems.length }} 项</view>
       </view>
       <view v-for="item in checkItems" :key="item.businessId" class="item-row">
         <view class="item-main">
           <view class="item-title">{{ item.title }}</view>
           <view class="item-desc">{{ item.description }}</view>
-          <view v-if="item.note" class="muted">{{ item.note }}</view>
+          <view v-if="item.note" class="pending-badge">{{ item.note }}</view>
         </view>
         <view class="item-actions">
           <view class="amount">¥{{ amountText(item.amount) }}</view>
           <view class="insurance-price">医保参考 ¥{{ amountText(item.insuranceAmount) }}</view>
-          <button class="button mini-pay" @click="openPaymentDialog(item)">去缴费</button>
+          <button class="button mini-pay" @tap="openPaymentDialog(item)">去缴费</button>
         </view>
       </view>
     </view>
 
-    <view v-if="labItems.length" class="card">
+    <view v-if="labItems.length" class="card fee-card fee-lab">
       <view class="section-head">
+        <view class="section-icon lab-icon">检</view>
         <view class="section-title">检验费</view>
-        <view class="muted">{{ labItems.length }} 项</view>
+        <view class="section-count">{{ labItems.length }} 项</view>
       </view>
       <view v-for="item in labItems" :key="item.businessId" class="item-row">
         <view class="item-main">
           <view class="item-title">{{ item.title }}</view>
           <view class="item-desc">{{ item.description }}</view>
-          <view v-if="item.note" class="muted">{{ item.note }}</view>
+          <view v-if="item.note" class="pending-badge">{{ item.note }}</view>
         </view>
         <view class="item-actions">
           <view class="amount">¥{{ amountText(item.amount) }}</view>
           <view class="insurance-price">医保参考 ¥{{ amountText(item.insuranceAmount) }}</view>
-          <button class="button mini-pay" @click="openPaymentDialog(item)">去缴费</button>
+          <button class="button mini-pay" @tap="openPaymentDialog(item)">去缴费</button>
         </view>
       </view>
     </view>
 
-    <view v-if="disposalItems.length" class="card">
+    <view v-if="disposalItems.length" class="card fee-card fee-disposal">
       <view class="section-head">
+        <view class="section-icon disposal-icon">处</view>
         <view class="section-title">处置费</view>
-        <view class="muted">{{ disposalItems.length }} 项</view>
+        <view class="section-count">{{ disposalItems.length }} 项</view>
       </view>
       <view v-for="item in disposalItems" :key="item.businessId" class="item-row">
         <view class="item-main">
           <view class="item-title">{{ item.title }}</view>
           <view class="item-desc">{{ item.description }}</view>
-          <view v-if="item.note" class="muted">{{ item.note }}</view>
+          <view v-if="item.note" class="pending-badge">{{ item.note }}</view>
         </view>
         <view class="item-actions">
           <view class="amount">¥{{ amountText(item.amount) }}</view>
           <view class="insurance-price">医保参考 ¥{{ amountText(item.insuranceAmount) }}</view>
-          <button class="button mini-pay" @click="openPaymentDialog(item)">去缴费</button>
+          <button class="button mini-pay" @tap="openPaymentDialog(item)">去缴费</button>
         </view>
       </view>
     </view>
 
-    <view v-if="prescriptionItems.length" class="card">
+    <view v-if="prescriptionItems.length" class="card fee-card fee-drug">
       <view class="section-head">
+        <view class="section-icon drug-icon">药</view>
         <view class="section-title">药费</view>
-        <view class="muted">{{ prescriptionItems.length }} 项</view>
+        <view class="section-count">{{ prescriptionItems.length }} 项</view>
       </view>
       <view v-for="item in prescriptionItems" :key="item.businessId" class="item-row">
         <view class="item-main">
           <view class="item-title">{{ item.title }}</view>
           <view class="item-desc">{{ item.description }}</view>
-          <view v-if="item.note" class="muted">{{ item.note }}</view>
+          <view v-if="item.note" class="pending-badge">{{ item.note }}</view>
         </view>
         <view class="item-actions">
           <view class="amount">¥{{ amountText(item.amount) }}</view>
           <view class="insurance-price">医保参考 ¥{{ amountText(item.insuranceAmount) }}</view>
-          <button class="button mini-pay" @click="openPaymentDialog(item)">去缴费</button>
+          <button class="button mini-pay" @tap="openPaymentDialog(item)">去缴费</button>
         </view>
       </view>
     </view>
@@ -665,7 +670,7 @@ async function load() {
       feeType: 'REGISTRATION' as const,
       title: `${item.departmentName} · ${item.doctorName}`,
       description: `${item.visitDate} ${item.period}`,
-      note: `当前状态：${appointmentStatusLabel(item)}，挂号后需完成缴费才能正常就诊`,
+      note: `待缴费`,
       amount: paymentByBusinessId.get(item.id)?.amount ?? 0.01,
       insuranceAmount: insuranceAmount({
         feeType: 'REGISTRATION',
@@ -683,7 +688,7 @@ async function load() {
       feeType: item.orderType,
       title: item.itemName,
       description: `${orderTypeLabel(item.orderType)} · ${urgencyLabel(item.urgency)}`,
-      note: `当前状态：${medicalOrderStatusLabel(item.status, item.paymentStatus)}`,
+      note: `待缴费`,
       amount: item.amount,
       insuranceAmount: insuranceAmount({ feeType: item.orderType, amount: item.amount }),
       sortTime: item.createdAt || ''
@@ -698,7 +703,7 @@ async function load() {
       feeType: 'DRUG' as const,
       title: '药费',
       description: item.diagnosis || '待医生确认诊断',
-      note: `当前状态：${prescriptionStatusLabel(item.status)}`,
+      note: `待缴费`,
       amount: item.totalAmount,
       insuranceAmount: insuranceAmount({ feeType: 'DRUG', amount: item.totalAmount }),
       sortTime: item.confirmedAt || item.createdAt || ''
@@ -729,6 +734,7 @@ async function pay(item: PendingItem, method: 'WECHAT' | 'MEDICAL_INSURANCE') {
       uni.showToast({ title: '请先前往就诊人管理绑定认证', icon: 'none' });
       return;
     }
+    uni.showLoading({ title: '处理中…', mask: true });
     const channelTradePrefix = method === 'MEDICAL_INSURANCE' ? 'mi' : 'wx';
     await request({
       url: '/payments/orders',
@@ -752,10 +758,12 @@ async function pay(item: PendingItem, method: 'WECHAT' | 'MEDICAL_INSURANCE') {
         channelTradeNo: `${channelTradePrefix}-${item.businessType.toLowerCase()}-${item.businessId}-${Date.now()}`
       }
     });
+    uni.hideLoading();
     uni.showToast({ title: method === 'MEDICAL_INSURANCE' ? '医保缴费成功' : '缴费成功', icon: 'success' });
     closePaymentDialog();
     await load();
   } catch (error) {
+    uni.hideLoading();
     uni.showToast({ title: (error as Error).message, icon: 'none' });
   }
 }
@@ -932,15 +940,75 @@ onShow(load);
 
 .section-head {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 16rpx;
+  gap: 14rpx;
+  margin-bottom: 20rpx;
+}
+
+.section-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48rpx;
+  height: 48rpx;
+  border-radius: 14rpx;
+  font-size: 26rpx;
+  font-weight: 800;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.reg-icon { background: linear-gradient(135deg, #0cbdcc 0%, #0899a5 100%); }
+.check-icon { background: linear-gradient(135deg, #F0A860 0%, #E08840 100%); }
+.lab-icon { background: linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%); }
+.disposal-icon { background: linear-gradient(135deg, #E88870 0%, #D06050 100%); }
+.drug-icon { background: linear-gradient(135deg, #5CBF98 0%, #3DA878 100%); }
+
+.section-count {
+  margin-left: auto;
+  padding: 4rpx 16rpx;
+  border-radius: 999rpx;
+  background: #f1f5f9;
+  color: #64748b;
+  font-size: 22rpx;
+  font-weight: 600;
 }
 
 .section-title {
-  color: #0f766e;
+  color: #0f172a;
   font-size: 30rpx;
   font-weight: 700;
+}
+
+.fee-card {
+  border-left: 6rpx solid transparent;
+  overflow: hidden;
+}
+
+.fee-registration { border-left-color: #0899a5; }
+.fee-check { border-left-color: #E08840; }
+.fee-lab { border-left-color: #7C3AED; }
+.fee-disposal { border-left-color: #D06050; }
+.fee-drug { border-left-color: #3DA878; }
+
+.pending-badge {
+  display: inline-block;
+  align-self: flex-start;
+  margin-top: 6rpx;
+  padding: 4rpx 18rpx;
+  border-radius: 999rpx;
+  background: linear-gradient(135deg, #FF6B6B 0%, #EE5A24 100%);
+  color: #fff;
+  font-size: 22rpx;
+  font-weight: 600;
+  line-height: 1.6;
+  box-shadow: 0 4rpx 12rpx rgba(238, 90, 36, 0.35);
+  animation: badge-pulse 2s ease-in-out infinite;
+}
+
+@keyframes badge-pulse {
+  0%, 100% { box-shadow: 0 4rpx 12rpx rgba(238, 90, 36, 0.35); }
+  50% { box-shadow: 0 4rpx 20rpx rgba(238, 90, 36, 0.55); }
 }
 
 .category-grid {

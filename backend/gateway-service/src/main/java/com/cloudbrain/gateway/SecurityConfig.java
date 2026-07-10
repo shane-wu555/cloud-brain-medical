@@ -40,7 +40,7 @@ public class SecurityConfig {
                 .csrf(ServerHttpSecurity.CsrfSpec::disable)
                 .authorizeExchange(exchange -> exchange
                         .pathMatchers("/api/auth/login", "/api/auth/register", "/api/auth/sms-codes",
-                                "/api/auth/sms-login", "/api/auth/reset-password", "/actuator/health",
+                                "/api/auth/sms-login", "/api/auth/reset-password", "/api/auth/change-password", "/actuator/health",
                                 "/api/payments/qr-code", "/api/payments/scan-entry",
                                 "/api/refunds/qr-code", "/api/refunds/scan-entry").permitAll()
                         .anyExchange().authenticated())

@@ -142,6 +142,13 @@ export const useAuthStore = defineStore('auth', {
         data: { phone, smsCode, newPassword }
       });
     },
+    async changePassword(oldPassword: string, newPassword: string) {
+      await request<void>({
+        url: '/auth/change-password',
+        method: 'POST',
+        data: { oldPassword, newPassword }
+      });
+    },
     async loadProfile() {
       const state = await request<PatientAccountState>({ url: '/patients/me', method: 'GET' });
       this.patients = state.patients || state.profiles || [];

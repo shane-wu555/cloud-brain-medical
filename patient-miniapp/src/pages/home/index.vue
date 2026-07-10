@@ -20,7 +20,7 @@
           {{ auth.boundPatient ? `${auth.boundPatient.name} 的电子就诊卡` : '请先添加就诊人' }}
         </view>
         <view class="patient-subtitle">
-          {{ auth.boundPatient ? `门诊号：${auth.boundPatient.id}` : '绑定后可使用挂号、缴费、报告和病历服务' }}
+          {{ auth.boundPatient ? '已绑定就诊人' : '绑定后可使用挂号、缴费、报告和病历服务' }}
         </view>
       </view>
       <button class="switch-button" @tap="go('/pages/real-name/index')">
@@ -72,6 +72,8 @@
       </view>
     </view>
   </view>
+
+  <patient-tab-bar current="home" />
 </template>
 
 <script setup lang="ts">
@@ -140,6 +142,7 @@ function go(url: string) {
 <style scoped>
 .home-page {
   padding-top: 0;
+  padding-bottom: 140rpx;
   background: linear-gradient(
     180deg,
     var(--patient-theme) 0%,
