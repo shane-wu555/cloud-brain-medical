@@ -11,6 +11,7 @@ import com.cloudbrain.medicalorder.audit.AuditPublisher;
 import com.cloudbrain.medicalorder.controller.MedicalOrderController;
 import com.cloudbrain.medicalorder.domain.MedicalOrder;
 import com.cloudbrain.medicalorder.repository.MedicalOrderRepository;
+import com.cloudbrain.medicalorder.service.NotificationClient;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -25,7 +26,7 @@ class MedicalOrderServiceBranchTest {
     private final MedicalOrderRepository repository = Mockito.mock(MedicalOrderRepository.class);
     private final AiTriageClient triageClient = Mockito.mock(AiTriageClient.class);
     private final AuditPublisher auditPublisher = Mockito.mock(AuditPublisher.class);
-    private final MedicalOrderService service = new MedicalOrderService(repository, triageClient, auditPublisher);
+    private final MedicalOrderService service = new MedicalOrderService(repository, triageClient, auditPublisher, null);
 
     @Test
     void createValidatesTypeRequiredFieldsAndUrgency() {

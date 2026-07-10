@@ -17,6 +17,7 @@ import com.cloudbrain.pharmacy.entity.Prescription;
 import com.cloudbrain.pharmacy.entity.PrescriptionItem;
 import com.cloudbrain.pharmacy.entity.PrescriptionStatus;
 import com.cloudbrain.pharmacy.repository.PharmacyRepository;
+import com.cloudbrain.pharmacy.service.NotificationClient;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -693,7 +694,7 @@ class PharmacyServiceAdditionalTest {
     }
 
     private PharmacyService service() {
-        return new PharmacyService(repository, patientAccessClient, auditPublisher, drugSearchIndexService);
+        return new PharmacyService(repository, patientAccessClient, auditPublisher, drugSearchIndexService, null);
     }
 
     private PharmacyRepository.Drug drug(String id) {

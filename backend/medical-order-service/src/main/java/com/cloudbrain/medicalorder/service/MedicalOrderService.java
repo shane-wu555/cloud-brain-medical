@@ -23,11 +23,14 @@ public class MedicalOrderService {
     private final MedicalOrderRepository repository;
     private final AiTriageClient triageClient;
     private final AuditPublisher auditPublisher;
+    private final NotificationClient notificationClient;
 
-    public MedicalOrderService(MedicalOrderRepository repository, AiTriageClient triageClient, AuditPublisher auditPublisher) {
+    public MedicalOrderService(MedicalOrderRepository repository, AiTriageClient triageClient,
+            AuditPublisher auditPublisher, NotificationClient notificationClient) {
         this.repository = repository;
         this.triageClient = triageClient;
         this.auditPublisher = auditPublisher;
+        this.notificationClient = notificationClient;
     }
 
     @Transactional
@@ -44,7 +47,7 @@ public class MedicalOrderService {
         if (repository.existsActiveOrder(request.appointmentId(), request.itemCode())) {
             throw new IllegalStateException("该检查/检验项目已在本次就诊中开单，不可重复申请：" + request.itemName());
         }
-        return repository.create(new MedicalOrder(
+        MedicalOrder order = repository.create(new MedicalOrder(
                 UUID.randomUUID().toString(),
                 request.appointmentId(), request.patientId(), request.patientName(), doctorId,
                 type, request.itemCode(), request.itemName(), request.purpose(), request.bodyPart(),
@@ -53,6 +56,12 @@ public class MedicalOrderService {
                 null, null, null, null, null, urgency, null, null, 0,
                 null, null, null, null, null,
                 java.time.LocalDateTime.now(), null, null));
+        try {
+            notificationClient.notify(order.patientId(), "PENDING_PAYMENT",
+                    "医生已开具" + order.itemName() + "，请缴费", null,
+                    "MEDICAL_ORDER", order.id());
+        } catch (Exception ignored) { /* notification failure must not fail the transaction */ }
+        return order;
     }
 
     public List<MedicalOrder> list(String type, String status, String patientId, String appointmentId) {
@@ -98,7 +107,13 @@ public class MedicalOrderService {
         if (!repository.assign(id, triage.roomId(), triage.source(), triage.reasons())) {
             throw new IllegalStateException("医技分诊状态已变化");
         }
-        return get(id);
+        MedicalOrder afterPay = get(id);
+        try {
+            notificationClient.notify(afterPay.patientId(), "PAYMENT_CONFIRMED",
+                    "缴费成功，" + afterPay.itemName() + "已安排检查", null,
+                    "MEDICAL_ORDER", afterPay.id());
+        } catch (Exception ignored) { /* notification failure must not fail the transaction */ }
+        return afterPay;
     }
 
     @Transactional
@@ -124,7 +139,15 @@ public class MedicalOrderService {
         if (!repository.call(id, staffRoom.roomId())) {
             throw new IllegalStateException("只有待执行医技单可以叫号");
         }
-        return get(id);
+        MedicalOrder called = get(id);
+        try {
+            String roomLabel = called.roomName() != null ? called.roomName() : "检查室";
+            String location = called.roomLocation() != null ? "（" + called.roomLocation() + "）" : "";
+            notificationClient.notify(called.patientId(), "CALLED",
+                    "您的" + called.itemName() + "已叫号，请前往" + roomLabel + location, null,
+                    "MEDICAL_ORDER", called.id());
+        } catch (Exception ignored) { /* notification failure must not fail the transaction */ }
+        return called;
     }
 
     @Transactional
@@ -158,7 +181,15 @@ public class MedicalOrderService {
         if (!repository.complete(id, staffRoom.roomId(), staffRoom.staffId(), summary, source, aiRecordId)) {
             throw new IllegalStateException("医技单未开始、已完成或执行房间不匹配");
         }
-        return get(id);
+        MedicalOrder completed = get(id);
+        if ("DISPOSAL".equals(completed.orderType())) {
+            try {
+                notificationClient.notify(completed.patientId(), "DISPOSAL_COMPLETED",
+                        completed.itemName() + "处置已完成", null,
+                        "MEDICAL_ORDER", completed.id());
+            } catch (Exception ignored) { /* notification failure must not fail the transaction */ }
+        }
+        return completed;
     }
 
     @Transactional
@@ -173,7 +204,13 @@ public class MedicalOrderService {
         if (!repository.markReportPending(id, staffRoom.roomId(), staffRoom.staffId(), text)) {
             throw new IllegalStateException("只有执行中的医技单可以标记为待报告");
         }
-        return get(id);
+        MedicalOrder updated = get(id);
+        try {
+            notificationClient.notify(updated.patientId(), "EXAM_COMPLETED",
+                    updated.itemName() + "检查已完成，等待报告发布", null,
+                    "MEDICAL_ORDER", updated.id());
+        } catch (Exception ignored) { /* notification failure must not fail the transaction */ }
+        return updated;
     }
 
     private MedicalOrder get(String id) {

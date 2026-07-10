@@ -6,7 +6,13 @@
       :class="['tab-item', currentTab === item.key ? 'active' : '']"
       @tap="goTab(item.key)"
     >
-      <image class="tab-icon" :src="currentTab === item.key ? item.activeIcon : item.icon" mode="aspectFit" />
+      <view class="tab-icon-wrap">
+        <image class="tab-icon" :src="currentTab === item.key ? item.activeIcon : item.icon" mode="aspectFit" />
+        <view v-if="item.key === 'home' && notifStore.unreadTotal > 0" class="tab-badge">
+          <text v-if="notifStore.unreadTotal <= 99">{{ notifStore.unreadTotal }}</text>
+          <text v-else>99+</text>
+        </view>
+      </view>
       <text :class="['tab-label', currentTab === item.key ? 'active' : '']">{{ item.label }}</text>
     </view>
   </view>
@@ -16,12 +22,14 @@
 import { computed } from 'vue';
 import { getMedicalIcon } from '../../constants/medical-icons';
 import { useAuthStore } from '../../stores/auth';
+import { useNotificationStore } from '../../stores/notification';
 
 const props = defineProps<{
   current: 'home' | 'records' | 'my';
 }>();
 
 const auth = useAuthStore();
+const notifStore = useNotificationStore();
 const currentTab = computed(() => props.current);
 
 const tabs = [
@@ -98,9 +106,37 @@ async function goTab(key: 'home' | 'records' | 'my') {
   padding-top: 8rpx;
 }
 
+.tab-icon-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .tab-icon {
   width: 44rpx;
   height: 44rpx;
+}
+
+.tab-badge {
+  position: absolute;
+  top: -10rpx;
+  right: -16rpx;
+  min-width: 32rpx;
+  height: 32rpx;
+  padding: 0 8rpx;
+  border-radius: 999rpx;
+  background: #e74c3c;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tab-badge text {
+  color: #fff;
+  font-size: 20rpx;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .tab-label {

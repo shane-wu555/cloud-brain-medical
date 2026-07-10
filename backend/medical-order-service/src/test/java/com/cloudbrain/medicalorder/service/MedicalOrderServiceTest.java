@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 
 import com.cloudbrain.medicalorder.audit.AuditPublisher;
 import com.cloudbrain.medicalorder.domain.MedicalOrder;
+import com.cloudbrain.medicalorder.service.NotificationClient;
 import com.cloudbrain.medicalorder.repository.MedicalOrderRepository;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -27,7 +28,8 @@ class MedicalOrderServiceTest {
         MedicalOrderService service = new MedicalOrderService(
                 repository,
                 Mockito.mock(AiTriageClient.class),
-                Mockito.mock(AuditPublisher.class));
+                Mockito.mock(AuditPublisher.class),
+                null);
         assertThrows(IllegalStateException.class, () -> service.start("order", "check-doctor", "CHECK_DOCTOR"));
     }
 
@@ -38,7 +40,8 @@ class MedicalOrderServiceTest {
         MedicalOrderService service = new MedicalOrderService(
                 repository,
                 Mockito.mock(AiTriageClient.class),
-                auditPublisher);
+                auditPublisher,
+                null);
         when(repository.find("DISPOSAL", null, "patient-1", null)).thenReturn(List.of(
                 order("DISPOSAL", "PAID", "COMPLETED"),
                 order("DISPOSAL", "PAID", "WAITING")));
@@ -76,7 +79,8 @@ class MedicalOrderServiceTest {
         MedicalOrderService service = new MedicalOrderService(
                 repository,
                 Mockito.mock(AiTriageClient.class),
-                auditPublisher);
+                auditPublisher,
+                null);
         when(repository.find(null, null, "patient-1", null)).thenReturn(List.of(
                 order("DISPOSAL", "PAID", "COMPLETED"),
                 order("CHECK", "PAID", "COMPLETED")));

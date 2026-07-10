@@ -25,16 +25,19 @@ public class PharmacyService {
     private final PatientAccessClient patientAccessClient;
     private final AuditPublisher auditPublisher;
     private final DrugSearchIndexService drugSearchIndexService;
+    private final NotificationClient notificationClient;
 
     public PharmacyService(
             PharmacyRepository repository,
             PatientAccessClient patientAccessClient,
             AuditPublisher auditPublisher,
-            DrugSearchIndexService drugSearchIndexService) {
+            DrugSearchIndexService drugSearchIndexService,
+            NotificationClient notificationClient) {
         this.repository = repository;
         this.patientAccessClient = patientAccessClient;
         this.auditPublisher = auditPublisher;
         this.drugSearchIndexService = drugSearchIndexService;
+        this.notificationClient = notificationClient;
     }
 
     @Cacheable(
@@ -145,6 +148,11 @@ public class PharmacyService {
                             "aiAssistanceId", created.aiAssistanceId(),
                             "adoptionStatus", created.aiAdoptionStatus()));
         }
+        try {
+            notificationClient.notify(created.patientId(), "PENDING_PAYMENT",
+                    "处方已开立，请缴费", null,
+                    "PRESCRIPTION", created.id());
+        } catch (Exception ignored) { /* notification failure must not fail the transaction */ }
         return created;
     }
 
@@ -357,6 +365,11 @@ public class PharmacyService {
                 cashierId,
                 "CASHIER",
                 Map.of("refundOrderId", refundOrderId, "status", completed.status().name()));
+        try {
+            notificationClient.notify(completed.patientId(), "DRUG_RETURN_REFUNDED",
+                    "退药退款已完成", null,
+                    "DRUG_RETURN", completed.id());
+        } catch (Exception ignored) { /* notification failure must not fail the transaction */ }
         return completed;
     }
 
@@ -374,7 +387,13 @@ public class PharmacyService {
             }
             throw new IllegalStateException("Prescription cannot confirm payment in current status");
         }
-        return repository.findPrescription(id);
+        Prescription paid = repository.findPrescription(id);
+        try {
+            notificationClient.notify(paid.patientId(), "PAYMENT_CONFIRMED",
+                    "处方缴费成功，请前往药房取药", null,
+                    "PRESCRIPTION", paid.id());
+        } catch (Exception ignored) { /* notification failure must not fail the transaction */ }
+        return paid;
     }
 
     @Transactional
@@ -400,6 +419,11 @@ public class PharmacyService {
                 operatorId,
                 "PHARMACY_STAFF",
                 Map.of("status", dispensed.status().name()));
+        try {
+            notificationClient.notify(dispensed.patientId(), "DRUGS_DISPENSED",
+                    "药品已发出，请取药", null,
+                    "PRESCRIPTION", dispensed.id());
+        } catch (Exception ignored) { /* notification failure must not fail the transaction */ }
         return dispensed;
     }
 

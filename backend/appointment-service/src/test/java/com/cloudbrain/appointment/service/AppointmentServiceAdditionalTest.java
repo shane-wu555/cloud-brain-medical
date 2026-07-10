@@ -41,11 +41,12 @@ class AppointmentServiceAdditionalTest {
     @Mock SlotInventoryRepository slots;
     @Mock MedicalRecordEventRepository events;
     @Mock MedicalRecordClient medicalRecords;
+    @Mock NotificationClient notifications;
     AppointmentService service;
 
     @BeforeEach
     void setUp() {
-        service = new AppointmentService(appointments, slots, events, medicalRecords);
+        service = new AppointmentService(appointments, slots, events, medicalRecords, notifications);
     }
 
     @Test
@@ -60,7 +61,7 @@ class AppointmentServiceAdditionalTest {
     }
 
     @Test
-    void todayQueueFiltersActiveStatusesAndSortsByQueueNumber() {
+    void todayQueueFiltersActiveStatusesAndSortsByAppointmentTime() {
         Appointment later = appointment("later", "doctor-1", "patient-1", AppointmentStatus.WAITING, PaymentStatus.PAID, LocalDate.now(), 5);
         Appointment todayCalled = appointment("called", "doctor-1", "patient-2", AppointmentStatus.CALLED, PaymentStatus.PAID, LocalDate.now(), 2);
         Appointment finished = appointment("finished", "doctor-1", "patient-3", AppointmentStatus.FINISHED, PaymentStatus.PAID, LocalDate.now(), 3);
@@ -252,26 +253,14 @@ class AppointmentServiceAdditionalTest {
     }
 
     @Test
-    void skipUsesDifferentPositionsBasedOnMissedCount() {
-        Appointment firstSkip = appointment("appt-1", "doctor-1", "patient-1", AppointmentStatus.WAITING, PaymentStatus.PAID);
-        Appointment secondSkip = appointment("appt-2", "doctor-1", "patient-1", AppointmentStatus.WAITING, PaymentStatus.PAID);
-        secondSkip.restorePersistenceState(null, 1);
-        Appointment thirdSkip = appointment("appt-3", "doctor-1", "patient-1", AppointmentStatus.WAITING, PaymentStatus.PAID);
-        thirdSkip.restorePersistenceState(null, 2);
-        when(appointments.findById("appt-1")).thenReturn(Optional.of(firstSkip));
-        when(appointments.findById("appt-2")).thenReturn(Optional.of(secondSkip));
-        when(appointments.findById("appt-3")).thenReturn(Optional.of(thirdSkip));
-        when(appointments.skipByPositions("appt-1", 3)).thenReturn(firstSkip);
-        when(appointments.skipByPositions("appt-2", 5)).thenReturn(secondSkip);
-        when(appointments.skipByPositions("appt-3", Integer.MAX_VALUE)).thenReturn(thirdSkip);
+    void skipDelegatesToMoveToTail() {
+        Appointment appt = appointment("appt-1", "doctor-1", "patient-1", AppointmentStatus.WAITING, PaymentStatus.PAID);
+        when(appointments.findById("appt-1")).thenReturn(Optional.of(appt));
+        when(appointments.moveToTail("appt-1")).thenReturn(appt);
 
         service.skip("appt-1", "doctor-1");
-        service.skip("appt-2", "doctor-1");
-        service.skip("appt-3", "doctor-1");
 
-        verify(appointments).skipByPositions("appt-1", 3);
-        verify(appointments).skipByPositions("appt-2", 5);
-        verify(appointments).skipByPositions("appt-3", Integer.MAX_VALUE);
+        verify(appointments).moveToTail("appt-1");
     }
 
     @Test
