@@ -11,7 +11,13 @@
         <view class="item-main">
           <view class="item-title">{{ paymentRecordTitle(item) }}</view>
           <view class="item-desc">{{ paymentRecordDescription(item) }}</view>
-          <view v-if="paymentRecordNote(item)" class="muted">{{ paymentRecordNote(item) }}</view>
+          <view
+            v-for="(note, index) in paymentRecordNotes(item)"
+            :key="`${item.kind}-${item.id}-note-${index}`"
+            class="muted"
+          >
+            {{ note }}
+          </view>
           <view v-if="isInsurancePayment(item)" class="insurance-badge">医保支付</view>
           <view class="muted">{{ financialRecordTimeText(item) }}</view>
         </view>
@@ -444,7 +450,7 @@ function paymentRecordBusinessDescription(item: FinancialRecord) {
   if (item.businessType === 'MEDICAL_ORDER') {
     const order = recordMedicalOrderMap.value.get(item.businessId);
     if (order) {
-      const details = [order.bodyPart, order.purpose, order.roomLocation].filter(Boolean).join(' · ');
+      const details = [order.bodyPart, order.roomLocation].filter(Boolean).join(' · ');
       return `${orderTypeLabel(order.orderType)}${details ? ` · ${details}` : ''}`;
     }
   }
@@ -461,24 +467,36 @@ function paymentRecordBusinessDescription(item: FinancialRecord) {
   return '业务详情加载中';
 }
 
-function paymentRecordNote(item: FinancialRecord) {
+function paymentRecordNotes(item: FinancialRecord) {
   if (item.kind === 'refund') {
-    return item.operatorId ? `退费操作员：${item.operatorId}` : '';
+    return item.operatorId ? [`退费操作员：${item.operatorId}`] : [];
   }
-  const methodText = item.paymentMethod ? `支付方式：${paymentMethodLabel(item.paymentMethod)}；` : '';
+  const notes: string[] = [];
+  if (item.paymentMethod) {
+    notes.push(`支付方式：${paymentMethodLabel(item.paymentMethod)}`);
+  }
   if (item.businessType === 'APPOINTMENT') {
     const appointment = recordAppointmentMap.value.get(item.businessId);
-    return appointment ? `${methodText}挂号状态：${appointmentStatusLabel(appointment)}` : methodText;
+    if (appointment) {
+      notes.push(`挂号状态：${appointmentStatusLabel(appointment)}`);
+    }
+    return notes;
   }
   if (item.businessType === 'MEDICAL_ORDER') {
     const order = recordMedicalOrderMap.value.get(item.businessId);
-    return order ? `${methodText}项目状态：${medicalOrderStatusLabel(order.status, order.paymentStatus)}` : methodText;
+    if (order) {
+      notes.push(`项目状态：${medicalOrderStatusLabel(order.status, order.paymentStatus)}`);
+    }
+    return notes;
   }
   if (item.businessType === 'PRESCRIPTION') {
     const prescription = recordPrescriptionMap.value.get(item.businessId);
-    return prescription ? `${methodText}处方状态：${prescriptionStatusLabel(prescription.status)}` : methodText;
+    if (prescription) {
+      notes.push(`处方状态：${prescriptionStatusLabel(prescription.status)}`);
+    }
+    return notes;
   }
-  return methodText;
+  return notes;
 }
 
 function isInsurancePayment(item: FinancialRecord) {

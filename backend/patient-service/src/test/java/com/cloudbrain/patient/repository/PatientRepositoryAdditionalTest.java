@@ -167,6 +167,12 @@ class PatientRepositoryAdditionalTest {
                 argThat(sql -> sql.contains("insert into account_binding")),
                 eq("account-1"),
                 anyString());
+        verify(jdbcTemplate).update("update account_binding set is_default = false where account_id = ?", "account-1");
+        verify(jdbcTemplate).update(
+                argThat(sql -> sql.contains("update account_binding") && sql.contains("set is_default = true")),
+                eq("account-1"),
+                anyString());
+        verify(cache).evictAccount("account-1");
     }
 
     @Test
@@ -201,15 +207,19 @@ class PatientRepositoryAdditionalTest {
         PatientRepository repository = spy(new PatientRepository(jdbcTemplate, cache));
         PatientRepository.PatientProfile profile = profile("patient-1");
         doReturn(true).when(repository).owns("account-1", "patient-1");
-        doReturn(Optional.of(profile)).when(repository).find("patient-1");
+        doReturn(Optional.of(profile)).when(repository).findByAccountAndPatientId("account-1", "patient-1");
 
         PatientRepository.PatientProfile result = repository.bind("account-1", "patient-1");
 
         assertThat(result).isSameAs(profile);
         verify(jdbcTemplate).update(
-                argThat(sql -> sql.contains("insert into account_binding")),
+                eq("update account_binding set is_default = false where account_id = ?"),
+                eq("account-1"));
+        verify(jdbcTemplate).update(
+                argThat(sql -> sql.contains("update account_binding") && sql.contains("set is_default = true")),
                 eq("account-1"),
                 eq("patient-1"));
+        verify(cache).evictAccount("account-1");
     }
 
     @Test
@@ -266,6 +276,8 @@ class PatientRepositoryAdditionalTest {
                 "FEMALE",
                 LocalDate.of(1990, 1, 1),
                 OffsetDateTime.of(2026, 7, 9, 10, 0, 0, 0, ZoneOffset.UTC),
+                null,
+                false,
                 null);
     }
 }

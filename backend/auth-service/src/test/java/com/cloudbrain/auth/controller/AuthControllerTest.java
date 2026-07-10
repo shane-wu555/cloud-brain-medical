@@ -12,6 +12,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.web.server.ResponseStatusException;
 
 @ExtendWith(MockitoExtension.class)
@@ -64,6 +66,12 @@ class AuthControllerTest {
                 new AuthController.ResetPasswordRequest("13800000000", "654321", "Password2");
         AuthController.ChangePasswordRequest changePasswordRequest =
                 new AuthController.ChangePasswordRequest("Password1", "Password2");
+        JwtAuthenticationToken auth = new JwtAuthenticationToken(
+                Jwt.withTokenValue("token")
+                        .header("alg", "HS256")
+                        .claim("sub", "user-1")
+                        .claim("role", "PATIENT")
+                        .build());
         when(servletRequest.getHeader("X-Forwarded-For")).thenReturn(null);
         when(servletRequest.getRemoteAddr()).thenReturn("192.168.0.1");
         when(servletRequest.getHeader("User-Agent")).thenReturn("test");
@@ -75,7 +83,7 @@ class AuthControllerTest {
         assertThat(controller.sendCode(sendCodeRequest, servletRequest)).containsEntry("expiresIn", 300);
         assertThat(controller.smsLogin(smsLoginRequest, servletRequest)).containsEntry("token", "sms-token");
         controller.resetPassword(resetPasswordRequest, servletRequest);
-        controller.changePassword(changePasswordRequest, "user-1");
+        controller.changePassword(changePasswordRequest, auth);
 
         verify(authService).resetPassword(resetPasswordRequest, new AuthService.ClientInfo("192.168.0.1", "test"));
         verify(authService).changePassword("user-1", "Password1", "Password2");

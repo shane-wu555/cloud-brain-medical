@@ -67,6 +67,16 @@ class PatientRepositoryTest {
                 """,
                 "account-1",
                 "patient-1");
+        verify(jdbcTemplate).update("update account_binding set is_default = false where account_id = ?", "account-1");
+        verify(jdbcTemplate).update(
+                """
+                update account_binding
+                set is_default = true, created_at = now()
+                where account_id = ? and patient_id = ?::uuid
+                """,
+                "account-1",
+                "patient-1");
+        verify(cache).evictAccount("account-1");
     }
 
     @Test
@@ -117,6 +127,43 @@ class PatientRepositoryTest {
     }
 
     @Test
+    void bindMedicalInsurancePersistsPerAccountBinding() {
+        PatientRepository repository = spy(new PatientRepository(jdbcTemplate, cache));
+        PatientRepository.PatientProfile profile = profile("patient-1");
+        doReturn(true).when(repository).owns("account-1", "patient-1");
+        doReturn(Optional.of(profile)).when(repository).find("patient-1");
+        doReturn(Optional.of(new PatientRepository.PatientProfile(
+                profile.id(),
+                profile.accountId(),
+                profile.phone(),
+                profile.name(),
+                profile.idType(),
+                profile.idNumber(),
+                profile.gender(),
+                profile.birthDate(),
+                profile.createdAt(),
+                profile.updatedAt(),
+                true,
+                "医保电子凭证 012420"))).when(repository).findByAccountAndPatientId("account-1", "patient-1");
+
+        PatientRepository.PatientProfile result = repository.bindMedicalInsurance("account-1", "patient-1");
+
+        assertThat(result.medicalInsuranceBound()).isTrue();
+        assertThat(result.medicalInsuranceNo()).isEqualTo("医保电子凭证 012420");
+        verify(jdbcTemplate).update(
+                """
+                update account_binding
+                set medical_insurance_bound = true,
+                    medical_insurance_no = coalesce(medical_insurance_no, ?)
+                where account_id = ? and patient_id = ?::uuid
+                """,
+                "医保电子凭证 012420",
+                "account-1",
+                "patient-1");
+        verify(cache).evictAccount("account-1");
+    }
+
+    @Test
     void accountStateCombinesProfilesAndBoundPatient() {
         PatientRepository repository = spy(new PatientRepository(jdbcTemplate, cache));
         PatientRepository.PatientProfile profile = profile("patient-1");
@@ -141,6 +188,8 @@ class PatientRepositoryTest {
                 "FEMALE",
                 LocalDate.of(1990, 1, 1),
                 OffsetDateTime.of(2026, 7, 9, 10, 0, 0, 0, ZoneOffset.UTC),
+                null,
+                false,
                 null);
     }
 }

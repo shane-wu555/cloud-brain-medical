@@ -13,14 +13,46 @@
       <view class="visit-line">{{ visitTimeText(item) }}</view>
 
       <view v-if="canCancel(item) || canRevisit(item)" class="action-row">
-        <button v-if="canCancel(item)" class="cancel-button" @click="cancel(item)">{{ cancelLabel(item) }}</button>
-        <button v-if="canRevisit(item)" class="revisit-button" @click="revisit(item)">复诊报到</button>
+        <button v-if="canCancel(item)" class="cancel-button" @tap="openCancelDialog(item)">{{ cancelLabel(item) }}</button>
+        <button v-if="canRevisit(item)" class="revisit-button" @tap="revisit(item)">复诊报到</button>
       </view>
     </view>
 
     <view v-if="!visibleAppointments.length" class="card muted">暂无挂号记录</view>
+
+    <view v-if="pendingCancellation" class="confirm-mask">
+      <view class="confirm-dialog">
+        <view class="dialog-close" @tap="closeCancelDialog()">×</view>
+        <view class="dialog-title">{{ cancelLabel(pendingCancellation) }}</view>
+        <view class="dialog-body">
+          <view class="confirm-row">
+            <text class="confirm-label">就诊人：</text>
+            <text class="confirm-value">{{ auth.boundPatient?.name || '当前就诊人' }}</text>
+          </view>
+          <view class="confirm-row">
+            <text class="confirm-label">就诊科室：</text>
+            <text>{{ pendingCancellation.departmentName || '门诊科室' }}</text>
+          </view>
+          <view class="confirm-row">
+            <text class="confirm-label">医生：</text>
+            <text>{{ pendingCancellation.doctorName || '待分配医生' }}</text>
+          </view>
+          <view class="confirm-row">
+            <text class="confirm-label">就诊时间：</text>
+            <text>{{ visitTimeText(pendingCancellation) }}</text>
+          </view>
+        </view>
+        <view class="dialog-actions">
+          <button class="dialog-secondary" @tap="closeCancelDialog()">先不取消</button>
+          <button class="dialog-primary" @tap="confirmCancel()">
+            {{ cancelSubmitting ? '处理中...' : cancelLabel(pendingCancellation) }}
+          </button>
+        </view>
+      </view>
+    </view>
   </view>
 </template>
+
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { onShow } from '@dcloudio/uni-app';
@@ -41,7 +73,10 @@ interface Appointment {
 
 const auth = useAuthStore();
 const appointments = ref<Appointment[]>([]);
-const REVISIT_TIME_HINT = '\u5f53\u524d\u975e\u95e8\u8bca\u65f6\u95f4\uff0c\u8bf7\u4e8e08:00-12:00\u621614:00-17:30\u5185\u590d\u8bca\u7b7e\u5230';
+const pendingCancellation = ref<Appointment | null>(null);
+const cancelSubmitting = ref(false);
+const REVISIT_TIME_HINT = '当前非门诊时间，请于08:00-12:00或14:00-17:30内复诊签到';
+
 const visibleAppointments = computed(() =>
   [...appointments.value].sort((a, b) => appointmentSortTime(b).localeCompare(appointmentSortTime(a)))
 );
@@ -140,31 +175,58 @@ function cancelLabel(item: Appointment) {
   return item.paymentStatus === 'PAID' ? '取消并退费' : '取消';
 }
 
+function openCancelDialog(item: Appointment) {
+  pendingCancellation.value = item;
+}
+
+function closeCancelDialog() {
+  if (cancelSubmitting.value) {
+    return;
+  }
+  pendingCancellation.value = null;
+}
+
+async function refreshAppointments() {
+  const patient = auth.requireBoundPatient();
+  appointments.value = await request<Appointment[]>({ url: `/appointments?patientId=${patient.id}`, method: 'GET' });
+}
+
 onShow(async () => {
   await auth.loadProfile();
-  let patient;
   try {
-    patient = auth.requireBoundPatient();
+    auth.requireBoundPatient();
   } catch (error) {
     uni.showToast({ title: (error as Error).message, icon: 'none' });
     uni.navigateTo({ url: '/pages/real-name/index' });
     return;
   }
-  appointments.value = await request<Appointment[]>({ url: `/appointments?patientId=${patient.id}`, method: 'GET' });
+
+  await refreshAppointments();
 });
 
-async function cancel(item: Appointment) {
+async function confirmCancel() {
+  const item = pendingCancellation.value;
+  if (!item || cancelSubmitting.value) {
+    return;
+  }
+
   try {
-    const patient = auth.requireBoundPatient();
+    cancelSubmitting.value = true;
+    uni.showLoading({ title: '处理中…', mask: true });
     await request({ url: `/appointments/${item.id}/cancel`, method: 'POST' });
+    uni.hideLoading();
+    pendingCancellation.value = null;
     uni.showToast({
       title: item.paymentStatus === 'PAID' ? '已取消，退款处理中' : '已取消',
       icon: 'none',
       duration: 2200
     });
-    appointments.value = await request<Appointment[]>({ url: `/appointments?patientId=${patient.id}`, method: 'GET' });
+    await refreshAppointments();
   } catch (error) {
+    uni.hideLoading();
     uni.showToast({ title: (error as Error).message, icon: 'none' });
+  } finally {
+    cancelSubmitting.value = false;
   }
 }
 
@@ -176,13 +238,13 @@ async function revisit(item: Appointment) {
     }
     await request({ url: `/appointments/${item.id}/revisit`, method: 'POST' });
     uni.showToast({ title: '已加入复诊队列，请等候叫号', icon: 'none', duration: 2500 });
-    const patient = auth.requireBoundPatient();
-    appointments.value = await request<Appointment[]>({ url: `/appointments?patientId=${patient.id}`, method: 'GET' });
+    await refreshAppointments();
   } catch (error) {
     uni.showToast({ title: (error as Error).message, icon: 'none' });
   }
 }
 </script>
+
 <style scoped>
 .appointment-card {
   display: flex;
@@ -260,6 +322,99 @@ async function revisit(item: Appointment) {
   display: flex;
   gap: 16rpx;
   flex-wrap: wrap;
+}
+
+.confirm-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48rpx;
+  background: rgba(0, 0, 0, 0.62);
+}
+
+.confirm-dialog {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 30rpx;
+  background: #fff;
+}
+
+.dialog-close {
+  position: absolute;
+  top: 26rpx;
+  right: 30rpx;
+  color: #111827;
+  font-size: 54rpx;
+  line-height: 1;
+}
+
+.dialog-title {
+  padding: 64rpx 36rpx 28rpx;
+  color: #1f2937;
+  font-size: 42rpx;
+  font-weight: 600;
+  text-align: center;
+}
+
+.dialog-body {
+  padding: 10rpx 46rpx 40rpx;
+}
+
+.confirm-row {
+  display: flex;
+  gap: 18rpx;
+  padding: 18rpx 0;
+  color: #1f2937;
+  font-size: 31rpx;
+  line-height: 1.45;
+}
+
+.confirm-label {
+  flex-shrink: 0;
+  color: #7b8494;
+}
+
+.confirm-value {
+  color: var(--patient-theme-strong);
+}
+
+.confirm-note {
+  margin-top: 14rpx;
+  padding: 20rpx 22rpx;
+  border-radius: 16rpx;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 26rpx;
+  line-height: 1.7;
+}
+
+.dialog-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-top: 1px solid #edf2f7;
+}
+
+.dialog-secondary,
+.dialog-primary {
+  height: 96rpx;
+  margin: 0;
+  border-radius: 0;
+  background: #fff;
+  font-size: 32rpx;
+  line-height: 96rpx;
+}
+
+.dialog-secondary {
+  color: #1f2937;
+  border-right: 1px solid #edf2f7;
+}
+
+.dialog-primary {
+  color: #dc2626;
 }
 
 .cancel-button,

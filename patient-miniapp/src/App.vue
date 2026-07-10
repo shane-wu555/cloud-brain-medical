@@ -1,8 +1,12 @@
 <script setup lang="ts">
 import { onLaunch } from '@dcloudio/uni-app';
 import { useAuthStore } from './stores/auth';
+import { preloadMedicalIcons } from './utils/preload-icons';
 
-onLaunch(() => useAuthStore().restore());
+onLaunch(() => {
+  useAuthStore().restore();
+  preloadMedicalIcons();
+});
 </script>
 
 <style>

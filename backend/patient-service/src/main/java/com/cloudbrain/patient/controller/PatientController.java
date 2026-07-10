@@ -13,6 +13,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -59,6 +60,13 @@ public class PatientController {
             @Valid @RequestBody BindPatientRequest request,
             JwtAuthenticationToken authentication) {
         return repository.bind(authentication.getToken().getSubject(), request.patientId());
+    }
+
+    @PutMapping("/me/profiles/{patientId}/medical-insurance")
+    public PatientRepository.PatientProfile bindMedicalInsurance(
+            @PathVariable("patientId") String patientId,
+            JwtAuthenticationToken authentication) {
+        return repository.bindMedicalInsurance(authentication.getToken().getSubject(), patientId);
     }
 
     @GetMapping

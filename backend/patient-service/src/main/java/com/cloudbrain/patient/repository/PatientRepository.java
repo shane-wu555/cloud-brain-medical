@@ -36,11 +36,14 @@ public class PatientRepository {
 
     public List<PatientProfile> findByAccount(String accountId) {
         return jdbc.query("""
-                select p.*, b.account_id as account_id
+                select p.*,
+                       b.account_id as account_id,
+                       b.medical_insurance_bound as medical_insurance_bound,
+                       b.medical_insurance_no as medical_insurance_no
                 from patient p
                 join account_binding b on b.patient_id = p.id
                 where b.account_id = ?
-                order by b.created_at desc, p.created_at desc
+                order by b.is_default desc, b.created_at desc, p.created_at desc
                 """, (rs, row) -> map(rs), accountId);
     }
 
@@ -84,13 +87,30 @@ public class PatientRepository {
 
     public Optional<PatientProfile> bound(String accountId) {
         return jdbc.query("""
-                select p.*, b.account_id as account_id
+                select p.*,
+                       b.account_id as account_id,
+                       b.medical_insurance_bound as medical_insurance_bound,
+                       b.medical_insurance_no as medical_insurance_no
                 from patient p
                 join account_binding b on b.patient_id = p.id
                 where b.account_id = ?
-                order by b.created_at desc, p.created_at desc
+                order by b.is_default desc, b.created_at desc, p.created_at desc
                 limit 1
                 """, (rs, row) -> map(rs), accountId)
+                .stream().findFirst();
+    }
+
+    public Optional<PatientProfile> findByAccountAndPatientId(String accountId, String patientId) {
+        return jdbc.query("""
+                select p.*,
+                       b.account_id as account_id,
+                       b.medical_insurance_bound as medical_insurance_bound,
+                       b.medical_insurance_no as medical_insurance_no
+                from patient p
+                join account_binding b on b.patient_id = p.id
+                where b.account_id = ? and p.id = ?::uuid
+                limit 1
+                """, (rs, row) -> map(rs), accountId, patientId)
                 .stream().findFirst();
     }
 
@@ -111,6 +131,8 @@ public class PatientRepository {
         if (existing.isPresent()) {
             ensureCanAdd(accountId, existing.get().id());
             upsertBinding(accountId, existing.get().id());
+            markDefaultBinding(accountId, existing.get().id());
+            cache.evictAccount(accountId);
             return find(existing.get().id()).orElseThrow();
         }
         ensureCanAdd(accountId, null);
@@ -120,6 +142,7 @@ public class PatientRepository {
                 values (?::uuid, ?, ?, ?, ?, ?, ?, true, now(), 'ONLINE')
                 """, id, phone == null ? "" : phone, name, idType, normalizedIdNumber, gender, birthDate);
         upsertBinding(accountId, id);
+        markDefaultBinding(accountId, id);
         cache.evictAccount(accountId);
         return find(id).orElseThrow();
     }
@@ -141,9 +164,23 @@ public class PatientRepository {
 
     public PatientProfile bind(String accountId, String patientId) {
         if (!owns(accountId, patientId)) throw new IllegalArgumentException("Patient is not added to this account");
-        upsertBinding(accountId, patientId);
+        markDefaultBinding(accountId, patientId);
         cache.evictAccount(accountId);
-        return find(patientId).orElseThrow();
+        return findByAccountAndPatientId(accountId, patientId).orElseThrow();
+    }
+
+    @Transactional
+    public PatientProfile bindMedicalInsurance(String accountId, String patientId) {
+        if (!owns(accountId, patientId)) throw new IllegalArgumentException("Patient is not added to this account");
+        PatientProfile patient = find(patientId).orElseThrow();
+        jdbc.update("""
+                update account_binding
+                set medical_insurance_bound = true,
+                    medical_insurance_no = coalesce(medical_insurance_no, ?)
+                where account_id = ? and patient_id = ?::uuid
+                """, buildMedicalInsuranceNo(patient), accountId, patientId);
+        cache.evictAccount(accountId);
+        return findByAccountAndPatientId(accountId, patientId).orElseThrow();
     }
 
     public PatientAccountState accountState(String accountId) {
@@ -172,7 +209,23 @@ public class PatientRepository {
                 """, accountId, patientId);
     }
 
+    private void markDefaultBinding(String accountId, String patientId) {
+        jdbc.update("update account_binding set is_default = false where account_id = ?", accountId);
+        jdbc.update("""
+                update account_binding
+                set is_default = true, created_at = now()
+                where account_id = ? and patient_id = ?::uuid
+                """, accountId, patientId);
+    }
+
     private String normalizeIdNumber(String idNumber) { return idNumber.trim().toUpperCase(); }
+
+    private String buildMedicalInsuranceNo(PatientProfile patient) {
+        String seed = patient.idNumber() == null || patient.idNumber().isBlank() ? patient.id() : patient.idNumber();
+        String tail = seed.length() <= 6 ? seed : seed.substring(seed.length() - 6);
+        String digits = tail.replaceAll("\\D", "");
+        return "医保电子凭证 " + (digits.isBlank() ? "已认证" : digits);
+    }
 
     private PatientProfile map(java.sql.ResultSet rs) throws java.sql.SQLException {
         return new PatientProfile(
@@ -185,7 +238,9 @@ public class PatientRepository {
                 rs.getString("gender"),
                 rs.getDate("birth_date") == null ? null : rs.getDate("birth_date").toLocalDate(),
                 rs.getObject("created_at", OffsetDateTime.class),
-                hasColumn(rs, "updated_at") ? rs.getObject("updated_at", OffsetDateTime.class) : null);
+                hasColumn(rs, "updated_at") ? rs.getObject("updated_at", OffsetDateTime.class) : null,
+                hasColumn(rs, "medical_insurance_bound") && rs.getBoolean("medical_insurance_bound"),
+                hasColumn(rs, "medical_insurance_no") ? rs.getString("medical_insurance_no") : null);
     }
 
     private boolean hasColumn(java.sql.ResultSet rs, String column) throws java.sql.SQLException {
@@ -199,7 +254,8 @@ public class PatientRepository {
     public record PatientProfile(
             String id, String accountId, String phone, String name,
             String idType, String idNumber, String gender, LocalDate birthDate,
-            OffsetDateTime createdAt, OffsetDateTime updatedAt) {
+            OffsetDateTime createdAt, OffsetDateTime updatedAt,
+            boolean medicalInsuranceBound, String medicalInsuranceNo) {
         public String userId() { return id; }
     }
     public record PatientAccountState(List<PatientProfile> profiles, PatientProfile bound) {

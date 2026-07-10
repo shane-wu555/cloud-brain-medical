@@ -4,26 +4,13 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
-
-type MedicalIconName =
-  | 'book-open-text'
-  | 'calendar-days'
-  | 'clipboard-list'
-  | 'flask-conical'
-  | 'home'
-  | 'hospital'
-  | 'microscope'
-  | 'pill-bottle'
-  | 'stethoscope'
-  | 'syringe'
-  | 'user-round-plus'
-  | 'wallet-cards';
+import { getMedicalIcon, type MedicalIconName, type MedicalIconVariant } from '../constants/medical-icons';
 
 const props = withDefaults(
   defineProps<{
     name: MedicalIconName;
     size?: number;
-    variant?: 'dark' | 'white';
+    variant?: MedicalIconVariant;
   }>(),
   {
     size: 30,
@@ -31,10 +18,7 @@ const props = withDefaults(
   }
 );
 
-const iconSrc = computed(() => {
-  const folder = props.variant === 'white' ? 'icons/white' : 'icons';
-  return `/static/${folder}/${props.name}.svg`;
-});
+const iconSrc = computed(() => getMedicalIcon(props.name, props.variant));
 const iconStyle = computed(() => `width: ${props.size}px; height: ${props.size}px;`);
 </script>
 

@@ -9,7 +9,7 @@
             <view class="patient-info">
               <view class="patient-name">{{ patient.name }}</view>
               <view class="patient-meta">{{ patient.idNumber }}</view>
-              <view class="patient-meta">{{ genderLabel(patient.gender) }} · {{ patient.birthDate || '未填出生日期' }}</view>
+              <view class="patient-meta">{{ genderLabel(patient.gender) }} · {{ patient.birthDate || '未填写出生日期' }}</view>
             </view>
             <text
               :class="['bind-btn', auth.boundPatient?.id === patient.id ? 'bind-btn--bound' : '']"
@@ -19,12 +19,12 @@
             </text>
           </view>
           <view class="patient-actions">
-            <text
-              :class="['insurance-btn', patient.medicalInsuranceBound && 'insurance-btn--done']"
+            <view
+              :class="['insurance-btn', patient.medicalInsuranceBound ? 'insurance-btn--done' : '']"
               @tap="bindInsurance(patient.id)"
             >
-              {{ patient.medicalInsuranceBound ? '已医保认证' : '微信医保认证' }}
-            </text>
+              {{ patient.medicalInsuranceBound ? '已完成医保认证' : '微信医保认证' }}
+            </view>
           </view>
         </view>
       </view>
@@ -68,10 +68,6 @@
       <button class="submit-button" :disabled="loading" @tap="submit()">
         {{ loading ? '提交中...' : '添加就诊人' }}
       </button>
-    </view>
-
-    <view class="logout-section">
-      <button class="submit-button logout-button" @tap="confirmLogout()">退出登录</button>
     </view>
   </view>
 </template>
@@ -212,34 +208,18 @@ function buildBirthDate() {
   return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
-function bindInsurance(patientId: string) {
+async function bindInsurance(patientId: string) {
   try {
     const patient = auth.patients.find((item) => item.id === patientId);
     if (patient?.medicalInsuranceBound) {
       uni.showToast({ title: '该就诊人已完成医保认证', icon: 'none' });
       return;
     }
-    auth.bindMedicalInsurance(patientId);
-    uni.showToast({ title: '微信医保认证成功', icon: 'success' });
+    await auth.bindMedicalInsurance(patientId);
+    uni.showToast({ title: '微信医保认证成功', icon: 'none', duration: 2200 });
   } catch (error) {
     uni.showToast({ title: (error as Error).message, icon: 'none' });
   }
-}
-
-function confirmLogout() {
-  uni.showModal({
-    title: '退出登录',
-    content: '确定要退出当前账号吗？',
-    confirmText: '退出',
-    success(result) {
-      if (!result.confirm) {
-        return;
-      }
-
-      auth.logout();
-      uni.reLaunch({ url: '/pages/login/index' });
-    }
-  });
 }
 
 function fillBirthDateFromIdCard() {
@@ -262,8 +242,9 @@ function fillBirthDateFromIdCard() {
 
 <style scoped>
 .patient-page {
+  position: relative;
   padding-top: 0;
-  padding-bottom: 40rpx;
+  padding-bottom: 72rpx;
   background: var(--patient-theme-page-bg);
 }
 
@@ -341,6 +322,7 @@ function fillBirthDateFromIdCard() {
 .patient-actions {
   display: flex;
   flex-direction: row;
+  width: 100%;
 }
 
 .bind-btn {
@@ -366,38 +348,28 @@ function fillBirthDateFromIdCard() {
 }
 
 .insurance-btn {
-  display: inline-flex;
+  display: flex;
+  flex: 1;
   align-items: center;
   justify-content: center;
   width: 100%;
-  height: 66rpx;
+  min-height: 66rpx;
+  padding: 14rpx 24rpx;
+  box-sizing: border-box;
   border-radius: 14rpx;
   background: #ecfdf5;
   color: #0f766e;
   font-size: 27rpx;
   font-weight: 700;
+  line-height: 1.4;
   letter-spacing: 0.5rpx;
+  text-align: center;
+  word-break: break-all;
 }
 
 .insurance-btn--done {
   background: #f1f5f9;
   color: #64748b;
-}
-
-.insurance-tag {
-  display: inline-block;
-  padding: 4rpx 12rpx;
-  border-radius: 999rpx;
-  background: #fff7ed;
-  color: #c2410c;
-  font-size: 22rpx;
-  font-weight: 600;
-  align-self: flex-start;
-}
-
-.insurance-tag--bound {
-  background: #dcfce7;
-  color: #166534;
 }
 
 .empty {
@@ -483,6 +455,11 @@ function fillBirthDateFromIdCard() {
 }
 
 .submit-button {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   height: 86rpx;
   margin: 30rpx 0 12rpx;
   border-radius: 14rpx;
@@ -491,16 +468,5 @@ function fillBirthDateFromIdCard() {
   font-size: 32rpx;
   font-weight: 800;
   line-height: 86rpx;
-}
-
-.logout-section {
-  padding: 0 30rpx 42rpx;
-}
-
-.logout-button {
-  margin: 10rpx 0 0;
-  background: #fff5f5;
-  color: #dc2626;
-  border: 1px solid #fecaca;
 }
 </style>

@@ -163,6 +163,20 @@ class PatientControllerTest {
     }
 
     @Test
+    void bindMedicalInsuranceDelegatesToRepository() {
+        PatientController controller = new PatientController(repository);
+        PatientRepository.PatientProfile profile = profile("patient-8");
+        when(repository.bindMedicalInsurance("account-1", "patient-8")).thenReturn(profile);
+
+        PatientRepository.PatientProfile result = controller.bindMedicalInsurance(
+                "patient-8",
+                authentication("account-1", "13800000000"));
+
+        assertThat(result).isSameAs(profile);
+        verify(repository).bindMedicalInsurance("account-1", "patient-8");
+    }
+
+    @Test
     void legacyVerifyWithoutIdCardUsesOtherTypeAndGeneratedUnknownId() {
         PatientController controller = new PatientController(repository);
         PatientRepository.PatientProfile profile = profile("patient-5");
@@ -304,6 +318,8 @@ class PatientControllerTest {
                 "FEMALE",
                 LocalDate.of(1990, 1, 1),
                 OffsetDateTime.of(2026, 7, 9, 10, 0, 0, 0, ZoneOffset.UTC),
+                null,
+                false,
                 null);
     }
 }

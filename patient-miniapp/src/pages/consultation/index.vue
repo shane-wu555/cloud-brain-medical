@@ -112,6 +112,7 @@ interface DoctorRecommendation {
 }
 
 interface ConsultationResponse {
+  patientId?: string;
   consultationId?: string;
   aiRecordId?: string;
   summary: string;
@@ -183,6 +184,10 @@ const riskText = computed(() => {
   return '低风险';
 });
 
+function aiConsultationStorageKey(patientId: string) {
+  return `last_ai_consultation_${patientId}`;
+}
+
 async function sendMessage() {
   const text = input.value.trim();
   if (loading.value || !text) {
@@ -234,9 +239,17 @@ async function sendMessage() {
 }
 
 function handleAiResponse(response: ConsultationResponse) {
+  const currentPatientId = auth.boundPatient?.id || response.patientId || '';
+  const scopedResponse: ConsultationResponse = {
+    ...response,
+    patientId: currentPatientId || undefined
+  };
   consultationId.value = response.consultationId || consultationId.value;
-  result.value = response;
-  uni.setStorageSync('last_ai_consultation', response);
+  result.value = scopedResponse;
+  uni.setStorageSync('last_ai_consultation', scopedResponse);
+  if (currentPatientId) {
+    uni.setStorageSync(aiConsultationStorageKey(currentPatientId), scopedResponse);
+  }
 
   if (response.needsFollowUp) {
     pushMessage({

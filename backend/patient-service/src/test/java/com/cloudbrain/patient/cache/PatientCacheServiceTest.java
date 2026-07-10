@@ -100,6 +100,8 @@ class PatientCacheServiceTest {
                 "F",
                 LocalDate.of(1990, 1, 1),
                 OffsetDateTime.now(),
+                null,
+                false,
                 null);
         return new PatientRepository.PatientAccountState(List.of(profile), profile);
     }
