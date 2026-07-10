@@ -20,8 +20,7 @@ class PatientAccessClientTest {
     RestClient client;
 
     @Mock
-    @SuppressWarnings("rawtypes")
-    RestClient.RequestHeadersUriSpec requestHeadersUriSpec;
+    RestClient.RequestHeadersUriSpec<?> requestHeadersUriSpec;
 
     @Mock
     RestClient.RequestHeadersSpec<?> requestHeadersSpec;
@@ -33,8 +32,8 @@ class PatientAccessClientTest {
     void ownsReturnsTrueWhenResponseContainsOwnedFlag() {
         PatientAccessClient accessClient = client();
         doReturn(requestHeadersUriSpec).when(client).get();
-        when(requestHeadersUriSpec.uri(any(java.util.function.Function.class))).thenReturn((RestClient.RequestHeadersSpec) requestHeadersSpec);
-        when(requestHeadersSpec.header("X-Internal-Api-Key", "internal-key")).thenReturn((RestClient.RequestHeadersSpec) requestHeadersSpec);
+        doReturn(requestHeadersSpec).when(requestHeadersUriSpec).uri(any(java.util.function.Function.class));
+        doReturn(requestHeadersSpec).when(requestHeadersSpec).header("X-Internal-Api-Key", "internal-key");
         when(requestHeadersSpec.retrieve()).thenReturn(responseSpec);
         when(responseSpec.body(org.mockito.ArgumentMatchers.<ParameterizedTypeReference<Map<String, Boolean>>>any()))
                 .thenReturn(Map.of("owned", true));
@@ -46,9 +45,9 @@ class PatientAccessClientTest {
     void boundPatientIdReturnsNullWhenBindingMissing() {
         PatientAccessClient accessClient = client();
         doReturn(requestHeadersUriSpec).when(client).get();
-        when(requestHeadersUriSpec.uri("/api/internal/patients/accounts/{accountId}/binding", "account-1"))
-                .thenReturn((RestClient.RequestHeadersSpec) requestHeadersSpec);
-        when(requestHeadersSpec.header("X-Internal-Api-Key", "internal-key")).thenReturn((RestClient.RequestHeadersSpec) requestHeadersSpec);
+        doReturn(requestHeadersSpec).when(requestHeadersUriSpec)
+                .uri("/api/internal/patients/accounts/{accountId}/binding", "account-1");
+        doReturn(requestHeadersSpec).when(requestHeadersSpec).header("X-Internal-Api-Key", "internal-key");
         when(requestHeadersSpec.retrieve()).thenReturn(responseSpec);
         when(responseSpec.body(org.mockito.ArgumentMatchers.<ParameterizedTypeReference<Map<String, Object>>>any()))
                 .thenReturn(Map.of("hasBoundPatient", false));

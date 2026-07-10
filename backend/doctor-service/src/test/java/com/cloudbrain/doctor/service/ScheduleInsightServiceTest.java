@@ -21,8 +21,7 @@ class ScheduleInsightServiceTest {
     RestClient appointmentClient;
 
     @Mock
-    @SuppressWarnings("rawtypes")
-    RestClient.RequestHeadersUriSpec requestHeadersUriSpec;
+    RestClient.RequestHeadersUriSpec<?> requestHeadersUriSpec;
 
     @Mock
     RestClient.RequestHeadersSpec<?> requestHeadersSpec;
@@ -41,7 +40,7 @@ class ScheduleInsightServiceTest {
 
     @Test
     void refreshMapsTrainingReadyInsight() {
-        ScheduleInsightService service = serviceWithClient(true);
+        ScheduleInsightService service = serviceWithClient();
         Map<String, Object> response = Map.of(
                 "sampleSize", 260,
                 "trainingReady", true,
@@ -54,10 +53,10 @@ class ScheduleInsightServiceTest {
                         Map.of("isoDow", 1, "averageVisits", 25),
                         Map.of("isoDow", 6, "averageVisits", 10)));
         doReturn(requestHeadersUriSpec).when(appointmentClient).get();
-        when(requestHeadersUriSpec.uri("/api/internal/appointments/scheduling-history-summary?lookbackDays=90"))
-                .thenReturn((RestClient.RequestHeadersSpec) requestHeadersSpec);
-        when(requestHeadersSpec.header("X-Internal-Api-Key", "internal-key"))
-                .thenReturn((RestClient.RequestHeadersSpec) requestHeadersSpec);
+        doReturn(requestHeadersSpec).when(requestHeadersUriSpec)
+                .uri("/api/internal/appointments/scheduling-history-summary?lookbackDays=90");
+        doReturn(requestHeadersSpec).when(requestHeadersSpec)
+                .header("X-Internal-Api-Key", "internal-key");
         when(requestHeadersSpec.retrieve()).thenReturn(responseSpec);
         when(responseSpec.body(org.mockito.ArgumentMatchers.<ParameterizedTypeReference<Map<String, Object>>>any()))
                 .thenReturn(response);
@@ -74,12 +73,12 @@ class ScheduleInsightServiceTest {
 
     @Test
     void refreshDropsInsightWhenSampleTooSmallOrRemoteFails() {
-        ScheduleInsightService service = serviceWithClient(true);
+        ScheduleInsightService service = serviceWithClient();
         doReturn(requestHeadersUriSpec).when(appointmentClient).get();
-        when(requestHeadersUriSpec.uri("/api/internal/appointments/scheduling-history-summary?lookbackDays=90"))
-                .thenReturn((RestClient.RequestHeadersSpec) requestHeadersSpec);
-        when(requestHeadersSpec.header("X-Internal-Api-Key", "internal-key"))
-                .thenReturn((RestClient.RequestHeadersSpec) requestHeadersSpec);
+        doReturn(requestHeadersSpec).when(requestHeadersUriSpec)
+                .uri("/api/internal/appointments/scheduling-history-summary?lookbackDays=90");
+        doReturn(requestHeadersSpec).when(requestHeadersSpec)
+                .header("X-Internal-Api-Key", "internal-key");
         when(requestHeadersSpec.retrieve()).thenReturn(responseSpec);
         when(responseSpec.body(org.mockito.ArgumentMatchers.<ParameterizedTypeReference<Map<String, Object>>>any()))
                 .thenReturn(Map.of("sampleSize", 100, "trainingReady", true));
@@ -94,8 +93,8 @@ class ScheduleInsightServiceTest {
         assertThat(service.current()).isEqualTo(ScheduleInsightService.ScheduleInsight.empty());
     }
 
-    private ScheduleInsightService serviceWithClient(boolean enabled) {
-        ScheduleInsightService service = new ScheduleInsightService("http://localhost:8104", "internal-key", enabled);
+    private ScheduleInsightService serviceWithClient() {
+        ScheduleInsightService service = new ScheduleInsightService("http://localhost:8104", "internal-key", true);
         ReflectionTestUtils.setField(service, "appointmentClient", appointmentClient);
         return service;
     }
