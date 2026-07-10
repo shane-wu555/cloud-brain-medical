@@ -114,6 +114,33 @@ class CashierControllerAdditionalTest {
     }
 
     @Test
+    void normalizeChannelRejectsUnsupportedPublicScanChannel() throws Exception {
+        CashierController controller = controller(true, "");
+
+        assertThatThrownBy(() -> invoke(
+                controller,
+                "normalizeChannel",
+                new Class<?>[] {String.class, boolean.class},
+                "SIMULATED",
+                false))
+                .hasRootCauseInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void normalizeChannelAllowsSimulatedOnlyForCallbacks() throws Exception {
+        CashierController controller = controller(true, "");
+
+        Object normalized = invoke(
+                controller,
+                "normalizeChannel",
+                new Class<?>[] {String.class, boolean.class},
+                "SIMULATED",
+                true);
+
+        assertThat(normalized).isEqualTo("SIMULATED");
+    }
+
+    @Test
     void refundDrugReturnRejectsMissingReturnId() {
         CashierController controller = controller(true, "");
 
@@ -137,6 +164,41 @@ class CashierControllerAdditionalTest {
     }
 
     @Test
+    void testCallbackRejectsBlankBusinessIdentifiers() {
+        CashierController controller = controller(true, "");
+
+        assertThatThrownBy(() -> controller.testCallback(
+                new CashierController.TestPaymentRequest(" ", " ", "patient-1", "WECHAT", null),
+                authentication("cashier-1", "CASHIER")))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("businessType");
+    }
+
+    @Test
+    void testCallbackConfirmsPrescriptionPayment() {
+        CashierController controller = controller(true, "");
+        CashierRepository.Payment payment = payment("payment-8", "PRESCRIPTION", "pres-8", "patient-1", "PAID", "ALIPAY_TEST");
+        when(repository.recordTestPayment("PRESCRIPTION", "pres-8", "patient-1", "ALIPAY", "cashier-1", "trade-8"))
+                .thenReturn(payment);
+
+        CashierRepository.Payment result = controller.testCallback(
+                new CashierController.TestPaymentRequest("PRESCRIPTION", "pres-8", "patient-1", "ALIPAY", "trade-8"),
+                authentication("cashier-1", "CASHIER"));
+
+        assertThat(result).isSameAs(payment);
+        verify(prescriptionClient).confirm("pres-8", "patient-1", "payment-8");
+    }
+
+    @Test
+    void qrCodeRejectsOversizedExplicitTarget() {
+        CashierController controller = controller(true, "");
+        String target = "x".repeat(2049);
+
+        assertThatThrownBy(() -> controller.qrCode(target, null, null, request))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     void helperMethodsCoverRemainingBranchCases() throws Exception {
         CashierController controller = controller(true, "");
         when(request.getScheme()).thenReturn("https");
@@ -146,11 +208,21 @@ class CashierControllerAdditionalTest {
 
         assertThat(invoke(controller, "errorMessage", new Class<?>[] {Exception.class, String.class},
                 new RuntimeException(), "fallback")).isEqualTo("fallback");
+        assertThat(invoke(controller, "errorMessage", new Class<?>[] {Exception.class, String.class},
+                new IllegalStateException("boom"), "fallback")).isEqualTo("boom");
+        assertThat(invoke(controller, "channelLabel", new Class<?>[] {String.class}, (Object) null)).isEqualTo("扫码支付");
         assertThat(invoke(controller, "channelLabel", new Class<?>[] {String.class}, "ALIPAY")).isEqualTo("支付宝支付");
         assertThat(invoke(controller, "channelLabel", new Class<?>[] {String.class}, "MEDICAL_INSURANCE")).isEqualTo("医保卡支付");
         assertThat(invoke(controller, "channelLabel", new Class<?>[] {String.class}, "SIMULATED")).isEqualTo("模拟支付");
+        assertThat(invoke(controller, "channelLabel", new Class<?>[] {String.class}, "BANK_CARD")).isEqualTo("BANK_CARD");
+        assertThat(invoke(controller, "refundChannelLabel", new Class<?>[] {String.class}, (Object) null)).isEqualTo("Refund QR");
+        assertThat(invoke(controller, "refundChannelLabel", new Class<?>[] {String.class}, "ALIPAY"))
+                .isEqualTo("Alipay Refund Code");
         assertThat(invoke(controller, "refundChannelLabel", new Class<?>[] {String.class}, "MEDICAL_INSURANCE"))
                 .isEqualTo("Insurance Refund Code");
+        assertThat(invoke(controller, "refundChannelLabel", new Class<?>[] {String.class}, "BANK_CARD"))
+                .isEqualTo("BANK_CARD");
+        assertThat(invoke(controller, "normalizeBaseUrl", new Class<?>[] {String.class}, (Object) null)).isEqualTo("");
         assertThat(invoke(controller, "normalizeBaseUrl", new Class<?>[] {String.class}, "https://cashier.example///"))
                 .isEqualTo("https://cashier.example");
         assertThat(invoke(controller, "resolveScanBaseUrl", new Class<?>[] {HttpServletRequest.class}, request))
@@ -159,6 +231,10 @@ class CashierControllerAdditionalTest {
                 new Class<?>[] {String.class, String.class, String.class, HttpServletRequest.class},
                 null, "payment-9", "ALIPAY", request))
                 .isEqualTo("https://cashier.local:8443/cashier/api/payments/scan-entry?paymentId=payment-9&channel=ALIPAY");
+        String errorPage = (String) invoke(controller, "scanResultPage",
+                new Class<?>[] {boolean.class, String.class, String.class},
+                false, "ALIPAY", "<unsafe>");
+        assertThat(errorPage).contains("&lt;unsafe&gt;");
     }
 
     @AfterEach
