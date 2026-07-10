@@ -38,7 +38,7 @@
               v-model="paymentSearch.keyword"
               class="head-search"
               clearable
-              placeholder="输入身份证号或姓名"
+              placeholder="输入姓名"
               @keyup.enter="applyPaymentSearch"
               @clear="clearPaymentSearch"
             />
@@ -93,106 +93,196 @@
           </div>
 
           <div class="registration-layout">
-            <el-card shadow="never">
-              <template #header>就诊人信息</template>
-              <el-form label-position="top" class="patient-form">
-                <div class="form-grid">
-                  <el-form-item label="证件类型">
-                    <el-select v-model="patientForm.idType" class="full" @change="onIdTypeChange">
-                      <el-option v-for="item in idTypeOptions" :key="item.value" :label="item.label" :value="item.value" />
-                    </el-select>
-                  </el-form-item>
-                  <el-form-item label="证件号">
-                    <el-input
-                      v-model="patientForm.idNumber"
-                      :maxlength="patientForm.idType === 'ID_CARD' ? 18 : 64"
-                      clearable
-                      @input="onCertificateInput"
-                      @blur="() => searchPatientWhenIdCard(false)"
-                    />
-                  </el-form-item>
-                  <el-form-item label="姓名">
-                    <el-input v-model="patientForm.name" clearable />
-                  </el-form-item>
-                  <el-form-item label="手机号">
-                    <el-input v-model="patientForm.phone" clearable placeholder="选填" />
-                  </el-form-item>
-                  <el-form-item label="性别">
-                    <el-select v-model="patientForm.gender" class="full">
-                      <el-option v-for="item in genderOptions" :key="item.value" :label="item.label" :value="item.value" />
-                    </el-select>
-                  </el-form-item>
-                  <el-form-item label="出生日期">
-                    <el-date-picker
-                      v-model="patientForm.birthDate"
-                      class="full"
-                      type="date"
-                      value-format="YYYY-MM-DD"
-                      :disabled="patientForm.idType === 'ID_CARD' && isValidIdCard(patientForm.idNumber)"
-                    />
-                  </el-form-item>
+            <div class="registration-main">
+              <el-card shadow="never" class="registration-card">
+                <template #header>
+                  <div class="registration-card__header">
+                    <div>
+                      <span class="registration-card__step">Step 1</span>
+                      <strong>确认就诊人</strong>
+                    </div>
+                    <el-tag size="small" :type="patient ? 'success' : 'info'" effect="plain">
+                      {{ patient ? '已确认' : '待确认' }}
+                    </el-tag>
+                  </div>
+                </template>
+                <el-form label-position="top" class="patient-form">
+                  <div class="form-grid form-grid--patient">
+                    <el-form-item label="证件类型">
+                      <el-select v-model="patientForm.idType" class="full" @change="onIdTypeChange">
+                        <el-option v-for="item in idTypeOptions" :key="item.value" :label="item.label" :value="item.value" />
+                      </el-select>
+                    </el-form-item>
+                    <el-form-item label="证件号">
+                      <el-input
+                        v-model="patientForm.idNumber"
+                        :maxlength="patientForm.idType === 'ID_CARD' ? 18 : 64"
+                        clearable
+                        @input="onCertificateInput"
+                        @blur="() => searchPatientWhenIdCard(false)"
+                      />
+                    </el-form-item>
+                    <el-form-item label="姓名">
+                      <el-input v-model="patientForm.name" clearable />
+                    </el-form-item>
+                    <el-form-item label="手机号">
+                      <el-input v-model="patientForm.phone" clearable placeholder="选填" />
+                    </el-form-item>
+                    <el-form-item label="性别">
+                      <el-select v-model="patientForm.gender" class="full">
+                        <el-option v-for="item in genderOptions" :key="item.value" :label="item.label" :value="item.value" />
+                      </el-select>
+                    </el-form-item>
+                    <el-form-item label="出生日期">
+                      <el-date-picker
+                        v-model="patientForm.birthDate"
+                        class="full"
+                        type="date"
+                        value-format="YYYY-MM-DD"
+                        :disabled="patientForm.idType === 'ID_CARD' && isValidIdCard(patientForm.idNumber)"
+                      />
+                    </el-form-item>
+                  </div>
+                  <div class="form-actions">
+                    <el-button :loading="searchingPatient" @click="searchPatient">查询档案</el-button>
+                    <el-button type="primary" :loading="savingPatient" :disabled="!canConfirmPatient" @click="confirmPatient">
+                      确认就诊人
+                    </el-button>
+                  </div>
+                </el-form>
+
+                <div v-if="patient" class="patient-card">
+                  <div class="patient-card__avatar">{{ patient.name.slice(-1) }}</div>
+                  <div class="patient-card__info">
+                    <strong>{{ patient.name }}</strong>
+                    <span>{{ idTypeLabel(patient.idType) }} {{ patient.idNumber || '-' }}</span>
+                    <span>{{ genderLabel(patient.gender) }} · {{ patient.birthDate || '出生日期未填' }}</span>
+                    <span>患者编号 {{ currentPatientId }}</span>
+                  </div>
                 </div>
-                <div class="form-actions">
-                  <el-button :loading="searchingPatient" @click="searchPatient">查询档案</el-button>
-                  <el-button type="primary" :loading="savingPatient" :disabled="!canConfirmPatient" @click="confirmPatient">
-                    确认就诊人
+              </el-card>
+
+              <el-card shadow="never" class="registration-card">
+                <template #header>
+                  <div class="registration-card__header">
+                    <div>
+                      <span class="registration-card__step">Step 2</span>
+                      <strong>选择号源并收费</strong>
+                    </div>
+                    <el-tag size="small" :type="selectedScheduleOption ? 'success' : 'warning'" effect="plain">
+                      {{ selectedScheduleOption ? '已选号源' : '待选号源' }}
+                    </el-tag>
+                  </div>
+                </template>
+                <div class="form-grid form-grid--registration">
+                  <div class="field-stack">
+                    <span>挂号科室</span>
+                    <el-select v-model="selectedDepartmentId" clearable filterable placeholder="选择科室" class="full">
+                      <el-option v-for="item in registrationDepartments" :key="item.id" :label="item.name" :value="item.id" />
+                    </el-select>
+                  </div>
+                  <div class="field-stack">
+                    <span>接诊医生</span>
+                    <el-select v-model="selectedDoctorId" clearable filterable placeholder="选择医生" class="full">
+                      <el-option v-for="item in doctorOptions" :key="item.id" :label="item.name" :value="item.id" />
+                    </el-select>
+                  </div>
+                  <div class="field-stack">
+                    <span>未来号源</span>
+                    <el-select v-model="selectedSlotId" filterable placeholder="选择号源" class="full">
+                      <el-option
+                        v-for="item in scheduleOptions"
+                        :key="item.slot.id"
+                        :disabled="item.slot.available <= 0"
+                        :label="scheduleLabel(item)"
+                        :value="item.slot.id"
+                      />
+                    </el-select>
+                  </div>
+                </div>
+                <div class="registration-footer">
+                  <div>
+                    <span>挂号费</span>
+                    <strong>￥{{ selectedRegistrationFeeText }}</strong>
+                    <em>医保参考 ￥{{ selectedRegistrationInsuranceFeeText }}</em>
+                  </div>
+                  <el-button type="primary" :loading="registering" :disabled="!canRegister" @click="register">
+                    挂号并收费
                   </el-button>
                 </div>
-              </el-form>
+              </el-card>
+            </div>
 
-              <div v-if="patient" class="patient-card">
-                <div class="patient-card__avatar">{{ patient.name.slice(-1) }}</div>
-                <div class="patient-card__info">
-                  <strong>{{ patient.name }}</strong>
-                  <span>{{ idTypeLabel(patient.idType) }} {{ patient.idNumber || '-' }}</span>
-                  <span>{{ genderLabel(patient.gender) }} · {{ patient.birthDate || '出生日期未填' }}</span>
-                  <span>患者编号 {{ currentPatientId }}</span>
+            <aside class="registration-side">
+              <section class="registration-summary registration-summary--combined">
+                <div class="registration-summary__head">
+                  <div>
+                    <h3>当前挂号摘要 辅助看板</h3>
+                  </div>
+                  <el-tag size="small" :type="registrationStatus.type" effect="plain">
+                    {{ registrationStatus.label }}
+                  </el-tag>
                 </div>
-              </div>
-            </el-card>
 
-            <el-card shadow="never">
-              <template #header>挂号信息</template>
-              <div class="form-grid">
-                <el-select v-model="selectedDepartmentId" clearable filterable placeholder="科室" class="full">
-                  <el-option v-for="item in registrationDepartments" :key="item.id" :label="item.name" :value="item.id" />
-                </el-select>
-                <el-select v-model="selectedDoctorId" clearable filterable placeholder="医生" class="full">
-                  <el-option v-for="item in doctorOptions" :key="item.id" :label="item.name" :value="item.id" />
-                </el-select>
-                <el-select v-model="selectedSlotId" filterable placeholder="选择号源" class="full form-span-2">
-                  <el-option
-                    v-for="item in scheduleOptions"
-                    :key="item.slot.id"
-                    :disabled="item.slot.available <= 0"
-                    :label="scheduleLabel(item)"
-                    :value="item.slot.id"
-                  />
-                </el-select>
-              </div>
-              <div class="registration-footer">
-                <div>
-                  <span>挂号费</span>
-                  <strong>￥{{ selectedRegistrationFeeText }}</strong>
-                  <em>医保参考 ￥{{ selectedRegistrationInsuranceFeeText }}</em>
+                <div class="summary-grid">
+                  <div class="summary-item">
+                    <span>就诊人</span>
+                    <strong>{{ patient?.name || '未确认' }}</strong>
+                    <em>{{ currentPatientId || '确认后自动生成患者编号' }}</em>
+                  </div>
+                  <div class="summary-item">
+                    <span>科室 / 医生</span>
+                    <strong>{{ selectedRegistrationDepartmentName }}</strong>
+                    <em>{{ selectedRegistrationDoctorName }}{{ selectedRegistrationDoctorTitle ? ` · ${selectedRegistrationDoctorTitle}` : '' }}</em>
+                  </div>
+                  <div class="summary-item">
+                    <span>就诊信息</span>
+                    <strong>{{ selectedRegistrationVisitText }}</strong>
+                    <em>{{ selectedRegistrationRoomText }}</em>
+                  </div>
+                  <div class="summary-item">
+                    <span>费用</span>
+                    <strong>￥{{ selectedRegistrationFeeText }}</strong>
+                    <em>医保参考 ￥{{ selectedRegistrationInsuranceFeeText }}</em>
+                  </div>
                 </div>
-                <el-button type="primary" :loading="registering" :disabled="!canRegister" @click="register">
-                  挂号并收费
-                </el-button>
-              </div>
 
-              <el-result
-                v-if="lastAppointment"
-                class="register-result"
-                icon="success"
-                title="挂号成功"
-                :sub-title="`业务编号 ${lastAppointment.businessNo}，队列号 ${lastAppointment.queueNumber}`"
-              >
-                <template #extra>
-                  <el-button type="primary" @click="printRegistrationSlip(lastAppointment)">打印挂号单</el-button>
-                </template>
-              </el-result>
-            </el-card>
+                <div class="registration-summary__meta">
+                  <span>{{ selectedRegistrationAvailabilityText }}</span>
+                  <span>未来可选 {{ scheduleOptions.length }} 个时段</span>
+                </div>
+
+                <div class="registration-steps registration-steps--embedded">
+                  <div class="registration-steps__head">
+                    <h4>办理进度</h4>
+                  </div>
+                  <div
+                    v-for="(step, index) in registrationSteps"
+                    :key="step.key"
+                    :class="['registration-step', `registration-step--${step.state}`]"
+                  >
+                    <div class="registration-step__index">{{ index + 1 }}</div>
+                    <div class="registration-step__body">
+                      <strong>{{ step.title }}</strong>
+                      <span>{{ step.description }}</span>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section v-if="lastAppointment" class="registration-result-panel">
+                <el-result
+                  class="register-result"
+                  icon="success"
+                  title="挂号成功"
+                  :sub-title="`业务编号 ${lastAppointment.businessNo}，队列号 ${lastAppointment.queueNumber}`"
+                >
+                  <template #extra>
+                    <el-button type="primary" @click="printRegistrationSlip(lastAppointment)">打印挂号单</el-button>
+                  </template>
+                </el-result>
+              </section>
+            </aside>
           </div>
         </section>
 
@@ -208,7 +298,7 @@
               v-model="appointmentRecordSearch.keyword"
               class="head-search"
               clearable
-              placeholder="输入身份证号或姓名"
+              placeholder="输入姓名"
               @keyup.enter="applyAppointmentRecordSearch"
               @clear="clearAppointmentRecordSearch"
             />
@@ -274,7 +364,7 @@
               v-model="paymentRecordSearch.keyword"
               class="head-search"
               clearable
-              placeholder="输入身份证号或姓名"
+              placeholder="输入姓名"
               @keyup.enter="applyPaymentRecordSearch"
               @clear="clearPaymentRecordSearch"
             />
@@ -506,6 +596,8 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { ElMessage } from 'element-plus';
 import { useRouter } from 'vue-router';
+import { useQueuePolling } from '../../composables/useQueuePolling';
+import { useUnreadBadgeTracker } from '../../composables/useUnreadBadgeTracker';
 import { useAuthStore } from '../../store/auth';
 import { createOfflineAppointment, getAppointments, type Appointment } from '../../api/appointment';
 import { getDepartments, getDoctors, getSchedules, type Department, type Doctor, type Schedule } from '../../api/doctor';
@@ -674,6 +766,9 @@ const dayOfWeek = `星期${weekDays[new Date().getDay()]}`;
 const EXCLUDED_REGISTRATION_DEPARTMENT_KEYWORDS = ['处置科', '检查科', '检验科', '药房', '收费处', '系统管理'];
 const nowTimestamp = ref(Date.now());
 let nowTimer: number | undefined;
+const unreadStoragePrefix = `cashier-workbench:${auth.user?.id ?? 'anonymous'}`;
+const pendingUnreadTracker = useUnreadBadgeTracker(`${unreadStoragePrefix}:payments`);
+const drugReturnUnreadTracker = useUnreadBadgeTracker(`${unreadStoragePrefix}:drug-return-refunds`);
 
 const paymentChannelOptions: Array<{ value: PaymentChannel; action: string; label: string; hint: string }> = [
   { value: 'WECHAT', action: '使用微信支付', label: '微信支付', hint: '请使用微信扫一扫当前二维码' },
@@ -687,8 +782,8 @@ const refundChannelOptions: Array<{ value: PaymentChannel; action: string; label
 ];
 
 const navItems = computed(() => [
-  { key: 'payments' as const, label: '待缴费', badge: pendingItems.value.length || '' },
-  { key: 'drugReturnRefunds' as const, label: '退药待退费', badge: drugReturns.value.length || '' },
+  { key: 'payments' as const, label: '待缴费', badge: pendingUnreadTracker.unreadCount.value || '' },
+  { key: 'drugReturnRefunds' as const, label: '退药待退费', badge: drugReturnUnreadTracker.unreadCount.value || '' },
   { key: 'registration' as const, label: '线下挂号', badge: '' },
   { key: 'appointmentRecords' as const, label: '挂号记录', badge: '' },
   { key: 'paymentRecords' as const, label: '缴费退费记录', badge: '' }
@@ -738,6 +833,62 @@ const slotRoomNameMap = computed(() => {
 const selectedRegistrationFee = computed(() => selectedScheduleOption.value ? registrationFee(selectedScheduleOption.value.schedule.doctorId) : 15);
 const selectedRegistrationFeeText = computed(() => amountText(selectedRegistrationFee.value));
 const selectedRegistrationInsuranceFeeText = computed(() => amountText(insuranceAmount('REGISTRATION', selectedRegistrationFee.value)));
+const registrationStatus = computed(() => {
+  if (lastAppointment.value) return { label: '已完成挂号', type: 'success' as const };
+  if (canRegister.value) return { label: '可直接收费', type: 'success' as const };
+  if (patient.value) return { label: '待选号源', type: 'warning' as const };
+  return { label: '待确认患者', type: 'info' as const };
+});
+const selectedRegistrationDepartmentName = computed(() => {
+  const departmentId = selectedScheduleOption.value?.schedule.departmentId || selectedDepartmentId.value;
+  return departments.value.find(item => item.id === departmentId)?.name ?? '未选择';
+});
+const selectedRegistrationDoctorName = computed(() => {
+  const doctorId = selectedScheduleOption.value?.schedule.doctorId || selectedDoctorId.value;
+  return doctorOptions.value.find(item => item.id === doctorId)?.name
+    ?? doctorMap.value.get(doctorId)?.name
+    ?? '未选择';
+});
+const selectedRegistrationDoctorTitle = computed(() => {
+  const doctorId = selectedScheduleOption.value?.schedule.doctorId || selectedDoctorId.value;
+  return doctorMap.value.get(doctorId)?.title ?? '';
+});
+const selectedRegistrationVisitText = computed(() => {
+  const option = selectedScheduleOption.value;
+  return option ? `${option.schedule.workDate} ${option.schedule.period} ${option.slot.startTime.slice(0, 5)}` : '未选择';
+});
+const selectedRegistrationRoomText = computed(() => {
+  const option = selectedScheduleOption.value;
+  if (!option) return '待选择号源';
+  return slotRoomNameMap.value.get(option.slot.id) || doctorMap.value.get(option.schedule.doctorId)?.roomName || '待分配诊室';
+});
+const selectedRegistrationAvailabilityText = computed(() => {
+  const option = selectedScheduleOption.value;
+  return option ? `当前号源剩余 ${option.slot.available} 个号` : `当前共有 ${registrationAvailableCount.value} 个余号`;
+});
+const registrationAvailableCount = computed(() => scheduleOptions.value.reduce((sum, item) => sum + Math.max(item.slot.available, 0), 0));
+const registrationSteps = computed(() => [
+  {
+    key: 'patient',
+    title: '确认就诊人',
+    description: patient.value ? `${patient.value.name} · ${idTypeLabel(patient.value.idType)}` : '校验证件并确认患者档案',
+    state: patient.value ? 'done' : 'active'
+  },
+  {
+    key: 'slot',
+    title: '选择合适号源',
+    description: selectedScheduleOption.value
+      ? `${selectedRegistrationDepartmentName.value} · ${selectedRegistrationDoctorName.value}`
+      : '选择科室、医生和未来时段',
+    state: selectedScheduleOption.value ? 'done' : (patient.value ? 'active' : 'idle')
+  },
+  {
+    key: 'payment',
+    title: '挂号并收费',
+    description: lastAppointment.value ? `队列号 ${lastAppointment.value.queueNumber}` : '确认费用后完成收费',
+    state: lastAppointment.value ? 'done' : (canRegister.value ? 'active' : 'idle')
+  }
+]);
 const canRegister = computed(() => Boolean(canConfirmPatient.value && selectedScheduleOption.value && selectedScheduleOption.value.slot.available > 0));
 
 const appointmentMap = computed(() => new Map(appointments.value.map(item => [item.id, item])));
@@ -935,10 +1086,20 @@ async function loadRefundQrSvg() {
 
 function switchPage(page: PageKey) {
   currentPage.value = page;
+  markPageAsRead(page);
   if (page === 'registration') {
     loadRegistrationData();
   } else {
     void loadCurrentPageData();
+  }
+}
+
+function markPageAsRead(page: PageKey) {
+  if (page === 'payments') {
+    pendingUnreadTracker.markRead(pendingItems.value.map(item => item.businessKey));
+  }
+  if (page === 'drugReturnRefunds') {
+    drugReturnUnreadTracker.markRead(drugReturns.value.map(item => item.id));
   }
 }
 
@@ -1022,6 +1183,42 @@ async function loadDrugReturnRefundPage() {
     handleRequestFailure(error, '退药单加载失败');
   } finally {
     loadingAll.value = false;
+  }
+}
+
+async function refreshWorkbenchAlerts() {
+  const [appointmentsResult, prescriptionsResult, medicalOrdersResult, drugReturnsResult] = await Promise.allSettled([
+    getAppointments(),
+    getPrescriptions(),
+    getMedicalOrders(),
+    getDrugReturns({ status: 'RETURN_PENDING_REFUND' })
+  ]);
+
+  if (appointmentsResult.status === 'fulfilled') {
+    appointments.value = appointmentsResult.value;
+  } else if (isUnauthorized(appointmentsResult.reason)) {
+    redirectToLogin();
+    return;
+  }
+
+  if (prescriptionsResult.status === 'fulfilled') {
+    prescriptions.value = prescriptionsResult.value;
+  } else if (isUnauthorized(prescriptionsResult.reason)) {
+    redirectToLogin();
+    return;
+  }
+
+  if (medicalOrdersResult.status === 'fulfilled') {
+    medicalOrders.value = medicalOrdersResult.value;
+  } else if (isUnauthorized(medicalOrdersResult.reason)) {
+    redirectToLogin();
+    return;
+  }
+
+  if (drugReturnsResult.status === 'fulfilled') {
+    drugReturns.value = drugReturnsResult.value;
+  } else if (isUnauthorized(drugReturnsResult.reason)) {
+    redirectToLogin();
   }
 }
 
@@ -1950,6 +2147,20 @@ function logout() {
 
 watch(scheduleOptions, syncSelectedSlot);
 
+watch(
+  () => pendingItems.value.map(item => item.businessKey),
+  (ids) => {
+    pendingUnreadTracker.sync(ids);
+  }
+);
+
+watch(
+  () => drugReturns.value.map(item => item.id),
+  (ids) => {
+    drugReturnUnreadTracker.sync(ids);
+  }
+);
+
 watch(() => qrDialog.visible, (visible) => {
   if (!visible) stopQrStatusPolling();
 });
@@ -1970,11 +2181,18 @@ watch(doctorOptions, (options) => {
   }
 });
 
+const suspendWorkbenchPolling = computed(() => qrDialog.visible || refundDialog.visible);
+useQueuePolling(suspendWorkbenchPolling, refreshWorkbenchAlerts);
+
 onMounted(async () => {
   nowTimer = window.setInterval(() => {
     nowTimestamp.value = Date.now();
   }, 60_000);
   await loadCurrentPageData();
+  await refreshWorkbenchAlerts();
+  pendingUnreadTracker.sync(pendingItems.value.map(item => item.businessKey));
+  drugReturnUnreadTracker.sync(drugReturns.value.map(item => item.id));
+  markPageAsRead(currentPage.value);
 });
 
 onBeforeUnmount(() => {
@@ -2204,14 +2422,82 @@ onBeforeUnmount(() => {
 
 .registration-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 16px;
+  grid-template-columns: minmax(0, 1.94fr) minmax(220px, 0.52fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.registration-main {
+  display: grid;
+  gap: 14px;
+}
+
+.registration-card {
+  border: 1px solid #dbe7ea;
+  border-radius: 18px;
+  box-shadow: 0 16px 40px rgb(15 23 42 / 6%);
+}
+
+.registration-card :deep(.el-card__header) {
+  padding: 16px 20px 10px;
+  border-bottom-color: #edf3f4;
+}
+
+.registration-card :deep(.el-card__body) {
+  padding: 16px 20px 18px;
+}
+
+.registration-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.registration-card__header > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.registration-card__header strong {
+  font-size: 18px;
+  color: #0f172a;
+}
+
+.registration-card__step {
+  color: #0899a5;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.form-grid--registration {
+  align-items: end;
+  grid-template-columns: minmax(0, 0.68fr) minmax(0, 0.78fr) minmax(0, 1.54fr);
+}
+
+.field-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.field-stack > span {
+  color: #475569;
+  font-size: 13px;
+  font-weight: 600;
 }
 
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: 10px 12px;
+}
+
+.form-grid--patient {
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.2fr) minmax(0, 1fr);
 }
 
 .form-span-2 {
@@ -2224,7 +2510,7 @@ onBeforeUnmount(() => {
 
 .form-actions {
   justify-content: flex-end;
-  margin-top: 14px;
+  margin-top: 12px;
 }
 
 .patient-card {
@@ -2265,9 +2551,202 @@ onBeforeUnmount(() => {
 }
 
 .registration-footer {
-  margin-top: 16px;
-  padding-top: 14px;
+  margin-top: 12px;
+  padding-top: 12px;
   border-top: 1px solid #e5e7eb;
+}
+
+.registration-side {
+  position: sticky;
+  top: 0;
+  display: grid;
+  gap: 12px;
+  width: 100%;
+  max-width: 288px;
+  justify-self: end;
+}
+
+.registration-summary,
+.registration-result-panel {
+  border-radius: 18px;
+}
+
+.registration-summary {
+  padding: 14px;
+  background: linear-gradient(180deg, #fcfefe 0%, #f7fbfc 100%);
+  border: 1px solid #e4ecee;
+  box-shadow: 0 8px 22px rgb(15 23 42 / 4%);
+}
+
+.registration-summary--combined {
+  padding-bottom: 10px;
+}
+
+.registration-summary__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.registration-summary__head h3 {
+  margin: 0;
+  font-size: 15px;
+  color: #0f172a;
+  line-height: 1.35;
+}
+
+.registration-summary__head p {
+  margin: 4px 0 0;
+  color: #64748b;
+  font-size: 11px;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+
+.summary-item {
+  padding: 8px 9px;
+  border-radius: 10px;
+  background: rgb(255 255 255 / 84%);
+  border: 1px solid #e7eef0;
+}
+
+.summary-item span,
+.summary-item em {
+  display: block;
+}
+
+.summary-item span {
+  color: #64748b;
+  font-size: 11px;
+}
+
+.summary-item strong {
+  display: block;
+  margin-top: 4px;
+  color: #0f172a;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.summary-item em {
+  margin-top: 2px;
+  color: #68808e;
+  font-size: 11px;
+  font-style: normal;
+  line-height: 1.35;
+}
+
+.registration-summary__meta {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed #d6e4e6;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: #62717c;
+  font-size: 11px;
+}
+
+.registration-steps {
+  padding: 16px;
+  background: #fff;
+  border: 1px solid #dbe7ea;
+  box-shadow: 0 12px 30px rgb(15 23 42 / 5%);
+}
+
+.registration-steps--embedded {
+  margin-top: 10px;
+  padding: 10px 0 0;
+  border: none;
+  border-top: 1px solid #e6eef0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.registration-steps__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.registration-steps__head h4 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 13px;
+}
+
+.registration-steps__head span {
+  color: #64748b;
+  font-size: 11px;
+}
+
+.registration-step {
+  display: flex;
+  gap: 10px;
+  padding: 8px 2px;
+}
+
+.registration-step + .registration-step {
+  border-top: 1px solid #eef3f4;
+}
+
+.registration-step__index {
+  width: 22px;
+  height: 22px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  background: #eef3f5;
+  color: #64707b;
+}
+
+.registration-step__body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.registration-step__body strong {
+  color: #0f172a;
+  font-size: 13px;
+}
+
+.registration-step__body span {
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.registration-step--active .registration-step__index {
+  background: #dff5ee;
+  color: #0f766e;
+}
+
+.registration-step--done .registration-step__index {
+  background: #e8f6f2;
+  color: #0f766e;
+}
+
+.registration-step--done .registration-step__body strong {
+  color: #0f766e;
+}
+
+.registration-result-panel {
+  background: #fff;
+  border: 1px solid #e4ecee;
+  box-shadow: 0 8px 22px rgb(15 23 42 / 4%);
 }
 
 .register-result {
@@ -2522,10 +3001,23 @@ onBeforeUnmount(() => {
     overflow: visible;
   }
 
-  .stat-strip,
-  .registration-layout {
+  .stat-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .registration-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .registration-side {
+    position: static;
+    max-width: none;
+  }
+
+  .form-grid--patient {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
 }
 
 @media (max-width: 820px) {
@@ -2560,6 +3052,13 @@ onBeforeUnmount(() => {
   .registration-layout,
   .form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .registration-steps__head,
+  .registration-summary__head,
+  .registration-summary__meta {
+    flex-direction: column;
+    align-items: flex-start;
   }
 
   .form-span-2 {

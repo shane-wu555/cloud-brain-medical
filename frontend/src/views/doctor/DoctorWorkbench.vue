@@ -648,6 +648,7 @@ const selectedReportOrderName = ref('');
 const drugKeyword = ref('');
 const loadingDrugs = ref(false);
 let drugSearchTimer: number | undefined;
+let drugCatalogRequestId = 0;
 type RxDraftItem = {
   drugId: string;
   drugName: string;
@@ -803,13 +804,20 @@ function matchDrugForSuggestion(suggestion: Pick<AiDrugSuggestion, 'drugName' | 
 }
 
 async function loadDrugCatalog() {
+  const requestId = ++drugCatalogRequestId;
+  const keyword = drugKeyword.value.trim();
   loadingDrugs.value = true;
   try {
-    drugs.value = await getDrugs({ keyword: drugKeyword.value.trim() || undefined });
+    const result = await getDrugs({ keyword: keyword || undefined });
+    if (requestId !== drugCatalogRequestId) return;
+    drugs.value = result;
   } catch {
+    if (requestId !== drugCatalogRequestId) return;
     ElMessage.warning('药品检索暂不可用');
   } finally {
-    loadingDrugs.value = false;
+    if (requestId === drugCatalogRequestId) {
+      loadingDrugs.value = false;
+    }
   }
 }
 

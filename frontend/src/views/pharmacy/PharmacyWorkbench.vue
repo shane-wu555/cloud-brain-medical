@@ -21,7 +21,7 @@
           v-for="item in navItems"
           :key="item.key"
           :class="['nav-item', currentPage === item.key && 'nav-item--active']"
-          @click="currentPage = item.key"
+          @click="switchPage(item.key)"
         >
           <span>{{ item.label }}</span>
           <em v-if="item.badge">{{ item.badge }}</em>
@@ -43,16 +43,12 @@
 
           <div class="query-bar">
             <el-input
-              v-model="prescriptionSearch.patientName"
+              v-model="prescriptionSearch.keyword"
+              class="head-search"
               clearable
-              placeholder="患者姓名"
+              placeholder="输入处方号、患者姓名或诊断"
               @keyup.enter="applyPrescriptionSearch"
-            />
-            <el-input
-              v-model="prescriptionSearch.prescriptionNo"
-              clearable
-              placeholder="处方号"
-              @keyup.enter="applyPrescriptionSearch"
+              @clear="clearPrescriptionSearch"
             />
             <el-button type="primary" @click="applyPrescriptionSearch">搜索</el-button>
             <el-button @click="resetPrescriptionSearch">重置</el-button>
@@ -165,22 +161,12 @@
 
           <div class="query-bar">
             <el-input
-              v-model="returnSearch.patientName"
+              v-model="returnSearch.keyword"
+              class="head-search"
               clearable
-              placeholder="患者姓名"
+              placeholder="输入退药单号、处方号或患者姓名"
               @keyup.enter="applyReturnSearch"
-            />
-            <el-input
-              v-model="returnSearch.prescriptionNo"
-              clearable
-              placeholder="处方号"
-              @keyup.enter="applyReturnSearch"
-            />
-            <el-input
-              v-model="returnSearch.returnNo"
-              clearable
-              placeholder="退药单号"
-              @keyup.enter="applyReturnSearch"
+              @clear="clearReturnSearch"
             />
             <el-button type="primary" @click="applyReturnSearch">搜索</el-button>
             <el-button @click="resetReturnSearch">重置</el-button>
@@ -272,14 +258,21 @@
             <div>
               <h1>药品库存管理</h1>
             </div>
-            <el-button :loading="loadingDrugs" @click="loadDrugs">刷新</el-button>
+            <el-button :loading="loadingDrugs" @click="searchDrugs">刷新</el-button>
           </div>
 
           <div class="query-bar">
-            <el-input v-model="drugKeyword" clearable placeholder="药品名称或编码" @keyup.enter="loadDrugs" @clear="loadDrugs" />
-            <el-button type="primary" :loading="loadingDrugs" @click="loadDrugs">搜索</el-button>
+            <el-input
+              v-model="drugKeyword"
+              clearable
+              placeholder="药品名称或编码"
+              @input="scheduleDrugSearch"
+              @keydown.enter.prevent="searchDrugs"
+              @clear="clearDrugKeyword"
+            />
+            <el-button type="primary" :loading="loadingDrugs" @click="searchDrugs">搜索</el-button>
             <el-button @click="resetDrugSearch">重置</el-button>
-            <el-select v-model="drugStorageCondition" placeholder="存储条件" @change="loadDrugs">
+            <el-select v-model="drugStorageCondition" placeholder="存储条件" @change="searchDrugs">
               <el-option
                 v-for="option in storageConditionOptions"
                 :key="option.value || 'all'"
@@ -290,6 +283,10 @@
           </div>
 
           <section class="work-card">
+            <div class="inventory-search-summary">
+              <span>{{ inventorySearchSummary }}</span>
+              <span v-if="loadingDrugs">正在搜索...</span>
+            </div>
             <div v-loading="loadingDrugs" class="inventory-groups">
               <el-empty v-if="!inventoryGroups.length" description="暂无药品" :image-size="96" />
               <template v-else>
@@ -367,11 +364,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { useAuthStore } from '../../store/auth';
 import { useQueuePolling } from '../../composables/useQueuePolling';
+import { useUnreadBadgeTracker } from '../../composables/useUnreadBadgeTracker';
 import {
   dispensePrescription,
   getDrugReturns,
@@ -398,15 +396,19 @@ const auth = useAuthStore();
 
 const currentPage = ref<PageKey>('dispense');
 const waitingPrescriptions = ref<Prescription[]>([]);
+const waitingPrescriptionAlerts = ref<Prescription[]>([]);
 const dispensedPrescriptions = ref<Prescription[]>([]);
 const selected = ref<Prescription>();
 const selectedReturn = ref<DrugReturnOrder>();
 const returnDetailMode = ref<'prescription' | 'return'>('prescription');
 const drugReturns = ref<DrugReturnOrder[]>([]);
+const returnAlertOrders = ref<DrugReturnOrder[]>([]);
 const drugs = ref<Drug[]>([]);
-const returnStatus = ref('RETURN_PENDING_REFUND');
+const returnStatus = ref('');
 const drugKeyword = ref('');
 const drugStorageCondition = ref('');
+const activeDrugKeyword = ref('');
+const activeDrugStorageCondition = ref('');
 const collapsedDosageGroups = ref<string[]>([]);
 const loadingPrescriptions = ref(false);
 const loadingReturns = ref(false);
@@ -414,6 +416,11 @@ const loadingDrugs = ref(false);
 const stockInSubmitting = ref(false);
 const dispensingId = ref('');
 const authRedirecting = ref(false);
+let drugSearchRequestId = 0;
+let drugSearchTimer: number | undefined;
+const unreadStoragePrefix = `pharmacy-workbench:${auth.user?.id ?? 'anonymous'}`;
+const dispenseUnreadTracker = useUnreadBadgeTracker(`${unreadStoragePrefix}:dispense`);
+const returnUnreadTracker = useUnreadBadgeTracker(`${unreadStoragePrefix}:returns`);
 const loadedPages = reactive({
   dispense: false,
   returns: false,
@@ -421,22 +428,10 @@ const loadedPages = reactive({
 });
 
 const prescriptionSearch = reactive({
-  patientName: '',
-  prescriptionNo: ''
-});
-const activePrescriptionSearch = reactive({
-  patientName: '',
-  prescriptionNo: ''
+  keyword: ''
 });
 const returnSearch = reactive({
-  patientName: '',
-  prescriptionNo: '',
-  returnNo: ''
-});
-const activeReturnSearch = reactive({
-  patientName: '',
-  prescriptionNo: '',
-  returnNo: ''
+  keyword: ''
 });
 const stockInForm = reactive({
   visible: false,
@@ -446,6 +441,7 @@ const stockInForm = reactive({
 });
 
 const returnStatusOptions = [
+  { label: '\u5168\u90e8\u7c7b\u578b', value: '' },
   { label: '未缴费（已退药）', value: 'RETURNED' },
   { label: '未退费（已退药）', value: 'RETURN_PENDING_REFUND' },
   { label: '已退费（已退药）', value: 'RETURN_REFUNDED' }
@@ -461,12 +457,11 @@ const storageConditionOptions = [
 ];
 
 const navItems = computed(() => [
-  { key: 'dispense' as const, label: '处方发药', badge: waitingPrescriptions.value.length || '' },
-  { key: 'returns' as const, label: '退药管理', badge: drugReturns.value.length || '' },
-  { key: 'inventory' as const, label: '药品库存管理', badge: lowStockCount.value || '' }
+  { key: 'dispense' as const, label: '处方发药', badge: dispenseUnreadTracker.unreadCount.value || '' },
+  { key: 'returns' as const, label: '退药管理', badge: returnUnreadTracker.unreadCount.value || '' },
+  { key: 'inventory' as const, label: '药品库存管理', badge: '' }
 ]);
 
-const lowStockCount = computed(() => drugs.value.filter(isLowStock).length);
 const inventoryGroups = computed<InventoryGroup[]>(() => {
   const collapsed = new Set(collapsedDosageGroups.value);
   const byDosageForm = new Map<string, Drug[]>();
@@ -496,20 +491,54 @@ const inventoryGroups = computed<InventoryGroup[]>(() => {
     });
 });
 
-const filteredWaitingPrescriptions = computed(() => waitingPrescriptions.value);
-const filteredDispensedPrescriptions = computed(() => dispensedPrescriptions.value);
-const filteredDrugReturns = computed(() => drugReturns.value);
+const inventorySearchSummary = computed(() => {
+  const filters = [];
+  if (activeDrugKeyword.value) {
+    filters.push(`关键词“${activeDrugKeyword.value}”`);
+  }
+  if (activeDrugStorageCondition.value) {
+    filters.push(`存储条件“${activeDrugStorageCondition.value}”`);
+  }
+  const prefix = filters.length ? `当前筛选：${filters.join('，')}` : '当前显示：全部药品';
+  return `${prefix}，共 ${drugs.value.length} 个药品`;
+});
+
+const filteredWaitingPrescriptions = computed(() => {
+  const keyword = prescriptionSearch.keyword.trim().toLowerCase();
+  return waitingPrescriptions.value.filter((item) => {
+    if (!keyword) return true;
+    return matchesKeywordSearch(keyword, [item.prescriptionNo, item.patientName, item.diagnosis]);
+  });
+});
+const filteredDispensedPrescriptions = computed(() => {
+  const keyword = prescriptionSearch.keyword.trim().toLowerCase();
+  return dispensedPrescriptions.value.filter((item) => {
+    if (!keyword) return true;
+    return matchesKeywordSearch(keyword, [item.prescriptionNo, item.patientName, item.diagnosis]);
+  });
+});
+const filteredDrugReturns = computed(() => {
+  const keyword = returnSearch.keyword.trim().toLowerCase();
+  return drugReturns.value.filter((item) => {
+    if (!keyword) return true;
+    return matchesKeywordSearch(keyword, [
+      item.returnNo,
+      item.prescriptionNo,
+      item.patientName,
+      item.doctorOpinion,
+      item.pharmacistOpinion
+    ]);
+  });
+});
 const returnDetailTitle = computed(() => (returnDetailMode.value === 'prescription' ? '处方明细' : '退药明细'));
 
 const today = computed(() => new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }));
 const dayOfWeek = computed(() => ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][new Date().getDay()]);
 
-async function loadPrescriptions() {
-  loadingPrescriptions.value = true;
+async function loadPrescriptions(silent = false) {
+  if (!silent) loadingPrescriptions.value = true;
   try {
     const query = {
-      patientName: activePrescriptionSearch.patientName || undefined,
-      prescriptionNo: activePrescriptionSearch.prescriptionNo || undefined,
       page: 0,
       size: WORKBENCH_PAGE_SIZE
     };
@@ -526,18 +555,15 @@ async function loadPrescriptions() {
   } catch (error) {
     handleRequestFailure(error, '处方加载失败');
   } finally {
-    loadingPrescriptions.value = false;
+    if (!silent) loadingPrescriptions.value = false;
   }
 }
 
-async function loadReturns() {
-  loadingReturns.value = true;
+async function loadReturns(silent = false) {
+  if (!silent) loadingReturns.value = true;
   try {
     drugReturns.value = await getDrugReturns({
-      status: returnStatus.value,
-      patientName: activeReturnSearch.patientName || undefined,
-      prescriptionNo: activeReturnSearch.prescriptionNo || undefined,
-      returnNo: activeReturnSearch.returnNo || undefined,
+      status: returnStatus.value || undefined,
       page: 0,
       size: WORKBENCH_PAGE_SIZE
     });
@@ -545,22 +571,57 @@ async function loadReturns() {
   } catch (error) {
     handleRequestFailure(error, '退药记录加载失败');
   } finally {
-    loadingReturns.value = false;
+    if (!silent) loadingReturns.value = false;
   }
 }
 
-async function loadDrugs() {
+async function refreshWorkbenchAlerts() {
+  const [waitingResult, returnResult] = await Promise.allSettled([
+    getPrescriptions({ status: 'WAITING_DISPENSE', page: 0, size: WORKBENCH_PAGE_SIZE }),
+    getDrugReturns({ page: 0, size: WORKBENCH_PAGE_SIZE })
+  ]);
+
+  if (waitingResult.status === 'fulfilled') {
+    waitingPrescriptionAlerts.value = [...waitingResult.value].sort(
+      (left, right) => timeValue(left.createdAt) - timeValue(right.createdAt)
+    );
+  } else if (isUnauthorized(waitingResult.reason)) {
+    redirectToLogin();
+    return;
+  }
+
+  if (returnResult.status === 'fulfilled') {
+    returnAlertOrders.value = [...returnResult.value].sort(
+      (left, right) => timeValue(right.createdAt) - timeValue(left.createdAt)
+    );
+  } else if (isUnauthorized(returnResult.reason)) {
+    redirectToLogin();
+  }
+}
+
+async function loadDrugs(criteria?: { keyword?: string; storageCondition?: string }) {
+  const keyword = criteria?.keyword ?? drugKeyword.value.trim();
+  const storageCondition = criteria?.storageCondition ?? drugStorageCondition.value;
+  const requestId = ++drugSearchRequestId;
   loadingDrugs.value = true;
   try {
-    drugs.value = await getDrugs({
-      keyword: drugKeyword.value.trim(),
-      storageCondition: drugStorageCondition.value
+    const result = await getDrugs({
+      keyword: keyword || undefined,
+      storageCondition: storageCondition || undefined
     });
+    if (requestId !== drugSearchRequestId) return;
+    drugs.value = result;
+    activeDrugKeyword.value = keyword;
+    activeDrugStorageCondition.value = storageCondition;
+    collapsedDosageGroups.value = [];
     loadedPages.inventory = true;
   } catch (error) {
+    if (requestId !== drugSearchRequestId) return;
     handleRequestFailure(error, '药品库存加载失败');
   } finally {
-    loadingDrugs.value = false;
+    if (requestId === drugSearchRequestId) {
+      loadingDrugs.value = false;
+    }
   }
 }
 
@@ -626,40 +687,95 @@ function showReturnDetail(row: DrugReturnOrder) {
 }
 
 function applyPrescriptionSearch() {
-  activePrescriptionSearch.patientName = prescriptionSearch.patientName.trim();
-  activePrescriptionSearch.prescriptionNo = prescriptionSearch.prescriptionNo.trim();
-  loadPrescriptions();
+  prescriptionSearch.keyword = prescriptionSearch.keyword.trim();
+}
+
+function clearPrescriptionSearch() {
+  prescriptionSearch.keyword = '';
 }
 
 function resetPrescriptionSearch() {
-  prescriptionSearch.patientName = '';
-  prescriptionSearch.prescriptionNo = '';
-  activePrescriptionSearch.patientName = '';
-  activePrescriptionSearch.prescriptionNo = '';
-  loadPrescriptions();
+  clearPrescriptionSearch();
 }
 
 function applyReturnSearch() {
-  activeReturnSearch.patientName = returnSearch.patientName.trim();
-  activeReturnSearch.prescriptionNo = returnSearch.prescriptionNo.trim();
-  activeReturnSearch.returnNo = returnSearch.returnNo.trim();
-  loadReturns();
+  returnSearch.keyword = returnSearch.keyword.trim();
+}
+
+function clearReturnSearch() {
+  returnSearch.keyword = '';
 }
 
 function resetReturnSearch() {
-  returnSearch.patientName = '';
-  returnSearch.prescriptionNo = '';
-  returnSearch.returnNo = '';
-  activeReturnSearch.patientName = '';
-  activeReturnSearch.prescriptionNo = '';
-  activeReturnSearch.returnNo = '';
-  loadReturns();
+  clearReturnSearch();
 }
 
 function resetDrugSearch() {
+  clearDrugSearchTimer();
   drugKeyword.value = '';
   drugStorageCondition.value = '';
-  loadDrugs();
+  void loadDrugs({
+    keyword: '',
+    storageCondition: ''
+  });
+}
+
+function searchDrugs() {
+  clearDrugSearchTimer();
+  void searchDrugsAfterInputSettled();
+}
+
+function clearDrugSearchTimer() {
+  if (drugSearchTimer) {
+    window.clearTimeout(drugSearchTimer);
+    drugSearchTimer = undefined;
+  }
+}
+
+function scheduleDrugSearch() {
+  clearDrugSearchTimer();
+  drugSearchTimer = window.setTimeout(() => {
+    void searchDrugsAfterInputSettled();
+  }, 300);
+}
+
+async function searchDrugsAfterInputSettled() {
+  await nextTick();
+  await loadDrugs({
+    keyword: drugKeyword.value.trim(),
+    storageCondition: drugStorageCondition.value
+  });
+}
+
+function clearDrugKeyword() {
+  clearDrugSearchTimer();
+  drugKeyword.value = '';
+  void searchDrugsAfterInputSettled();
+}
+
+function switchPage(page: PageKey) {
+  const changed = currentPage.value !== page;
+  if (page !== 'dispense') {
+    selected.value = undefined;
+  }
+  if (page !== 'returns') {
+    selectedReturn.value = undefined;
+    returnDetailMode.value = 'prescription';
+  }
+  currentPage.value = page;
+  markPageAsRead(page);
+  if (!changed) {
+    void loadCurrentPage();
+  }
+}
+
+function markPageAsRead(page: PageKey) {
+  if (page === 'dispense') {
+    dispenseUnreadTracker.markRead(waitingPrescriptionAlerts.value.map((item) => item.id));
+  }
+  if (page === 'returns') {
+    returnUnreadTracker.markRead(returnAlertOrders.value.map((item) => item.id));
+  }
 }
 
 function toggleDosageGroup(dosageForm: string) {
@@ -725,6 +841,12 @@ function timeValue(value?: string) {
   return Number.isFinite(time) ? time : 0;
 }
 
+function matchesKeywordSearch(keyword: string, values: Array<string | number | null | undefined>) {
+  return values
+    .filter((value): value is string | number => value !== null && value !== undefined && value !== '')
+    .some((value) => String(value).toLowerCase().includes(keyword));
+}
+
 function errorMessage(error: unknown, fallback: string) {
   const candidate = error as {
     response?: { data?: { message?: string; error?: string } | string };
@@ -778,13 +900,36 @@ watch(currentPage, () => {
   loadCurrentPage();
 });
 
+watch(
+  () => waitingPrescriptionAlerts.value.map((item) => item.id),
+  (ids) => {
+    dispenseUnreadTracker.sync(ids);
+  }
+);
+
+watch(
+  () => returnAlertOrders.value.map((item) => item.id),
+  (ids) => {
+    returnUnreadTracker.sync(ids);
+  }
+);
+
 // 定时轮询处方列表：缴费后自动刷新待发药列表
 // 查看处方明细时跳过轮询，避免刷新导致选中状态丢失
 const isEditing = computed(() => !!selected.value || !!selectedReturn.value);
-useQueuePolling(isEditing, loadPrescriptions);
+useQueuePolling(isEditing, async () => {
+  await Promise.all([loadPrescriptions(true), loadReturns(true), refreshWorkbenchAlerts()]);
+});
+
+onBeforeUnmount(() => {
+  clearDrugSearchTimer();
+});
 
 onMounted(async () => {
-  await loadCurrentPage();
+  await Promise.all([loadCurrentPage(), refreshWorkbenchAlerts()]);
+  dispenseUnreadTracker.sync(waitingPrescriptionAlerts.value.map((item) => item.id));
+  returnUnreadTracker.sync(returnAlertOrders.value.map((item) => item.id));
+  markPageAsRead(currentPage.value);
 });
 </script>
 
@@ -981,6 +1126,10 @@ onMounted(async () => {
   width: 240px;
 }
 
+.query-bar .head-search {
+  width: 280px;
+}
+
 .query-bar .el-select {
   width: 180px;
 }
@@ -990,6 +1139,15 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.inventory-search-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  color: #64748b;
+  font-size: 13px;
 }
 
 .inventory-group {

@@ -50,7 +50,19 @@ class DrugSearchIndexServiceTest {
         @SuppressWarnings("unchecked")
         Map<String, Object> bool = (Map<String, Object>) query.get("bool");
         assertThat((List<?>) bool.get("filter")).hasSize(1);
-        assertThat((List<?>) body.get("sort")).hasSize(3);
+        assertThat((List<?>) body.get("sort")).hasSize(2);
+        assertThat(body.get("min_score")).isEqualTo(1.0);
+        assertThat(body.toString())
+                .contains("match_phrase")
+                .contains("fuzziness=AUTO")
+                .contains("drugName.keyword")
+                .contains("dosageForm.keyword")
+                .contains("case_insensitive");
+        assertThat((List<?>) body.get("sort"))
+                .extracting(Object::toString)
+                .containsExactly(
+                        "{_score={order=desc}}",
+                        "{drugCode={order=asc}}");
     }
 
     @Test

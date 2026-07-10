@@ -49,7 +49,7 @@ public class DrugSearchIndexService {
         try {
             ensureIndex();
             client.put()
-                    .uri("/{index}/_doc/{id}", indexName, drug.id())
+                    .uri("/{index}/_doc/{id}?refresh=wait_for", indexName, drug.id())
                     .body(document(drug))
                     .retrieve()
                     .toBodilessEntity();
@@ -69,6 +69,9 @@ public class DrugSearchIndexService {
             if (index(drug)) {
                 indexed += 1;
             }
+        }
+        if (indexed > 0) {
+            refreshIndex();
         }
         return indexed;
     }
@@ -112,30 +115,50 @@ public class DrugSearchIndexService {
         if (!blank(storageCondition)) {
             filters.add(Map.of("term", Map.of("storageCondition", storageCondition.trim())));
         }
+        String normalizedKeyword = keyword.trim();
+        List<Object> should = List.of(
+                Map.of("match_phrase", Map.of(
+                        "drugName", Map.of(
+                                "query", normalizedKeyword,
+                                "boost", 8))),
+                Map.of("multi_match", Map.of(
+                        "query", normalizedKeyword,
+                        "fields", List.of(
+                                "drugName^4",
+                                "drugCode.text^3",
+                                "specification^2",
+                                "dosageForm",
+                                "storageCondition"),
+                        "fuzziness", "AUTO",
+                        "prefix_length", 1,
+                        "lenient", true)),
+                Map.of("wildcard", Map.of(
+                        "drugCode", Map.of(
+                                "value", "*" + normalizedKeyword + "*",
+                                "case_insensitive", true,
+                                "boost", 4))),
+                Map.of("wildcard", Map.of(
+                        "drugName.keyword", Map.of(
+                                "value", "*" + normalizedKeyword + "*",
+                                "case_insensitive", true,
+                                "boost", 6))),
+                Map.of("wildcard", Map.of(
+                        "dosageForm.keyword", Map.of(
+                                "value", "*" + normalizedKeyword + "*",
+                                "case_insensitive", true,
+                                "boost", 2))));
         Map<String, Object> bool = new LinkedHashMap<>();
         bool.put("must", List.of(Map.of("bool", Map.of(
-                "should", List.of(
-                        Map.of("multi_match", Map.of(
-                                "query", keyword.trim(),
-                                "fields", List.of(
-                                        "drugName^4",
-                                        "drugCode.text^3",
-                                        "specification^2",
-                                        "dosageForm"),
-                                "lenient", true)),
-                        Map.of("wildcard", Map.of(
-                                "drugCode", Map.of(
-                                        "value", "*" + keyword.trim() + "*",
-                                        "case_insensitive", true)))),
+                "should", should,
                 "minimum_should_match", 1))));
         if (!filters.isEmpty()) {
             bool.put("filter", filters);
         }
         return Map.of(
                 "size", Math.max(1, Math.min(limit, 200)),
+                "min_score", 1.0,
                 "query", Map.of("bool", bool),
                 "sort", List.of(
-                        Map.of("lowStock", Map.of("order", "desc")),
                         Map.of("_score", Map.of("order", "desc")),
                         Map.of("drugCode", Map.of("order", "asc"))));
     }
@@ -185,6 +208,18 @@ public class DrugSearchIndexService {
                         .toBodilessEntity();
             }
             indexEnsured = true;
+        }
+    }
+
+    private void refreshIndex() {
+        try {
+            ensureIndex();
+            client.post()
+                    .uri("/{index}/_refresh", indexName)
+                    .retrieve()
+                    .toBodilessEntity();
+        } catch (RestClientException error) {
+            logger.warn("Drug Elasticsearch refresh failed: {}", error.getMessage());
         }
     }
 

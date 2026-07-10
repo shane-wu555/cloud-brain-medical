@@ -870,9 +870,9 @@ const schedulableDoctors = computed(() =>
 const navItems = computed<Array<{ key: PageKey; label: string; badge?: number }>>(() => [
   { key: 'overview', label: '运营概览' },
   { key: 'aiSchedule', label: 'AI 智能排班', badge: pendingSuggestions.value.length || undefined },
-  { key: 'manualSchedule', label: '排班信息', badge: schedules.value.length || undefined },
-  { key: 'doctorProfile', label: '医生账号与档案', badge: doctors.value.length || undefined },
-  { key: 'doctorEvents', label: '医生请假/手术', badge: doctorEvents.value.length || undefined }
+  { key: 'manualSchedule', label: '排班信息' },
+  { key: 'doctorProfile', label: '医生账号与档案' },
+  { key: 'doctorEvents', label: '医生请假/手术' }
 ]);
 
 const aiDoctors = computed(() => schedulableDoctors.value.filter((doctor) => doctor.departmentId === aiForm.departmentId));
