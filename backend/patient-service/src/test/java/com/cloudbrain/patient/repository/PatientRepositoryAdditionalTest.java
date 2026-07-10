@@ -20,16 +20,19 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import com.cloudbrain.patient.cache.PatientCacheService;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 @ExtendWith(MockitoExtension.class)
 class PatientRepositoryAdditionalTest {
     @Mock
     JdbcTemplate jdbcTemplate;
+    @Mock
+    PatientCacheService cache;
 
     @Test
     void findMapsProfileWithoutOptionalColumns() throws Exception {
-        PatientRepository repository = new PatientRepository(jdbcTemplate);
+        PatientRepository repository = new PatientRepository(jdbcTemplate, cache);
         var createdAt = OffsetDateTime.of(2026, 7, 9, 10, 0, 0, 0, ZoneOffset.UTC);
         when(jdbcTemplate.query(
                 eq("select * from patient where id = ?::uuid"),
@@ -57,7 +60,7 @@ class PatientRepositoryAdditionalTest {
 
     @Test
     void findByAccountMapsOptionalAccountAndUpdatedColumns() throws Exception {
-        PatientRepository repository = new PatientRepository(jdbcTemplate);
+        PatientRepository repository = new PatientRepository(jdbcTemplate, cache);
         var createdAt = OffsetDateTime.of(2026, 7, 9, 10, 0, 0, 0, ZoneOffset.UTC);
         var updatedAt = OffsetDateTime.of(2026, 7, 9, 11, 0, 0, 0, ZoneOffset.UTC);
         when(jdbcTemplate.query(
@@ -90,7 +93,7 @@ class PatientRepositoryAdditionalTest {
 
     @Test
     void findByIdNumberNormalizesInputBeforeQuery() throws Exception {
-        PatientRepository repository = new PatientRepository(jdbcTemplate);
+        PatientRepository repository = new PatientRepository(jdbcTemplate, cache);
         when(jdbcTemplate.query(
                 org.mockito.ArgumentMatchers.contains("where id_type = ? and id_number = ?"),
                 any(org.springframework.jdbc.core.RowMapper.class),
@@ -116,7 +119,7 @@ class PatientRepositoryAdditionalTest {
 
     @Test
     void findByIdsDeduplicatesValuesBeforeQuerying() {
-        PatientRepository repository = new PatientRepository(jdbcTemplate);
+        PatientRepository repository = new PatientRepository(jdbcTemplate, cache);
         List<PatientRepository.PatientProfile> profiles = List.of(profile("patient-1"), profile("patient-2"));
         when(jdbcTemplate.query(
                 eq("select * from patient where id in (?::uuid,?::uuid) order by created_at desc"),
@@ -132,7 +135,7 @@ class PatientRepositoryAdditionalTest {
 
     @Test
     void createForAccountInsertsNewOnlinePatientWhenIdentityIsNew() {
-        PatientRepository repository = spy(new PatientRepository(jdbcTemplate));
+        PatientRepository repository = spy(new PatientRepository(jdbcTemplate, cache));
         PatientRepository.PatientProfile created = profile("patient-created");
         doReturn(Optional.empty()).when(repository).findByIdentity("Alice", "FEMALE", "ID_CARD", "AB123");
         when(jdbcTemplate.queryForObject(
@@ -168,7 +171,7 @@ class PatientRepositoryAdditionalTest {
 
     @Test
     void createOfflineInsertsNewOfflinePatientWhenIdentityIsNew() {
-        PatientRepository repository = spy(new PatientRepository(jdbcTemplate));
+        PatientRepository repository = spy(new PatientRepository(jdbcTemplate, cache));
         PatientRepository.PatientProfile created = profile("patient-offline");
         doReturn(Optional.empty()).when(repository).findByIdentity("Bob", "MALE", "PASSPORT", "P123");
         doReturn(Optional.of(created)).when(repository).find(anyString());
@@ -195,7 +198,7 @@ class PatientRepositoryAdditionalTest {
 
     @Test
     void bindRefreshesBindingWhenPatientAlreadyBelongsToAccount() {
-        PatientRepository repository = spy(new PatientRepository(jdbcTemplate));
+        PatientRepository repository = spy(new PatientRepository(jdbcTemplate, cache));
         PatientRepository.PatientProfile profile = profile("patient-1");
         doReturn(true).when(repository).owns("account-1", "patient-1");
         doReturn(Optional.of(profile)).when(repository).find("patient-1");
@@ -211,7 +214,7 @@ class PatientRepositoryAdditionalTest {
 
     @Test
     void ownsReturnsFalseWhenDatabaseCountIsNull() {
-        PatientRepository repository = new PatientRepository(jdbcTemplate);
+        PatientRepository repository = new PatientRepository(jdbcTemplate, cache);
         when(jdbcTemplate.queryForObject(
                 """
                 select count(*) from account_binding
