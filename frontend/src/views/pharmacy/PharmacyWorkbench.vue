@@ -371,6 +371,7 @@ import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { useAuthStore } from '../../store/auth';
+import { useQueuePolling } from '../../composables/useQueuePolling';
 import {
   dispensePrescription,
   getDrugReturns,
@@ -776,6 +777,11 @@ async function loadCurrentPage() {
 watch(currentPage, () => {
   loadCurrentPage();
 });
+
+// 定时轮询处方列表：缴费后自动刷新待发药列表
+// 查看处方明细时跳过轮询，避免刷新导致选中状态丢失
+const isEditing = computed(() => !!selected.value || !!selectedReturn.value);
+useQueuePolling(isEditing, loadPrescriptions);
 
 onMounted(async () => {
   await loadCurrentPage();

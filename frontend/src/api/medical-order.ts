@@ -114,3 +114,29 @@ export async function getSpecimens(orderId: string) { return (await http.get<Spe
 export async function transitionSpecimen(id: string, status: string, reason = '') { return (await http.post<Specimen>(`/medical-orders/specimens/${id}/status`, { status, reason })).data }
 export async function saveLabResults(orderId: string, specimenId: string, items: Array<Record<string, unknown>>) { return (await http.post<LaboratoryResultItem[]>(`/medical-orders/${orderId}/laboratory-results`, { specimenId, items })).data }
 export async function getLabResults(orderId: string) { return (await http.get<LaboratoryResultItem[]>(`/medical-orders/${orderId}/laboratory-results`)).data }
+
+// ── Workspace API (replaces 5+ separate HTTP requests) ──
+
+export interface WorkspaceDto {
+  orders: MedicalOrder[];
+  detail: WorkspaceDetail | null;
+}
+
+export interface WorkspaceDetail {
+  order: MedicalOrder;
+  specimens: Specimen[];
+  labResults: LaboratoryResultItem[];
+  attachments: MedicalAttachment[];
+  report: MedicalReport | null;
+}
+
+/**
+ * Single call that returns the full workbench workspace:
+ * queue + optional detail for a selected order.
+ * Replaces getMedicalOrders + getSpecimens + getLabResults + getAttachments + getReports.
+ */
+export async function getWorkspace(orderId?: string): Promise<WorkspaceDto> {
+  const params: Record<string, string> = {};
+  if (orderId) params.orderId = orderId;
+  return (await http.get<WorkspaceDto>('/medical-orders/workspace', { params })).data;
+}

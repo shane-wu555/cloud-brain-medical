@@ -71,14 +71,14 @@ public class DevRecordSeeder implements CommandLineRunner {
               doctor_id, doctor_name, department_name, visit_date,
               ai_triage_summary,
               chief_complaint, present_illness, past_history, allergy_history,
-              preliminary_diagnosis, treatment_plan,
+              preliminary_diagnosis, diagnosis, treatment_plan,
               status, version, created_at, updated_at
             ) values (
               'record-' || gen_random_uuid(), ?::uuid, ?::uuid, ?,
               '00010001', '张医生', '神经内科', current_date,
               ?,
               ?, ?, ?, ?,
-              ?, ?,
+              ?, ?, ?,
               'DRAFT', 0, now(), now()
             ) on conflict (appointment_id) do nothing
             """;
@@ -89,7 +89,7 @@ public class DevRecordSeeder implements CommandLineRunner {
                 r.apptId(), r.patId(), r.name(),
                 r.triage(),
                 r.cc(), r.pi(), r.ph(), r.ah(),
-                r.pd(), r.tp());
+                r.pd(), r.pd(), r.tp());
         }
 
         if (inserted > 0) {

@@ -223,5 +223,45 @@ public class MedicalOrderRepository {
     public record RoomCandidate(String id, String name, String itemNames, String location,
             String equipmentIds, int capacity, int currentLoad) {}
 
+    public List<MedicalOrder> findByStaffRole(String staffId, String role) {
+        String type = switch (role) {
+            case "CHECK_DOCTOR"    -> "CHECK";
+            case "LAB_DOCTOR"      -> "LAB";
+            case "DISPOSAL_DOCTOR" -> "DISPOSAL";
+            default -> throw new IllegalArgumentException("Unsupported role: " + role);
+        };
+        return jdbcTemplate.query("""
+                select mo.*,
+                       er.name     as room_name,
+                       er.location as room_location
+                from medical_order mo
+                join staff_room_assignment sra on sra.room_id = mo.room_id
+                    and sra.staff_id = ? and sra.active
+                left join examination_room er on er.id = mo.room_id
+                where mo.order_type = ?
+                  and mo.payment_status = 'PAID'
+                order by case when mo.urgency = 'EMERGENCY' then 0 else 1 end,
+                         mo.queue_number nulls last, mo.created_at
+                """, mapper, staffId, type);
+    }
+
+    /** Batch-load orders by IDs to avoid N+1 queries. */
+    public java.util.Map<String, MedicalOrder> findByIds(java.util.Set<String> ids) {
+        if (ids.isEmpty()) return java.util.Map.of();
+        // Build IN clause with proper UUID casting
+        String placeholders = String.join(",", java.util.Collections.nCopies(ids.size(), "?::uuid"));
+        List<MedicalOrder> results = jdbcTemplate.query(
+                "select mo.*, er.name as room_name, er.location as room_location "
+                + "from medical_order mo "
+                + "left join examination_room er on er.id = mo.room_id "
+                + "where mo.id in (" + placeholders + ")",
+                mapper, ids.toArray());
+        java.util.Map<String, MedicalOrder> map = new java.util.LinkedHashMap<>();
+        for (MedicalOrder o : results) {
+            map.put(o.id(), o);
+        }
+        return map;
+    }
+
     public record StaffRoom(String staffId, String roomId) {}
 }

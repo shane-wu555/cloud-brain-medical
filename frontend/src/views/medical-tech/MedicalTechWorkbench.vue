@@ -780,12 +780,13 @@ import * as XLSX from 'xlsx';
 import { useRouter } from 'vue-router';
 import DoctorPersonalSchedule from '../../components/DoctorPersonalSchedule.vue';
 import { useAuthStore } from '../../store/auth';
+import { useQueuePolling } from '../../composables/useQueuePolling';
 import {
   callMedicalOrder, confirmReport, createReportDraft as saveReportDraft,
-  createSpecimen, downloadAttachment, getAttachments, getLabResults, getMedicalOrders, getReports, getSpecimens, missMedicalOrder,
+  createSpecimen, downloadAttachment, getLabResults, getWorkspace, missMedicalOrder,
   markMedicalOrderReportPending, refreshAiTask, saveLabResults, startMedicalOrder,
   submitCt, transitionSpecimen, uploadAttachment,
-  type AiMedicalTask, type LaboratoryResultItem, type MedicalAttachment, type MedicalOrder, type Specimen
+  type AiMedicalTask, type LaboratoryResultItem, type MedicalAttachment, type MedicalOrder, type MedicalReport, type Specimen
 } from '../../api/medical-order';
 import { createReportDraft as createAiReportDraft } from '../../api/ai';
 import { readVolume, readDicomSeries, renderAxial, renderCoronal, renderSagittal, type VolumeData } from '../../utils/volumeReader';
@@ -819,6 +820,12 @@ const queueTab = ref<'all' | 'waiting' | 'done'>('all');
 const mainTab = ref<'work' | 'report'>('work');
 const refreshing = ref(false);
 const showMySchedule = ref(false);
+
+// 用户正在写报告或录入结果时跳过队列轮询，避免覆盖正在输入的内容
+const isEditing = computed(() => !!current.value && !published.value);
+
+// 定时轮询队列：缴费后自动刷新待执行列表
+useQueuePolling(isEditing, loadOrders);
 
 // Report state
 const report = reactive({ findings: '', conclusion: '', advice: '' });
@@ -1624,11 +1631,23 @@ function aiStatusLabel(s: string) {
   return { COMPLETED: '分析完成', PROCESSING: '分析中', FAILED: '分析失败' }[s] ?? (s || '未提交');
 }
 
-async function loadOrders() { orders.value = await getMedicalOrders(); }
+async function loadOrders() {
+  const workspace = await getWorkspace();
+  orders.value = workspace.orders;
+  // 保持 current 与 orders 中同一对象引用，消除字段不一致导致的跳变
+  if (current.value) {
+    const match = orders.value.find(o => o.id === current.value!.id);
+    if (match) current.value = match;
+  }
+}
 
 async function refreshOrders() {
   refreshing.value = true;
   await loadOrders();
+  // 刷新后保持当前选中状态和 tab，不重置
+  if (current.value) {
+    await select(current.value, true);
+  }
   refreshing.value = false;
 }
 
@@ -1639,16 +1658,16 @@ function formatReportDate(value?: string) {
   return date.toLocaleDateString('zh-CN');
 }
 
-async function loadExistingReport(orderId: string) {
-  const reports = await getReports();
-  const existing = reports.find(item => (item.medicalOrderId ?? item.orderId) === orderId);
-  if (!existing) return undefined;
-  report.findings = existing.findings || '';
-  report.conclusion = existing.conclusion || '';
-  report.advice = existing.advice || '';
-  published.value = existing.status === 'CONFIRMED';
-  confirmedAt.value = existing.confirmedAt ? formatReportDate(existing.confirmedAt) : '';
-  return existing;
+async function loadExistingReport(orderId: string): Promise<MedicalReport | undefined> {
+  const workspace = await getWorkspace(orderId);
+  const reportDto = workspace.detail?.report ?? null;
+  if (!reportDto) return undefined;
+  report.findings = reportDto.findings || '';
+  report.conclusion = reportDto.conclusion || '';
+  report.advice = reportDto.advice || '';
+  published.value = reportDto.status === 'CONFIRMED';
+  confirmedAt.value = reportDto.confirmedAt ? formatReportDate(reportDto.confirmedAt) : '';
+  return reportDto;
 }
 
 function cleanPathologyReportValue(value: string) {
@@ -1678,44 +1697,56 @@ function isLegacyPathologySpecimen(order: MedicalOrder, specimen?: Specimen) {
     && /^LAB-[0-9A-F]{8}$/i.test(specimen.barcode);
 }
 
-async function select(row: MedicalOrder) {
+async function select(row: MedicalOrder, isReselect = false) {
   stopAiPolling();
+
+  // ── Phase 1: Synchronous reset of ALL fields (Vue batches these into one render) ──
   current.value = row;
-  Object.assign(report, { findings: '', conclusion: '', advice: '' });
-  confirmedAt.value = '';
-  published.value = false;
-  file.value = undefined;
-  imagePreviewUrl.value = '';
-  volume.value = null;
-  aiTaskId.value = '';
-  aiStatus.value = '';
-  aiStartedAtMs.value = undefined;
-  aiCompletionNotified = false;
-  aiMessages.value = [];
-  aiModel.value = '';
-  aiStructured.value = {};
-  specimenId.value = '';
-  labResultRows.value = [];
-  labResultsSaved.value = false;
-  pathology.material = '';
-  pathology.gross = '';
-  pathology.diagnosis = '';
-  pathologySlides.value.forEach(slide => {
-    if (slide.previewUrl) URL.revokeObjectURL(slide.previewUrl);
-  });
-  pathologySlides.value = [];
-  pathologySaved.value = false;
-  lab.specimenType = '';
-  lab.barcode = '';
+  if (!isReselect) {
+    Object.assign(report, { findings: '', conclusion: '', advice: '' });
+    confirmedAt.value = '';
+    published.value = false;
+    file.value = undefined;
+    imagePreviewUrl.value = '';
+    volume.value = null;
+    aiTaskId.value = '';
+    aiStatus.value = '';
+    aiStartedAtMs.value = undefined;
+    aiCompletionNotified = false;
+    aiMessages.value = [];
+    aiModel.value = '';
+    aiStructured.value = {};
+    specimenId.value = '';
+    labResultRows.value = [];
+    labResultsSaved.value = false;
+    pathology.material = '';
+    pathology.gross = '';
+    pathology.diagnosis = '';
+    pathologySlides.value.forEach(slide => {
+      if (slide.previewUrl) URL.revokeObjectURL(slide.previewUrl);
+    });
+    pathologySlides.value = [];
+    pathologySaved.value = false;
+    lab.specimenType = '';
+    lab.barcode = '';
+  }
+
+  // ── Phase 2: Use workspace API instead of 3+ separate requests ──
   if (row.orderType === 'LAB') {
-    const specimens = await getSpecimens(row.id);
+    const workspace = await getWorkspace(row.id);
+    const detail = workspace.detail;
+    const specimens = detail?.specimens ?? [];
+    const labResults = detail?.labResults ?? [];
+    const attachments = detail?.attachments ?? [];
+
+    // ── Phase 3: Synchronous batch of ALL async results (Vue batches into one render) ──
     specimensByOrder.value = { ...specimensByOrder.value, [row.id]: specimens };
     const existingSpecimen = specimens[0];
     const displaySpecimen = isLegacyPathologySpecimen(row, existingSpecimen) ? undefined : existingSpecimen;
     specimenId.value = displaySpecimen?.id ?? '';
     lab.specimenType = displaySpecimen?.specimenType ?? '';
     lab.barcode = displaySpecimen?.barcode ?? buildSpecimenBarcode(row);
-    labResultRows.value = (await getLabResults(row.id)).map(item => ({
+    labResultRows.value = labResults.map(item => ({
       itemCode: item.itemCode,
       itemName: item.itemName,
       resultValue: item.resultValue,
@@ -1725,32 +1756,35 @@ async function select(row: MedicalOrder) {
     }));
     labResultsSaved.value = labResultRows.value.length > 0;
     if (isPathologyItem(row)) {
-      const attachments = await getAttachments(row.id);
-      pathologySlides.value = await Promise.all(attachments
-        .filter(item => item.contentType?.startsWith('image/'))
-        .map(async (item) => {
-          let previewUrl = '';
-          try {
-            previewUrl = URL.createObjectURL(await downloadAttachment(row.id, item.id));
-          } catch {
-            previewUrl = '';
-          }
-          return {
-            id: item.id,
-            label: '',
-            previewUrl,
-            attachment: item,
-          };
-        }));
+      const imageAttachments = attachments.filter(item => item.contentType?.startsWith('image/'));
+      const downloadResults = await Promise.allSettled(
+        imageAttachments.map(item => downloadAttachment(row.id, item.id))
+      );
+      pathologySlides.value = imageAttachments.map((item, i) => {
+        const result = downloadResults[i];
+        const previewUrl = result.status === 'fulfilled'
+          ? URL.createObjectURL(result.value)
+          : '';
+        return {
+          id: item.id,
+          label: '',
+          previewUrl,
+          attachment: item,
+        };
+      });
     }
   }
-  await renderLabBarcode();
-  const existingReport = await loadExistingReport(row.id);
+
+  // ── Phase 4: Render barcode and load report in parallel ──
+  const [, existingReport] = await Promise.all([
+    renderLabBarcode(),
+    loadExistingReport(row.id),
+  ]);
   if (isPathologyItem(row) && existingReport) {
     syncPathologyFormFromReport();
     pathologySaved.value = true;
   }
-  mainTab.value = isPathologyItem(row) ? 'report' : 'work';
+  // 不再在数据加载完成后强制切 tab，避免打断用户在其他 tab 的操作
 }
 
 async function call(row: MedicalOrder) {
@@ -1760,10 +1794,9 @@ async function call(row: MedicalOrder) {
 }
 
 async function start(row: MedicalOrder) {
-  const updated = await startMedicalOrder(row.id);
-  if (current.value?.id === row.id) current.value = updated;
+  await startMedicalOrder(row.id);
   ElMessage.success(isPathologyItem(row) ? '已接收送检' : '已开始执行');
-  await loadOrders();
+  await loadOrders(); // loadOrders 自动同步 current.value
 }
 
 async function miss(row: MedicalOrder) {
@@ -1778,10 +1811,9 @@ async function markPatientDone() {
     : role.value === 'LAB_DOCTOR'
       ? '患者采样/检验执行已完成，待发布正式报告'
       : '处置执行已完成，待发布记录';
-  const updated = await markMedicalOrderReportPending(current.value.id, { summary });
-  current.value = updated;
+  await markMedicalOrderReportPending(current.value.id, { summary });
   ElMessage.success('患者执行已完成，当前状态为待报告');
-  await loadOrders();
+  await loadOrders(); // loadOrders 自动同步 current.value
 }
 
 const VOLUME_EXTS = ['.nii', '.nii.gz', '.nrrd', '.nhdr', '.mha'];
@@ -2142,11 +2174,10 @@ async function prepareSpecimen() {
     await transitionSpecimen(specimen.id, 'COLLECTED');
     specimensByOrder.value = { ...specimensByOrder.value, [current.value.id]: [{ ...specimen, status: 'COLLECTED' }] };
     if (current.value.status === 'IN_PROGRESS') {
-      const updated = await markMedicalOrderReportPending(current.value.id, { summary: '采样已完成，样本已送检，待发布正式报告' });
-      current.value = updated;
+      await markMedicalOrderReportPending(current.value.id, { summary: '采样已完成，样本已送检，待发布正式报告' });
     }
     ElMessage.success('采样已完成，样本已送检，当前状态为待报告');
-    await loadOrders();
+    await loadOrders(); // loadOrders 自动同步 current.value
   } finally {
     samplingSubmitting.value = false;
   }

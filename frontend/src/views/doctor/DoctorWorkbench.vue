@@ -308,19 +308,62 @@
 
           <!-- 已完成报告 -->
           <div v-show="mainTab === 'reports'" class="main-content">
-            <el-table :data="formalReports" row-class-name="report-row">
-              <el-table-column label="类型" width="80">
-                <template #default="{ row }">
-                  {{ reportTypeLabel(row.reportType) }}
-                </template>
-              </el-table-column>
-              <el-table-column prop="conclusion" label="结论" />
-              <el-table-column label="" width="80" align="right">
-                <template #default="{ row }">
-                  <el-button size="small" link type="primary" @click="viewReport(row)">查看报告</el-button>
-                </template>
-              </el-table-column>
-            </el-table>
+            <div v-if="!formalReports.length" class="reports-empty">
+              <div class="reports-empty__icon"></div>
+              <span>暂无已完成报告</span>
+              <p>患者检查/检验报告确认后会自动出现在这里</p>
+            </div>
+            <div v-else class="reports-grid">
+              <div
+                v-for="report in formalReports"
+                :key="report.id"
+                class="report-card"
+                @click="viewReport(report)"
+              >
+                <div class="report-card__header">
+                  <div class="report-card__type-badge" :class="`report-card__type-badge--${report.reportType?.toLowerCase()}`">
+                    <span class="report-card__type-dot"></span>
+                    <span>{{ reportTypeLabel(report.reportType) }}</span>
+                  </div>
+                  <div class="report-card__status">
+                    <span class="report-card__status-dot"></span>
+                    已确认
+                  </div>
+                </div>
+
+                <div class="report-card__body">
+                  <div class="report-card__meta">
+                    <div class="report-card__meta-item">
+                      <em>项目</em>
+                      <span>{{ getReportOrderItemName(report) || reportTypeLabel(report.reportType) }}</span>
+                    </div>
+                    <div class="report-card__meta-item">
+                      <em>日期</em>
+                      <span>{{ report.confirmedAt ? report.confirmedAt.slice(0, 10) : '—' }}</span>
+                    </div>
+                    <div class="report-card__meta-item">
+                      <em>医师</em>
+                      <span>{{ report.confirmedBy || '—' }}</span>
+                    </div>
+                  </div>
+
+                  <div class="report-card__conclusion">
+                    <span class="report-card__conclusion-label">结论</span>
+                    <p>{{ report.conclusion || '暂无结论' }}</p>
+                  </div>
+
+                  <div v-if="report.findings" class="report-card__findings">
+                    <span>所见</span>
+                    <p>{{ truncateText(report.findings, 80) }}</p>
+                  </div>
+                </div>
+
+                <div class="report-card__footer">
+                  <span v-if="report.modifiedFromAi" class="report-card__ai-tag">AI 辅助</span>
+                  <span class="report-card__action">查看详情</span>
+                </div>
+              </div>
+            </div>
           </div>
 
           <!-- 报告详情弹窗 -->
@@ -358,62 +401,73 @@
 
               <div class="med-report__rule"></div>
 
-              <table v-if="selectedReport.reportType === 'LAB' && selectedLabResults.length" class="lab-report-table">
-                <thead>
-                  <tr>
-                    <th>项目名称</th>
-                    <th>结果</th>
-                    <th>单位</th>
-                    <th>参考范围</th>
-                    <th>提示</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="item in selectedLabResults" :key="item.id || item.itemCode">
-                    <td>{{ item.itemName }}</td>
-                    <td class="lab-report-table__value">{{ item.resultValue }}</td>
-                    <td>{{ item.unit || '—' }}</td>
-                    <td>{{ item.referenceRange || '—' }}</td>
-                    <td>{{ abnormalLabel(item.abnormalFlag) }}</td>
-                  </tr>
-                </tbody>
-              </table>
+	              <table v-if="selectedReport.reportType === 'LAB' && selectedLabResults.length" class="lab-report-table">
+	                <thead>
+	                  <tr>
+	                    <th>项目名称</th>
+	                    <th>结果</th>
+	                    <th>单位</th>
+	                    <th>参考范围</th>
+	                    <th>提示</th>
+	                  </tr>
+	                </thead>
+	                <tbody>
+	                  <tr v-for="item in selectedLabResults" :key="item.id || item.itemCode">
+	                    <td>{{ item.itemName }}</td>
+	                    <td class="lab-report-table__value">{{ item.resultValue }}</td>
+	                    <td>{{ item.unit || '—' }}</td>
+	                    <td>{{ item.referenceRange || '—' }}</td>
+	                    <td>{{ abnormalLabel(item.abnormalFlag) }}</td>
+	                  </tr>
+	                </tbody>
+	              </table>
 
-              <div v-if="selectedReport.reportType !== 'LAB'" class="med-report__section">
-                <div class="med-report__section-lbl">检查所见 / 执行过程</div>
-                <div class="med-report__area med-report__area--readonly">{{ selectedReport.findings || '—' }}</div>
-              </div>
+	              <!-- 报告图片 -->
+	              <div v-if="selectedLabImages.length" class="report-images">
+	                <div class="med-report__section-lbl">影像图片</div>
+	                <div class="report-images__grid">
+	                  <div v-for="img in selectedLabImages" :key="img.id" class="report-images__item">
+	                    <img v-if="img.url" :src="img.url" :alt="img.label" />
+	                    <span class="report-images__label">{{ img.label }}</span>
+	                  </div>
+	                </div>
+	              </div>
 
-              <div class="med-report__rule"></div>
+	              <div v-if="selectedReport.reportType !== 'LAB'" class="med-report__section">
+	                <div class="med-report__section-lbl">检查所见 / 执行过程</div>
+	                <div class="med-report__area med-report__area--readonly">{{ selectedReport.findings || '—' }}</div>
+	              </div>
 
-              <div class="med-report__section">
-                <div class="med-report__section-lbl med-report__section-lbl--emphasis">结　论 / 结　果</div>
-                <div class="med-report__area med-report__area--readonly med-report__area--emphasis">{{ selectedReport.conclusion || '—' }}</div>
-              </div>
+	              <div class="med-report__rule"></div>
 
-              <div class="med-report__section" style="margin-top:14px">
-                <div class="med-report__section-lbl">后续建议</div>
-                <div class="med-report__area med-report__area--readonly med-report__area--single">{{ selectedReport.advice || '—' }}</div>
-              </div>
+	              <div class="med-report__section">
+	                <div class="med-report__section-lbl med-report__section-lbl--emphasis">结　论 / 结　果</div>
+	                <div class="med-report__area med-report__area--readonly med-report__area--emphasis">{{ selectedReport.conclusion || '—' }}</div>
+	              </div>
 
-              <div class="med-report__rule"></div>
+	              <div class="med-report__section" style="margin-top:14px">
+	                <div class="med-report__section-lbl">后续建议</div>
+	                <div class="med-report__area med-report__area--readonly med-report__area--single">{{ selectedReport.advice || '—' }}</div>
+	              </div>
 
-              <div class="med-report__sig-footer">
-                <div class="sig-block">
-                  <span><span class="sig-label">报告医师：</span><span class="sig-name-print">{{ selectedReport.confirmedBy || '' }}</span></span>
-                  <span><span class="sig-label">医师签名：</span><span class="sig-cursive">{{ selectedReport.confirmedBy || '' }}</span></span>
-                  <span><span class="sig-label">报告日期：</span><span class="sig-date">{{ selectedReport.confirmedAt ? selectedReport.confirmedAt.slice(0,10) : today }}</span></span>
-                </div>
-                <div class="stamp-block">
-                  <div class="stamp-circle stamp-circle--published">
-                    <span>已审核</span>
-                  </div>
-                </div>
-              </div>
+	              <div class="med-report__rule"></div>
 
-              <div class="med-report__notice">
-                注：本报告由检查/检验医师审核后发布，仅供临床医师参考，如有疑义请及时与医技科室联系。
-              </div>
+	              <div class="med-report__sig-footer">
+	                <div class="sig-block">
+	                  <span><span class="sig-label">报告医师：</span><span class="sig-name-print">{{ selectedReport.confirmedBy || '' }}</span></span>
+	                  <span><span class="sig-label">医师签名：</span><span class="sig-cursive">{{ selectedReport.confirmedBy || '' }}</span></span>
+	                  <span><span class="sig-label">报告日期：</span><span class="sig-date">{{ selectedReport.confirmedAt ? selectedReport.confirmedAt.slice(0,10) : today }}</span></span>
+	                </div>
+	                <div class="stamp-block">
+	                  <div class="stamp-circle stamp-circle--published">
+	                    <span>已审核</span>
+	                  </div>
+	                </div>
+	              </div>
+
+	              <div class="med-report__notice">
+	                注：本报告由检查/检验医师审核后发布，仅供临床医师参考，如有疑义请及时与医技科室联系。
+	              </div>
             </div>
             <template #footer>
               <el-button @click="reportDialogVisible = false">关闭</el-button>
@@ -430,8 +484,16 @@
             <el-table :data="historyRecords">
               <el-table-column prop="visitDate" label="日期" width="110" />
               <el-table-column prop="patientName" label="患者" width="110" />
-              <el-table-column prop="chiefComplaint" label="主诉" />
-              <el-table-column prop="diagnosis" label="诊断" />
+              <el-table-column label="主诉">
+                <template #default="scope">
+                  {{ scope.row.chiefComplaint || scope.row.aiTriageSummary || '—' }}
+                </template>
+              </el-table-column>
+              <el-table-column label="诊断">
+                <template #default="scope">
+                  {{ scope.row.diagnosis || scope.row.preliminaryDiagnosis || '—' }}
+                </template>
+              </el-table-column>
             </el-table>
           </div>
         </template>
@@ -519,8 +581,9 @@ import { useAuthStore } from '../../store/auth';
 import { callAppointment, getTodayQueue, skipAppointment, startAppointment, updateAppointmentStatus, type Appointment } from '../../api/appointment';
 import { archiveMedicalRecord, getMedicalRecords, getPatientHistory, initDoctorRecord, writeDoctorNote, type MedicalRecord } from '../../api/medical-record';
 import { getClinicalAssistance, type ClinicalSuggestion } from '../../api/ai';
-import { createMedicalOrder, getLabResults, getMedicalItems, getMedicalOrders, getReports, type LaboratoryResultItem, type MedicalItem, type MedicalOrder, type MedicalReport } from '../../api/medical-order';
+import { createMedicalOrder, downloadAttachment, getAttachments, getLabResults, getMedicalItems, getMedicalOrders, getReports, type LaboratoryResultItem, type MedicalAttachment, type MedicalItem, type MedicalOrder, type MedicalReport } from '../../api/medical-order';
 import { createDrugReturn, createPrescription, getDrugs, getPrescriptions, type Drug, type Prescription } from '../../api/pharmacy';
+import { useQueuePolling } from '../../composables/useQueuePolling';
 
 const router = useRouter();
 const auth = useAuthStore();
@@ -552,6 +615,9 @@ const refreshing = ref(false);
 const showMySchedule = ref(false);
 let loadingRecord = false;
 
+// 定时轮询队列：缴费后自动刷新候诊列表
+useQueuePolling(dirty, loadQueue);
+
 const mainTabs = [
   { key: 'record', label: '病历书写' },
   { key: 'rx', label: '处方' },
@@ -577,6 +643,8 @@ const drugReturnDialog = reactive({
 const reportDialogVisible = ref(false);
 const selectedReport = ref<MedicalReport>();
 const selectedLabResults = ref<LaboratoryResultItem[]>([]);
+const selectedLabImages = ref<{ id: string; url: string; label: string }[]>([]);
+const selectedReportOrderName = ref('');
 const drugKeyword = ref('');
 const loadingDrugs = ref(false);
 let drugSearchTimer: number | undefined;
@@ -814,7 +882,6 @@ async function submitManualRx() {
   manualRxItems.value = [];
   ElMessage.success('处方已开立，待患者缴费');
   await loadPrescriptions();
-  mainTab.value = 'record';
 }
 
 function openDrugReturn(rx: Prescription) {
@@ -889,6 +956,16 @@ function reportTypeLabel(type?: string) {
   return ({ CHECK: '检查', LAB: '检验', DISPOSAL: '处置' } as Record<string, string>)[type ?? ''] ?? (type || '');
 }
 
+function getReportOrderItemName(report: MedicalReport) {
+  const orderId = report.medicalOrderId ?? report.orderId;
+  return currentOrders.value.find(o => o.id === orderId)?.itemName ?? '';
+}
+
+function truncateText(text: string, maxLen: number) {
+  if (!text || text.length <= maxLen) return text || '';
+  return text.slice(0, maxLen) + '…';
+}
+
 function reportDocumentTitle(type?: string) {
   return ({ CHECK: '影像检查报告', LAB: '临床检验报告', DISPOSAL: '处置记录报告' } as Record<string, string>)[type ?? ''] ?? '检查报告';
 }
@@ -897,26 +974,43 @@ function abnormalLabel(flag?: string) {
   return ({ HIGH: '↑', LOW: '↓', ABNORMAL: '异常', NORMAL: '' } as Record<string, string>)[flag ?? ''] ?? (flag || '');
 }
 
-async function selectAppointment(row?: Appointment) {
+async function selectAppointment(row?: Appointment, isReselect = false) {
   loadingRecord = true;
+
+  // ── Phase 1: Synchronous reset of ALL fields (Vue batches into one render) ──
   current.value = row;
-  Object.assign(recordForm, { chiefComplaint: row?.triageSummary ?? '', presentIllness: '', pastHistory: '', allergyHistory: '', diagnosis: '', treatmentPlan: '' });
-  aiMessages.value = [];
-  rxSuggestions.value = [];
-  rxWarnings.value = [];
-  aiRecommendedNames.value = [];
-  diagnosisSource.value = 'HUMAN';
-  diagnosisAiRecordId.value = undefined;
-  rxAiRecordId.value = undefined;
-  recordVersion.value = undefined;
-  currentRecordId.value = undefined;
-  historyRecords.value = [];
-  currentOrders.value = [];
-  prescriptions.value = [];
-  formalReports.value = [];
+  // 只有初次选择时才清空所有字段 + 保持 mainTab；刷新时不重置
+  if (!isReselect) {
+    Object.assign(recordForm, { chiefComplaint: row?.triageSummary ?? '', presentIllness: '', pastHistory: '', allergyHistory: '', diagnosis: '', treatmentPlan: '' });
+    aiMessages.value = [];
+    rxSuggestions.value = [];
+    rxWarnings.value = [];
+    aiRecommendedNames.value = [];
+    diagnosisSource.value = 'HUMAN';
+    diagnosisAiRecordId.value = undefined;
+    rxAiRecordId.value = undefined;
+    recordVersion.value = undefined;
+    currentRecordId.value = undefined;
+    historyRecords.value = [];
+    currentOrders.value = [];
+    prescriptions.value = [];
+    formalReports.value = [];
+  }
+
+  // ── Phase 2: Collect all async data into local variables (no state mutation) ──
   if (row) {
     const currentRecords = await getMedicalRecords({ appointmentId: row.id });
     const currentRecord = currentRecords[0];
+
+    // Fire orders, prescriptions, and reports queries together
+    const [orders, rxList] = await Promise.all([
+      getMedicalOrders({ appointmentId: row.id }),
+      getPrescriptions({ patientId: row.patientId }),
+    ]);
+    const orderIds = new Set(orders.map(order => order.id));
+    const reports = (await getReports()).filter(report => orderIds.has(report.medicalOrderId ?? report.orderId ?? ''));
+
+    // ── Phase 3: Synchronous batch of ALL async results (Vue batches into one render) ──
     if (currentRecord) {
       recordForm.chiefComplaint = currentRecord.chiefComplaint || currentRecord.aiTriageSummary;
       recordForm.presentIllness = currentRecord.presentIllness ?? '';
@@ -927,22 +1021,23 @@ async function selectAppointment(row?: Appointment) {
       recordVersion.value = currentRecord.version;
       currentRecordId.value = currentRecord.id;
     }
-    const [orders, rxList] = await Promise.all([
-      getMedicalOrders({ appointmentId: row.id }),
-      getPrescriptions({ patientId: row.patientId }),
-    ]);
     currentOrders.value = orders;
     prescriptions.value = rxList;
-    const orderIds = new Set(currentOrders.value.map(order => order.id));
-    formalReports.value = (await getReports()).filter(report => orderIds.has(report.medicalOrderId ?? report.orderId ?? ''));
+    formalReports.value = reports;
   }
-  mainTab.value = 'record';
+
+  // 不再在数据加载完成后强制切到病历 tab，避免打断用户在其他 tab 的操作
   loadingRecord = false;
   dirty.value = false;
 }
 
 async function loadQueue() {
   appointments.value = await getTodayQueue();
+  // 保持 current 与 appointments 中同一对象引用，消除字段不一致导致的跳变
+  if (current.value) {
+    const match = appointments.value.find(a => a.id === current.value!.id);
+    if (match) current.value = match;
+  }
 }
 
 async function refreshQueue() {
@@ -958,10 +1053,10 @@ async function call(appointment: Appointment) {
 }
 
 async function start(appointment: Appointment) {
-  current.value = await startAppointment(appointment.id);
-  await selectAppointment(current.value);
+  await startAppointment(appointment.id);
+  await selectAppointment(appointment);
   ElMessage.success('已开始接诊');
-  await loadQueue();
+  await loadQueue(); // loadQueue 自动同步 current.value
 }
 
 async function skip(appointment: Appointment) {
@@ -1268,7 +1363,6 @@ async function createRxFromSuggestion() {
     rxWarnings.value = [];
     ElMessage.success('处方已生成，待患者缴费');
     await loadPrescriptions();
-    mainTab.value = 'record';
   } catch (e: any) {
     ElMessage.error({ message: `处方生成失败：${e?.response?.data?.message ?? e?.message ?? '请检查服务状态'}`, duration: 5000 });
   }
@@ -1277,14 +1371,37 @@ async function createRxFromSuggestion() {
 async function viewReport(report: MedicalReport) {
   selectedReport.value = report;
   selectedLabResults.value = [];
+  selectedLabImages.value = [];
   const orderId = report.medicalOrderId ?? report.orderId;
-  if (report.reportType === 'LAB' && orderId) {
-    try {
-      selectedLabResults.value = await getLabResults(orderId);
-    } catch {
-      selectedLabResults.value = [];
-    }
+  if (!orderId) { reportDialogVisible.value = true; return; }
+
+  // 并行加载检验结果和附件图片
+  const [labResults, attachments] = await Promise.all([
+    report.reportType === 'LAB'
+      ? getLabResults(orderId).catch(() => [] as LaboratoryResultItem[])
+      : Promise.resolve([] as LaboratoryResultItem[]),
+    getAttachments(orderId).catch(() => [] as MedicalAttachment[]),
+  ]);
+
+  selectedLabResults.value = labResults;
+
+  // 筛选图片附件并批量下载预览
+  const imageAttachments = attachments.filter(
+    a => a.contentType?.startsWith('image/') || /\.(png|jpe?g|bmp|gif|webp|tiff?)$/i.test(a.originalName)
+  );
+  if (imageAttachments.length) {
+    const downloadResults = await Promise.allSettled(
+      imageAttachments.map(a => downloadAttachment(orderId, a.id))
+    );
+    selectedLabImages.value = imageAttachments.map((a, i) => {
+      const result = downloadResults[i];
+      const url = result.status === 'fulfilled'
+        ? URL.createObjectURL(result.value)
+        : '';
+      return { id: a.id, url, label: a.originalName };
+    });
   }
+
   reportDialogVisible.value = true;
 }
 
@@ -1873,6 +1990,44 @@ watch(mainTab, (tab) => {
   background: transparent;
   resize: none;
 }
+
+/* ── Report images in dialog ── */
+.report-images {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid #bbb;
+}
+.report-images__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
+  margin-top: 10px;
+}
+.report-images__item {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #f8fafc;
+}
+.report-images__item img {
+  width: 100%;
+  display: block;
+  object-fit: contain;
+  max-height: 260px;
+  background: #fff;
+}
+.report-images__label {
+  display: block;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #64748b;
+  text-align: center;
+  border-top: 1px solid #e5e7eb;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .med-report__area--single {
   min-height: 28px;
   height: 28px;
@@ -2067,6 +2222,206 @@ watch(mainTab, (tab) => {
   padding-top: 12px;
   margin-top: 16px;
   color: #374151;
+}
+
+/* ── Reports tab (card grid) ── */
+.reports-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 20px;
+  color: #9ca3af;
+  text-align: center;
+}
+.reports-empty__icon { font-size: 40px; margin-bottom: 12px; width: 80px; height: 80px; border-radius: 20px; background: #f1f5f9; display: flex; align-items: center; justify-content: center; margin-left: auto; margin-right: auto; }
+.reports-empty__icon::after { content: ''; width: 36px; height: 36px; border: 2px solid #cbd5e1; border-radius: 6px; background: linear-gradient(135deg, #fff, #f8fafc); box-shadow: inset 0 -4px 0 rgba(0,0,0,0.06); }
+.reports-empty span { font-size: 15px; font-weight: 600; color: #6b7280; }
+.reports-empty p { margin: 6px 0 0; font-size: 13px; }
+
+.reports-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  width: 100%;
+}
+
+.report-card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #fff;
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.12s;
+  width: 100%;
+}
+.report-card:hover {
+  border-color: #a8e8ec;
+  box-shadow: 0 4px 18px rgba(12, 189, 204, 0.1);
+  transform: translateY(-2px);
+}
+
+.report-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.report-card__type-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.report-card__type-badge--check {
+  background: #eff6ff;
+  color: #2563eb;
+}
+.report-card__type-badge--lab {
+  background: #f0fdf4;
+  color: #16a34a;
+}
+.report-card__type-badge--disposal {
+  background: #fff7ed;
+  color: #ea580c;
+}
+
+.report-card__type-icon { font-size: 14px; line-height: 1; }
+
+.report-card__type-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.report-card__type-badge--check .report-card__type-dot { background: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.15); }
+.report-card__type-badge--lab .report-card__type-dot { background: #22c55e; box-shadow: 0 0 0 3px rgba(34,197,94,0.15); }
+.report-card__type-badge--disposal .report-card__type-dot { background: #f97316; box-shadow: 0 0 0 3px rgba(249,115,22,0.15); }
+
+.report-card__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #16a34a;
+  font-weight: 600;
+}
+.report-card__status-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: #22c55e;
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.14);
+}
+
+.report-card__body {
+  flex: 1;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.report-card__meta {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.report-card__meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.report-card__meta-item em {
+  font-size: 11px;
+  color: #9ca3af;
+  font-style: normal;
+  white-space: nowrap;
+}
+.report-card__meta-item span {
+  font-size: 13px;
+  color: #374151;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.report-card__conclusion {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #f0fdfa 0%, #f9fafb 100%);
+  border: 1px solid #d1fae5;
+}
+.report-card__conclusion-label {
+  display: block;
+  font-size: 10px;
+  color: #059669;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 4px;
+}
+.report-card__conclusion p {
+  margin: 0;
+  font-size: 14px;
+  color: #065f46;
+  font-weight: 600;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.report-card__findings {
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+}
+.report-card__findings span {
+  font-size: 10px;
+  color: #9ca3af;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.report-card__findings p {
+  margin: 3px 0 0;
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+.report-card__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-top: 1px solid #f3f4f6;
+  background: #fafafa;
+}
+
+.report-card__ai-tag {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: linear-gradient(135deg, #dbeafe, #ede9fe);
+  color: #4f46e5;
+  font-weight: 600;
+}
+
+.report-card__action {
+  font-size: 12px;
+  font-weight: 600;
+  color: #0899a5;
+  margin-left: auto;
 }
 
 /* ── Print ── */

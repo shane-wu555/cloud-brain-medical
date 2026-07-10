@@ -182,13 +182,13 @@ import { ElMessage } from 'element-plus';
 import { useRouter } from 'vue-router';
 import DoctorPersonalSchedule from '../../components/DoctorPersonalSchedule.vue';
 import { useAuthStore } from '../../store/auth';
+import { useQueuePolling } from '../../composables/useQueuePolling';
 import {
   callMedicalOrder,
   completeMedicalOrder,
   confirmReport,
   createReportDraft,
-  getMedicalOrders,
-  getReports,
+  getWorkspace,
   missMedicalOrder,
   startMedicalOrder,
   type MedicalOrder
@@ -210,6 +210,12 @@ const submitting = ref(false);
 const published = ref(false);
 const confirmedAt = ref('');
 const showMySchedule = ref(false);
+
+// 用户正在填写处置记录或未发布时跳过队列轮询，避免覆盖正在输入的内容
+const isEditing = computed(() => !!current.value && !published.value);
+
+// 定时轮询队列：缴费后自动刷新处置列表
+useQueuePolling(isEditing, loadOrders);
 
 const form = reactive({
   record: ''
@@ -282,7 +288,8 @@ function buildSummary() {
 }
 
 async function loadOrders() {
-  orders.value = await getMedicalOrders();
+  const workspace = await getWorkspace();
+  orders.value = workspace.orders;
   if (current.value) {
     const latest = orders.value.find(item => item.id === current.value?.id);
     if (latest) current.value = latest;
@@ -293,33 +300,40 @@ async function refreshOrders() {
   refreshing.value = true;
   try {
     await loadOrders();
+    // 刷新后保持当前选中状态和已填写内容，不重置
+    if (current.value) {
+      await selectOrder(current.value, true);
+    }
   } finally {
     refreshing.value = false;
   }
 }
 
-async function loadExistingReport(order: MedicalOrder) {
-  const reports = await getReports();
-  const report = reports.find(item => (item.medicalOrderId ?? item.orderId) === order.id);
+async function selectOrder(order: MedicalOrder, isReselect = false) {
+  // ── Synchronous reset (Vue batches into one render) ──
+  current.value = order;
+  // 仅第一次选择时清空表单，刷新时保留已填内容
+  if (!isReselect) {
+    form.record = '';
+    published.value = false;
+    confirmedAt.value = '';
+  }
+
+  // ── Collect async data: workspace API gives us queue + report in one call ──
+  const workspace = await getWorkspace(order.id);
+  const report = workspace.detail?.report ?? null;
   published.value = report?.status === 'CONFIRMED';
   confirmedAt.value = report?.confirmedAt ? formatDate(report.confirmedAt) : '';
-  form.record = report?.findings || report?.conclusion || order.resultSummary || '';
-}
-
-async function selectOrder(order: MedicalOrder) {
-  current.value = order;
-  form.record = '';
-  published.value = false;
-  confirmedAt.value = '';
-  await loadExistingReport(order);
+  if (!isReselect || !form.record.trim()) {
+    form.record = report?.findings || report?.conclusion || order.resultSummary || '';
+  }
 }
 
 async function call(order: MedicalOrder) {
   try {
-    const updated = await callMedicalOrder(order.id);
-    if (current.value?.id === order.id) current.value = updated;
+    await callMedicalOrder(order.id);
     ElMessage.success('已叫号');
-    await loadOrders();
+    await loadOrders(); // loadOrders 自动同步 current.value
   } catch (error) {
     ElMessage.error(errorMessage(error, '叫号失败'));
   }
@@ -327,10 +341,9 @@ async function call(order: MedicalOrder) {
 
 async function start(order: MedicalOrder) {
   try {
-    const updated = await startMedicalOrder(order.id);
-    if (current.value?.id === order.id) current.value = updated;
+    await startMedicalOrder(order.id);
     ElMessage.success('已开始处置');
-    await loadOrders();
+    await loadOrders(); // loadOrders 自动同步 current.value
   } catch (error) {
     ElMessage.error(errorMessage(error, '开始处置失败'));
   }
@@ -339,9 +352,8 @@ async function start(order: MedicalOrder) {
 async function miss(order: MedicalOrder) {
   try {
     await missMedicalOrder(order.id);
-    if (current.value?.id === order.id) current.value = undefined;
     ElMessage.success('已标记过号');
-    await loadOrders();
+    await loadOrders(); // loadOrders 自动同步 current.value
   } catch (error) {
     ElMessage.error(errorMessage(error, '过号失败'));
   }
@@ -370,11 +382,10 @@ async function finishDisposal() {
       conclusion: form.record.trim(),
       advice: ''
     });
-    current.value = completed;
     published.value = true;
     confirmedAt.value = report.confirmedAt ? formatDate(report.confirmedAt) : today;
     ElMessage.success('处置已完成，记录单已确认');
-    await loadOrders();
+    await loadOrders(); // loadOrders 自动同步 current.value
   } catch (error) {
     ElMessage.error(errorMessage(error, '完成处置失败'));
   } finally {

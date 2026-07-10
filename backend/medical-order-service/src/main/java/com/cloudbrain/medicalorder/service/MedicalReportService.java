@@ -227,17 +227,30 @@ public class MedicalReportService {
             }
         }
 
+        // Fetch all reports and their associated orders in a single batch query
+        // to avoid the N+1 problem (previously: 1 + N SQL queries)
+        List<MedicalReport> allReports = reports.reports();
+        Set<String> orderIds = new java.util.HashSet<>();
+        for (MedicalReport report : allReports) {
+            orderIds.add(report.medicalOrderId());
+        }
+        // Batch-load all orders referenced by reports
+        Map<String, MedicalOrder> orderMap = orders.findByIds(orderIds);
+
         String finalPatientId = scopedPatientId;
-        List<MedicalReport> visible = reports.reports().stream().filter(report -> {
-            MedicalOrder medicalOrder = order(report.medicalOrderId());
-            if ("PATIENT".equals(role)) {
+        String finalActor = actor;
+        String finalRole = role;
+        List<MedicalReport> visible = allReports.stream().filter(report -> {
+            MedicalOrder medicalOrder = orderMap.get(report.medicalOrderId());
+            if (medicalOrder == null) return false;
+            if ("PATIENT".equals(finalRole)) {
                 return "CONFIRMED".equals(report.status()) && medicalOrder.patientId().equals(finalPatientId);
             }
-            if ("OUTPATIENT_DOCTOR".equals(role)) {
-                return "CONFIRMED".equals(report.status()) && medicalOrder.orderingDoctorId().equals(actor);
+            if ("OUTPATIENT_DOCTOR".equals(finalRole)) {
+                return "CONFIRMED".equals(report.status()) && medicalOrder.orderingDoctorId().equals(finalActor);
             }
-            if (Set.of("CHECK_DOCTOR", "LAB_DOCTOR", "DISPOSAL_DOCTOR").contains(role)) {
-                return canAccessWorkspace(medicalOrder, actor);
+            if (Set.of("CHECK_DOCTOR", "LAB_DOCTOR", "DISPOSAL_DOCTOR").contains(finalRole)) {
+                return canAccessWorkspace(medicalOrder, finalActor);
             }
             return false;
         }).toList();
@@ -248,8 +261,8 @@ public class MedicalReportService {
                 null,
                 finalPatientId,
                 null,
-                actor,
-                role,
+                finalActor,
+                finalRole,
                 Map.of(
                         "accessScope", "LIST",
                         "resultCount", visible.size()));
