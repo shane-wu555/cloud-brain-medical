@@ -25,6 +25,7 @@ import com.cloudbrain.pharmacy.service.NotificationClient;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.access.AccessDeniedException;
@@ -44,7 +45,7 @@ class PharmacyServiceTest {
     @Test
     void drugsUseSearchIndexMatchesBeforeFallingBackToRepositoryQuery() {
         PharmacyRepository.Drug aspirin = drug("drug-1", 20, 5);
-        when(drugSearchIndexService.searchDrugIds("aspirin", "ROOM", 100)).thenReturn(java.util.Optional.of(List.of("drug-1")));
+        when(drugSearchIndexService.searchDrugIds("aspirin", "ROOM", 100)).thenReturn(Optional.of(List.of("drug-1")));
         when(repository.drugsByIds(List.of("drug-1"))).thenReturn(List.of(aspirin));
 
         List<PharmacyRepository.Drug> result = service.drugs("aspirin", "ROOM");
@@ -57,7 +58,7 @@ class PharmacyServiceTest {
     @Test
     void drugsFallBackToRepositoryWhenSearchIndexHasNoMatches() {
         PharmacyRepository.Drug aspirin = drug("drug-1", 20, 5);
-        when(drugSearchIndexService.searchDrugIds("aspirin", "ROOM", 100)).thenReturn(java.util.Optional.of(List.of()));
+        when(drugSearchIndexService.searchDrugIds("aspirin", "ROOM", 100)).thenReturn(Optional.of(List.of()));
         when(repository.drugs("aspirin", "ROOM")).thenReturn(List.of(aspirin));
 
         List<PharmacyRepository.Drug> result = service.drugs("aspirin", "ROOM");

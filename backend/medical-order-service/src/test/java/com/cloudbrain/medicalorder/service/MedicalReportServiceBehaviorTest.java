@@ -22,6 +22,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.mock.web.MockMultipartFile;
@@ -106,6 +107,7 @@ class MedicalReportServiceBehaviorTest {
         when(orderService.complete("order-1", "doctor-1", "CHECK_DOCTOR", "conclusion", "AI", "ai-task-1")).thenReturn(completed);
         when(reports.reject("order-1", "doctor-1", "reason")).thenReturn(report("report-2", "order-1", "REJECTED", "HUMAN"));
         when(reports.reports()).thenReturn(List.of(confirmed));
+        when(orders.findByIds(Set.of("order-1"))).thenReturn(Map.of("order-1", completed));
         when(patientAccessClient.boundPatientId("account-1")).thenReturn("patient-1");
         when(patientAccessClient.owns("account-1", "patient-1")).thenReturn(true);
         when(reports.attachments("order-1")).thenReturn(List.of(attachment));

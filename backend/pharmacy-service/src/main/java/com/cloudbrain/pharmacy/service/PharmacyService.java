@@ -14,7 +14,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.cache.annotation.CacheEvict;
-import org.springframework.cache.annotation.Cacheable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -40,9 +39,6 @@ public class PharmacyService {
         this.notificationClient = notificationClient;
     }
 
-    @Cacheable(
-            cacheNames = "drugs",
-            key = "(#keyword == null ? '' : #keyword.trim().toLowerCase()) + ':' + (#storageCondition == null ? '' : #storageCondition.trim())")
     public List<PharmacyRepository.Drug> drugs(String keyword, String storageCondition) {
         if (!blank(keyword)) {
             var matchedIds = drugSearchIndexService.searchDrugIds(keyword, storageCondition, 100);

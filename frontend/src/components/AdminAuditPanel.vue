@@ -13,7 +13,9 @@
         clearable
         class="keyword-input"
         placeholder="关键词搜索"
-        @keyup.enter="loadLogs"
+        @input="scheduleLoadLogs"
+        @clear="applyFilters"
+        @keyup.enter="applyFilters"
       />
       <el-button type="primary" :loading="loading" @click="loadLogs">搜索</el-button>
       <el-button @click="resetFilters">重置</el-button>
@@ -117,7 +119,7 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, watch } from 'vue';
+import { onBeforeUnmount, reactive, ref, watch } from 'vue';
 import { ElMessage } from 'element-plus';
 import { getAuditLogs, type AuditLogEntry } from '../api/audit';
 
@@ -136,6 +138,8 @@ const selectedLog = ref<AuditLogEntry | null>(null);
 const detailVisible = ref(false);
 const lastLoadedAt = ref('');
 const timeRange = ref<[string, string] | []>([]);
+let searchTimer: number | undefined;
+let resettingFilters = false;
 
 const filters = reactive({
   service: '',
@@ -355,7 +359,46 @@ watch(
   { immediate: true }
 );
 
+watch(
+  () => [
+    filters.service,
+    filters.action,
+    filters.resourceType,
+    timeRange.value[0] ?? '',
+    timeRange.value[1] ?? ''
+  ],
+  () => {
+    if (!resettingFilters) {
+      applyFilters();
+    }
+  }
+);
+
+onBeforeUnmount(() => {
+  clearSearchTimer();
+});
+
+function clearSearchTimer() {
+  if (searchTimer) {
+    window.clearTimeout(searchTimer);
+    searchTimer = undefined;
+  }
+}
+
+function applyFilters() {
+  clearSearchTimer();
+  void loadLogs();
+}
+
+function scheduleLoadLogs() {
+  clearSearchTimer();
+  searchTimer = window.setTimeout(() => {
+    void loadLogs();
+  }, 300);
+}
+
 async function loadLogs() {
+  clearSearchTimer();
   loading.value = true;
   try {
     const [from, to] = timeRange.value.length === 2 ? timeRange.value : ['', ''];
@@ -364,8 +407,8 @@ async function loadLogs() {
       action: filters.action || undefined,
       resourceType: filters.resourceType || undefined,
       keyword: filters.keyword || undefined,
-      from: from || undefined,
-      to: to || undefined
+      from: toInstantParam(from),
+      to: toInstantParam(to)
     });
     loadedOnce.value = true;
     lastLoadedAt.value = formatDateTime(new Date().toISOString());
@@ -378,12 +421,16 @@ async function loadLogs() {
 }
 
 function resetFilters() {
+  resettingFilters = true;
   filters.service = '';
   filters.action = '';
   filters.resourceType = '';
   filters.keyword = '';
   timeRange.value = [];
-  void loadLogs();
+  applyFilters();
+  queueMicrotask(() => {
+    resettingFilters = false;
+  });
 }
 
 function openDetail(log: AuditLogEntry) {
@@ -616,6 +663,17 @@ function errorMessage(error: unknown): string {
   const responseMessage = (error as { response?: { data?: { message?: string } } })?.response?.data?.message;
   if (responseMessage) return responseMessage;
   return error instanceof Error ? error.message : '加载审计日志失败';
+}
+
+function toInstantParam(value: string): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return undefined;
+  }
+  return date.toISOString();
 }
 </script>
 

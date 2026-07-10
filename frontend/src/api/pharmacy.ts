@@ -95,7 +95,12 @@ export interface DrugReturnOrder {
 }
 
 export async function getDrugs(params: { keyword?: string; storageCondition?: string } = {}) {
-  const { data } = await http.get<Drug[]>('/drugs', { params });
+  const { data } = await http.get<Drug[]>('/drugs', {
+    params: {
+      ...params,
+      _searchTs: Date.now()
+    }
+  });
   return data;
 }
 
