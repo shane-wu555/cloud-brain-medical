@@ -167,7 +167,7 @@
 </template>
 
 <script setup lang="ts">
-import { onLoad } from '@dcloudio/uni-app';
+import { onLoad, onShow } from '@dcloudio/uni-app';
 import { computed, onMounted, ref } from 'vue';
 import { request } from '../../api/http';
 import { useAuthStore } from '../../stores/auth';
@@ -184,6 +184,7 @@ interface Doctor {
   name: string;
   title: string;
   departmentId: string;
+  departmentName?: string;
   specialty: string;
 }
 
@@ -217,6 +218,7 @@ interface Appointment {
 }
 
 interface AiConsultation {
+  patientId?: string;
   summary: string;
   riskLevel: string;
   recommendedDepartmentId: string;
@@ -228,6 +230,7 @@ interface AiConsultation {
 const auth = useAuthStore();
 const departments = ref<Department[]>([]);
 const doctors = ref<Doctor[]>([]);
+const searchableDoctors = ref<Doctor[]>([]);
 const selectedDepartmentId = ref('');
 const schedules = ref<Schedule[]>([]);
 const selectedDate = ref('');
@@ -256,12 +259,12 @@ const BOOKABLE_DAY_SPAN = 14;
 const searchResults = computed(() => {
   const kw = searchKeyword.value.trim();
   if (!kw) return [];
-  return doctors.value
+  return searchableDoctors.value
     .filter((d) => d.name.includes(kw))
     .slice(0, 6)
     .map((d) => ({
       ...d,
-      departmentName: departments.value.find((dept) => dept.id === d.departmentId)?.name || ''
+      departmentName: d.departmentName || departments.value.find((dept) => dept.id === d.departmentId)?.name || ''
     }));
 });
 
@@ -273,17 +276,19 @@ function clearSearch() {
   searchKeyword.value = '';
 }
 
-function selectSearchedDoctor(doctor: Doctor & { departmentName: string }) {
+async function selectSearchedDoctor(doctor: Doctor & { departmentName: string }) {
   searchKeyword.value = '';
+  selectedSchedule.value = null;
+  pendingBooking.value = null;
+  focusedDoctorId.value = doctor.id;
   if (doctor.departmentId && doctor.departmentId !== selectedDepartmentId.value) {
     selectedDepartmentId.value = doctor.departmentId;
-    focusedDoctorId.value = doctor.id;
-    loadDepartmentResources();
-  } else {
-    focusedDoctorId.value = doctor.id;
-    syncSelectedDate();
-    openFocusedDoctorScheduleForDate();
+    await loadDepartmentResources();
+    return;
   }
+
+  syncSelectedDate();
+  openFocusedDoctorScheduleForDate();
 }
 
 function formatDateKey(date: Date) {
@@ -420,6 +425,7 @@ function toDoctor(item: Record<string, unknown>): Doctor {
     name: normalizeText(item.name),
     title: normalizeText(item.title),
     departmentId: normalizeText(item.departmentId),
+    departmentName: normalizeText(item.departmentName),
     specialty: normalizeText(item.specialty)
   };
 }
@@ -504,6 +510,54 @@ function optionIndexById(options: Array<{ id: string }>, value: string) {
 function optionIndexByValue(options: string[], value: string) {
   const index = options.findIndex((item) => item === value);
   return index >= 0 ? index : 0;
+}
+
+function aiConsultationStorageKey(patientId: string) {
+  return `last_ai_consultation_${patientId}`;
+}
+
+function isAiConsultationForPatient(value: unknown, patientId: string): value is AiConsultation {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  return (value as AiConsultation).patientId === patientId;
+}
+
+function getStoredAiConsultation(patientId: string) {
+  const scoped = uni.getStorageSync(aiConsultationStorageKey(patientId));
+  if (isAiConsultationForPatient(scoped, patientId)) {
+    return scoped;
+  }
+
+  const latest = uni.getStorageSync('last_ai_consultation');
+  if (isAiConsultationForPatient(latest, patientId)) {
+    return latest;
+  }
+
+  return undefined;
+}
+
+async function ensureCurrentPatientLoaded() {
+  if (auth.boundPatient) {
+    return auth.boundPatient;
+  }
+  if (!auth.token) {
+    auth.restore();
+  }
+  if (!auth.boundPatient && auth.token) {
+    try {
+      await auth.loadProfile();
+    } catch {
+      // Keep booking usable even if profile refresh fails; AI recommendation will stay hidden.
+    }
+  }
+  return auth.boundPatient;
+}
+
+async function loadCurrentPatientAiConsultation() {
+  const patient = await ensureCurrentPatientLoaded();
+  const patientId = patient?.id;
+  aiConsultation.value = patientId ? getStoredAiConsultation(patientId) : undefined;
 }
 
 function resolveInitialDepartmentId() {
@@ -599,6 +653,7 @@ async function loadDepartmentResources() {
     schedules.value = [];
     doctors.value = [];
     selectedDate.value = '';
+    selectedSchedule.value = null;
     return;
   }
 
@@ -615,7 +670,15 @@ async function loadDepartmentResources() {
     openInitialDoctorSchedule();
   } else {
     syncSelectedDate();
+    if (focusedDoctorId.value) {
+      openFocusedDoctorScheduleForDate();
+    }
   }
+}
+
+async function loadSearchableDoctors() {
+  const doctorList = await request<Record<string, unknown>[]>({ url: '/doctors', method: 'GET' });
+  searchableDoctors.value = doctorList.map(toDoctor);
 }
 
 async function onDepartmentChange(event: { detail: { value: string } }) {
@@ -710,8 +773,11 @@ async function confirmBooking() {
 
 async function initialize() {
   loadingDepartments.value = true;
-  aiConsultation.value = uni.getStorageSync('last_ai_consultation') || undefined;
-  const departmentList = await request<Record<string, unknown>[]>({ url: '/departments', method: 'GET' });
+  await loadCurrentPatientAiConsultation();
+  const [departmentList] = await Promise.all([
+    request<Record<string, unknown>[]>({ url: '/departments', method: 'GET' }),
+    loadSearchableDoctors()
+  ]);
   departments.value = departmentList
     .map(toDepartment)
     .filter((item) => item.id && item.name && isPatientSelectableDepartment(item));
@@ -727,6 +793,7 @@ onLoad((options) => {
 });
 
 onMounted(initialize);
+onShow(loadCurrentPatientAiConsultation);
 </script>
 
 <style scoped>
@@ -916,10 +983,12 @@ onMounted(initialize);
 }
 
 .date-strip {
-  margin: 0 -24rpx 22rpx;
+  margin-bottom: 22rpx;
   padding: 20rpx 24rpx;
+  border-radius: 18rpx;
   background: #fff;
   box-shadow: 0 8rpx 22rpx rgba(80, 100, 95, 0.06);
+  overflow: hidden;
 }
 
 .date-card {

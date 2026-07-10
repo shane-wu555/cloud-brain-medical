@@ -44,7 +44,7 @@
         v-if="mode === 'REGISTER'"
         v-model="name"
         class="input"
-        placeholder="请输入就诊人姓名"
+        placeholder="请输入用户名"
       />
 
       <view v-if="mode !== 'PASSWORD'" class="code-row">

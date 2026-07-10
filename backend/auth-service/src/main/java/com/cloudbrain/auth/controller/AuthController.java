@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 
 @RestController
 @RequestMapping("/api/auth")
@@ -61,8 +62,8 @@ public class AuthController {
     @PostMapping("/change-password")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void changePassword(@Valid @RequestBody ChangePasswordRequest request,
-            @RequestHeader("X-User-Id") String userId) {
-        authService.changePassword(userId, request.oldPassword(), request.newPassword());
+            JwtAuthenticationToken auth) {
+        authService.changePassword(auth.getToken().getSubject(), request.oldPassword(), request.newPassword());
     }
 
     @PutMapping("/internal/users/{id}/real-name")

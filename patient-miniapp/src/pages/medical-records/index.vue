@@ -29,12 +29,12 @@
       </view>
     </view>
 
-    <view v-if="!visibleRecords.length" class="card muted">暂无电子病历</view>
+    <view v-if="!visibleRecords.length" class="card muted">{{ emptyText }}</view>
   </view>
 </template>
 
 <script setup lang="ts">
-import { onShow } from '@dcloudio/uni-app';
+import { onLoad, onShow } from '@dcloudio/uni-app';
 import { computed, ref } from 'vue';
 import { request } from '../../api/http';
 import { useAuthStore } from '../../stores/auth';
@@ -65,10 +65,18 @@ interface MedicalRecord {
 }
 
 const records = ref<MedicalRecord[]>([]);
+const selectedAppointmentId = ref('');
 const auth = useAuthStore();
-const visibleRecords = computed(() =>
-  [...records.value].sort((a, b) => medicalRecordSortTime(b).localeCompare(medicalRecordSortTime(a)))
-);
+
+const visibleRecords = computed(() => {
+  const sorted = [...records.value].sort((a, b) => medicalRecordSortTime(b).localeCompare(medicalRecordSortTime(a)));
+  if (!selectedAppointmentId.value) {
+    return sorted;
+  }
+  return sorted.filter((record) => record.appointmentId === selectedAppointmentId.value);
+});
+
+const emptyText = computed(() => (selectedAppointmentId.value ? '暂无对应电子病历' : '暂无电子病历'));
 
 function statusLabel(status: MedicalRecord['status']) {
   return {
@@ -82,17 +90,39 @@ function medicalRecordSortTime(record: MedicalRecord) {
   return record.updatedAt || record.visitDate || '';
 }
 
+onLoad((options) => {
+  selectedAppointmentId.value = typeof options?.appointmentId === 'string'
+    ? decodeURIComponent(options.appointmentId)
+    : '';
+});
+
 onShow(async () => {
-  await auth.loadProfile();
-  let patient;
-  try {
-    patient = auth.requireBoundPatient();
-  } catch (error) {
-    uni.showToast({ title: (error as Error).message, icon: 'none' });
-    uni.navigateTo({ url: '/pages/real-name/index' });
+  if (!auth.token) {
+    uni.reLaunch({ url: '/pages/login/index' });
     return;
   }
-  records.value = await request<MedicalRecord[]>({ url: `/medical-records?patientId=${encodeURIComponent(patient.id)}`, method: 'GET' });
+
+  try {
+    await auth.loadProfile();
+    const patient = auth.requireBoundPatient();
+    const query = [`patientId=${encodeURIComponent(patient.id)}`];
+    if (selectedAppointmentId.value) {
+      query.push(`appointmentId=${encodeURIComponent(selectedAppointmentId.value)}`);
+    }
+    records.value = await request<MedicalRecord[]>({
+      url: `/medical-records?${query.join('&')}`,
+      method: 'GET'
+    });
+  } catch (error) {
+    const message = (error as Error).message;
+    records.value = [];
+    if (message === '请先添加并绑定就诊人') {
+      uni.showToast({ title: message, icon: 'none' });
+      uni.navigateTo({ url: '/pages/real-name/index?prompt=needPatient' });
+      return;
+    }
+    uni.showToast({ title: message || '加载失败', icon: 'none' });
+  }
 });
 </script>
 

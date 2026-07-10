@@ -39,6 +39,7 @@ import { useAuthStore } from '../../stores/auth';
 
 interface VisitRecord {
   id: string;
+  appointmentId?: string;
   doctorName: string;
   departmentName: string;
   visitDate: string;
@@ -52,11 +53,13 @@ const loading = ref(true);
 
 const groupedRecords = computed(() => {
   const groups: Record<string, VisitRecord[]> = {};
-  for (const r of records.value) {
-    const label = r.visitDate ? r.visitDate.slice(0, 7) : '';
+  for (const record of records.value) {
+    const label = record.visitDate ? record.visitDate.slice(0, 7) : '';
     if (!label) continue;
-    if (!groups[label]) groups[label] = [];
-    groups[label].push(r);
+    if (!groups[label]) {
+      groups[label] = [];
+    }
+    groups[label].push(record);
   }
   return Object.entries(groups)
     .sort((a, b) => b[0].localeCompare(a[0]))
@@ -78,8 +81,8 @@ function statusLabel(status: string) {
     WAITING: '待就诊',
     CONFIRMED: '已确认',
     IN_PROGRESS: '进行中',
-    REFUNDED: '已退费',
-    FAILED: '已失效',
+    REFUNDED: '已退款',
+    FAILED: '已失败',
     PAID: '已缴费',
     UNPAID: '未缴费'
   };
@@ -91,54 +94,70 @@ onShow(async () => {
     uni.reLaunch({ url: '/pages/login/index' });
     return;
   }
+
   loading.value = true;
   try {
     await auth.loadProfile();
     const patient = auth.boundPatient;
     if (!patient) {
       records.value = [];
+      uni.showToast({ title: '请先添加并绑定就诊人', icon: 'none', duration: 3000 });
+      uni.navigateTo({ url: '/pages/real-name/index?prompt=needPatient' });
       return;
     }
+
     const [appointments, medicalRecords] = await Promise.all([
       request<any[]>({ url: `/appointments?patientId=${encodeURIComponent(patient.id)}`, method: 'GET' }).catch(() => []),
       request<any[]>({ url: `/medical-records?patientId=${encodeURIComponent(patient.id)}`, method: 'GET' }).catch(() => [])
     ]);
+
     const merged: VisitRecord[] = [
       ...(Array.isArray(appointments) ? appointments : [])
-        .filter((a: any) => a.scheduledDate || a.appointmentDate)
-        .map((a: any) => ({
-          doctorName: a.doctorName || '',
-          departmentName: a.departmentName || '',
-          visitDate: a.scheduledDate || a.appointmentDate || '',
-          status: a.status || 'PENDING',
-          id: a.id || '',
+        .filter((item: any) => item.scheduledDate || item.appointmentDate)
+        .map((item: any) => ({
+          appointmentId: item.id || '',
+          doctorName: item.doctorName || '',
+          departmentName: item.departmentName || '',
+          visitDate: item.scheduledDate || item.appointmentDate || '',
+          status: item.status || 'PENDING',
+          id: item.id || '',
           type: '挂号'
         })),
       ...(Array.isArray(medicalRecords) ? medicalRecords : [])
-        .filter((m: any) => m.visitDate)
-        .map((m: any) => ({
-          doctorName: m.doctorName || '',
-          departmentName: m.departmentName || '',
-          visitDate: m.visitDate || '',
-          status: m.status || 'ACTIVE',
-          id: m.id || '',
+        .filter((item: any) => item.visitDate)
+        .map((item: any) => ({
+          appointmentId: item.appointmentId || '',
+          doctorName: item.doctorName || '',
+          departmentName: item.departmentName || '',
+          visitDate: item.visitDate || '',
+          status: item.status || 'ACTIVE',
+          id: item.id || '',
           type: '就诊'
         }))
     ];
+
     records.value = merged.sort((a, b) => (b.visitDate || '').localeCompare(a.visitDate || ''));
-  } catch (e: any) {
-    uni.showToast({ title: e?.message || '加载失败', icon: 'none' });
+  } catch (error: any) {
+    uni.showToast({ title: error?.message || '加载失败', icon: 'none' });
   } finally {
     loading.value = false;
   }
 });
 
 function goDetail(item: VisitRecord) {
+  if (item.appointmentId) {
+    uni.navigateTo({
+      url: `/pages/medical-records/index?appointmentId=${encodeURIComponent(item.appointmentId)}`
+    });
+    return;
+  }
+
   if (item.type === '就诊') {
     uni.navigateTo({ url: '/pages/medical-records/index' });
-  } else {
-    uni.navigateTo({ url: '/pages/appointments/index' });
+    return;
   }
+
+  uni.navigateTo({ url: '/pages/appointments/index' });
 }
 </script>
 

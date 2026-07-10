@@ -51,7 +51,7 @@
     </view>
 
     <!-- 退出登录 -->
-    <view class="logout-btn" @tap="handleLogout">
+    <view class="logout-btn" @tap="handleLogout()">
       <text>退出登录</text>
     </view>
   </view>

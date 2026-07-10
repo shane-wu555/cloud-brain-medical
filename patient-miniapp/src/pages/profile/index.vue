@@ -1,7 +1,6 @@
 <template>
   <patient-nav-bar title="个人信息" />
   <view class="page profile-page">
-    <!-- 账号信息 -->
     <view class="section-card">
       <view class="section-title">账号信息</view>
       <view class="info-row">
@@ -14,7 +13,6 @@
       </view>
     </view>
 
-    <!-- 修改密码 -->
     <view class="section-card">
       <view class="section-title">修改密码</view>
       <view class="form-group">
@@ -32,7 +30,7 @@
           v-model="newPassword"
           class="input"
           password
-          placeholder="请输入新密码（至少6位）"
+          placeholder="请输入新密码（至少8位，含字母和数字）"
         />
       </view>
       <view class="form-group">
@@ -44,13 +42,13 @@
           placeholder="请再次输入新密码"
         />
       </view>
-      <button
+      <view
         :class="['save-btn', submitting ? 'save-btn--loading' : '']"
-        :disabled="submitting"
-        @tap="handleChangePassword"
+        hover-class="save-btn--hover"
+        @tap="handleChangePassword()"
       >
-        {{ submitting ? '修改中...' : '确认修改' }}
-      </button>
+        <text>{{ submitting ? '修改中...' : '确认修改' }}</text>
+      </view>
     </view>
   </view>
 </template>
@@ -81,20 +79,31 @@ onShow(() => {
 });
 
 async function handleChangePassword() {
+  if (submitting.value) {
+    return;
+  }
   if (!oldPassword.value) {
     uni.showToast({ title: '请输入当前密码', icon: 'none' });
+    return;
+  }
+  if (oldPassword.value.length < 8) {
+    uni.showToast({ title: '当前密码至少8位', icon: 'none' });
     return;
   }
   if (!newPassword.value) {
     uni.showToast({ title: '请输入新密码', icon: 'none' });
     return;
   }
-  if (newPassword.value.length < 6) {
-    uni.showToast({ title: '新密码至少6位', icon: 'none' });
+  if (newPassword.value.length < 8) {
+    uni.showToast({ title: '新密码至少8位', icon: 'none' });
+    return;
+  }
+  if (!/[A-Za-z]/.test(newPassword.value) || !/\d/.test(newPassword.value)) {
+    uni.showToast({ title: '新密码需同时包含字母和数字', icon: 'none' });
     return;
   }
   if (newPassword.value !== confirmPassword.value) {
-    uni.showToast({ title: '两次输入的密码不一致', icon: 'none' });
+    uni.showToast({ title: '两次输入的新密码不一致', icon: 'none' });
     return;
   }
 
@@ -118,7 +127,8 @@ async function handleChangePassword() {
 
 <style scoped>
 .profile-page {
-  padding-bottom: 60rpx;
+  position: relative;
+  padding-bottom: 72rpx;
 }
 
 .section-card {
@@ -177,6 +187,11 @@ async function handleChangePassword() {
 }
 
 .save-btn {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   height: 88rpx;
   margin-top: 32rpx;
   border-radius: 14rpx;
@@ -185,10 +200,14 @@ async function handleChangePassword() {
   font-size: 30rpx;
   font-weight: 600;
   line-height: 88rpx;
-  box-shadow: 0 10rpx 24rpx rgba(12, 189, 204, 0.20);
+  box-shadow: 0 10rpx 24rpx rgba(12, 189, 204, 0.2);
 }
 
-.save-btn[disabled] {
+.save-btn--hover {
+  opacity: 0.92;
+}
+
+.save-btn--loading {
   background: #cbd5e1;
   color: #fff;
   box-shadow: none;

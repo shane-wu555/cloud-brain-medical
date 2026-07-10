@@ -19,8 +19,17 @@
         <view>{{ item.purpose }}</view>
       </view>
       <view v-if="item.resultSummary" class="section">
-        <view class="label">处置结果</view>
-        <view>{{ item.resultSummary }}</view>
+        <view class="label">处置信息</view>
+        <view v-if="formatResultSummaryLines(item.resultSummary).length" class="section-lines">
+          <view
+            v-for="(line, index) in formatResultSummaryLines(item.resultSummary)"
+            :key="`${item.id}-result-${index}`"
+            class="section-line"
+          >
+            {{ line }}
+          </view>
+        </view>
+        <view v-else>{{ item.resultSummary }}</view>
       </view>
       <view v-if="item.completedAt" class="muted">完成时间：{{ formatDateTime(item.completedAt) }}</view>
 
@@ -155,6 +164,18 @@ function statusClass(status: MedicalOrder['status'], paymentStatus: MedicalOrder
   }[status] ?? 'muted-tag';
 }
 
+function formatResultSummaryLines(content?: string) {
+  if (!content) {
+    return [];
+  }
+
+  return content
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
 async function load() {
   await auth.loadProfile();
   let patient;
@@ -210,6 +231,16 @@ onShow(load);
 
 .section {
   line-height: 1.6;
+}
+
+.section-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+}
+
+.section-line {
+  word-break: break-word;
 }
 
 .status-tag {

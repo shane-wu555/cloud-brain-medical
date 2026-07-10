@@ -73,6 +73,8 @@ class InternalPatientControllerTest {
                 "FEMALE",
                 LocalDate.of(1990, 1, 1),
                 OffsetDateTime.of(2026, 7, 9, 10, 0, 0, 0, ZoneOffset.UTC),
+                null,
+                false,
                 null);
     }
 }

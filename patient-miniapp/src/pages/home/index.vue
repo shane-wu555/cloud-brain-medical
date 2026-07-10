@@ -57,9 +57,13 @@
         </view>
       </view>
 
-      <view class="service-grid">
+      <view
+        v-for="group in serviceGroups"
+        :key="`${group.title}-panel`"
+        :class="['service-grid', activeGroup === group.title ? 'is-active' : 'is-hidden']"
+      >
         <view
-          v-for="item in activeItems"
+          v-for="item in group.items"
           :key="item.url"
           class="service-item"
           @tap="go(item.url)"
@@ -78,23 +82,10 @@
 
 <script setup lang="ts">
 import { onShow } from '@dcloudio/uni-app';
-import { computed, ref } from 'vue';
+import { ref } from 'vue';
 import MedicalIcon from '../../components/MedicalIcon.vue';
+import type { MedicalIconName } from '../../constants/medical-icons';
 import { useAuthStore } from '../../stores/auth';
-
-type MedicalIconName =
-  | 'book-open-text'
-  | 'calendar-days'
-  | 'clipboard-list'
-  | 'flask-conical'
-  | 'home'
-  | 'hospital'
-  | 'microscope'
-  | 'pill-bottle'
-  | 'stethoscope'
-  | 'syringe'
-  | 'user-round-plus'
-  | 'wallet-cards';
 
 interface QuickEntry {
   name: string;
@@ -147,8 +138,6 @@ const serviceGroups: ServiceGroup[] = [
     ]
   }
 ];
-
-const activeItems = computed(() => serviceGroups.find((group) => group.title === activeGroup.value)?.items ?? serviceGroups[0].items);
 
 onShow(async () => {
   if (!auth.token) {
@@ -418,10 +407,14 @@ function go(url: string) {
 }
 
 .service-grid {
-  display: grid;
+  display: none;
   grid-template-columns: repeat(3, 1fr);
   row-gap: 28rpx;
   padding: 0 18rpx;
+}
+
+.service-grid.is-active {
+  display: grid;
 }
 
 .service-item {

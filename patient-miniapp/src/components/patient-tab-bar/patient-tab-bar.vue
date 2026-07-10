@@ -14,39 +14,56 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
+import { getMedicalIcon } from '../../constants/medical-icons';
+import { useAuthStore } from '../../stores/auth';
 
 const props = defineProps<{
   current: 'home' | 'records' | 'my';
 }>();
 
+const auth = useAuthStore();
 const currentTab = computed(() => props.current);
 
 const tabs = [
   {
     key: 'home' as const,
     label: '首页',
-    icon: '/static/icons/home.svg',
-    activeIcon: '/static/icons/white/home.svg',
+    icon: getMedicalIcon('home'),
+    activeIcon: getMedicalIcon('home', 'white'),
     url: '/pages/home/index',
   },
   {
     key: 'records' as const,
     label: '就诊记录',
-    icon: '/static/icons/calendar-days.svg',
-    activeIcon: '/static/icons/white/calendar-days.svg',
+    icon: getMedicalIcon('calendar-days'),
+    activeIcon: getMedicalIcon('calendar-days', 'white'),
     url: '/pages/visit-records/index',
   },
   {
     key: 'my' as const,
     label: '我的',
-    icon: '/static/icons/user-round-plus.svg',
-    activeIcon: '/static/icons/white/user-round-plus.svg',
+    icon: getMedicalIcon('user-round-plus'),
+    activeIcon: getMedicalIcon('user-round-plus', 'white'),
     url: '/pages/my/index',
   },
 ];
 
-function goTab(key: 'home' | 'records' | 'my') {
+async function goTab(key: 'home' | 'records' | 'my') {
   if (key === currentTab.value) return;
+  if (key === 'records') {
+    if (auth.token) {
+      try {
+        await auth.loadProfile();
+      } catch {
+        // let the target page handle request failures
+      }
+    }
+    if (!auth.boundPatient) {
+      uni.showToast({ title: '请先添加并绑定就诊人', icon: 'none', duration: 3000 });
+      uni.navigateTo({ url: '/pages/real-name/index?prompt=needPatient' });
+      return;
+    }
+  }
   const target = tabs.find((t) => t.key === key);
   if (target) {
     uni.switchTab({ url: target.url });
