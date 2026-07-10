@@ -21,6 +21,7 @@ import com.cloudbrain.pharmacy.entity.Prescription;
 import com.cloudbrain.pharmacy.entity.PrescriptionItem;
 import com.cloudbrain.pharmacy.entity.PrescriptionStatus;
 import com.cloudbrain.pharmacy.repository.PharmacyRepository;
+import com.cloudbrain.pharmacy.service.NotificationClient;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
@@ -34,7 +35,7 @@ class PharmacyServiceTest {
     private final PatientAccessClient patientAccessClient = mock(PatientAccessClient.class);
     private final AuditPublisher auditPublisher = mock(AuditPublisher.class);
     private final DrugSearchIndexService drugSearchIndexService = mock(DrugSearchIndexService.class);
-    private final PharmacyService service = new PharmacyService(repository, patientAccessClient, auditPublisher, drugSearchIndexService);
+    private final PharmacyService service = new PharmacyService(repository, patientAccessClient, auditPublisher, drugSearchIndexService, null);
 
     @BeforeEach
     void setUp() {

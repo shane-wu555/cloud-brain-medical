@@ -266,35 +266,21 @@ public class AppointmentRepository {
         return save(locked);
     }
 
-    public Appointment skipByPositions(String id,int positions) {
-        Appointment current=findById(id).orElseThrow(()->new IllegalArgumentException("挂号记录不存在"));
-        jdbcTemplate.query("select pg_advisory_xact_lock(hashtext(?))",rs->null,
-                current.getDoctorId()+":"+current.getVisitDate());
-        current=findByIdForUpdate(id).orElseThrow(()->new IllegalArgumentException("挂号记录不存在"));
-        if(current.getStatus()!=AppointmentStatus.WAITING && current.getStatus()!=AppointmentStatus.CALLED)
+    public Appointment moveToTail(String id) {
+        Appointment current = findById(id).orElseThrow(() -> new IllegalArgumentException("挂号记录不存在"));
+        jdbcTemplate.query("select pg_advisory_xact_lock(hashtext(?))", rs -> null,
+                current.getDoctorId() + ":" + current.getVisitDate());
+        current = findByIdForUpdate(id).orElseThrow(() -> new IllegalArgumentException("挂号记录不存在"));
+        if (current.getStatus() != AppointmentStatus.WAITING && current.getStatus() != AppointmentStatus.CALLED)
             throw new IllegalStateException("只有待接诊患者可以过号");
-        List<Integer> next=jdbcTemplate.query("""
-                select queue_number from appointment
-                where doctor_id=? and visit_date=? and status in ('WAITING','CALLED') and queue_number>?
-                order by queue_number limit ?
-                """,(rs,row)->rs.getInt(1),current.getDoctorId(),current.getVisitDate(),current.getQueueNumber(),positions);
-        if(next.isEmpty()) {
-            jdbcTemplate.update("update appointment set missed_count=missed_count+1,status='WAITING' where id=?::uuid",id);
-            return findById(id).orElseThrow();
-        }
-        int from=current.getQueueNumber(),target=next.get(next.size()-1);
-        jdbcTemplate.update("update appointment set queue_number=? where id=?::uuid",-1000000-from,id);
-        jdbcTemplate.update("""
-                update appointment set queue_number=queue_number+1000000
-                where doctor_id=? and visit_date=? and status in ('WAITING','CALLED')
-                  and queue_number>? and queue_number<=?
-                """,current.getDoctorId(),current.getVisitDate(),from,target);
-        jdbcTemplate.update("""
-                update appointment set queue_number=queue_number-1000001
-                where doctor_id=? and visit_date=? and status in ('WAITING','CALLED')
-                  and queue_number>? and queue_number<=?
-                """,current.getDoctorId(),current.getVisitDate(),from+1000000,target+1000000);
-        jdbcTemplate.update("update appointment set queue_number=?,missed_count=missed_count+1,status='WAITING' where id=?::uuid",target,id);
+
+        Integer next = jdbcTemplate.queryForObject(
+                "select coalesce(max(queue_number), 0) + 1 from appointment where doctor_id = ? and visit_date = ?::date",
+                Integer.class, current.getDoctorId(), current.getVisitDate());
+
+        jdbcTemplate.update(
+                "update appointment set queue_number = ?, missed_count = missed_count + 1, status = 'WAITING' where id = ?::uuid",
+                next, id);
         return findById(id).orElseThrow();
     }
 

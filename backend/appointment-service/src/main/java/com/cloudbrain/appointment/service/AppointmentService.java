@@ -27,16 +27,19 @@ public class AppointmentService {
     private final SlotInventoryRepository slotInventoryRepository;
     private final MedicalRecordEventRepository integrationEventRepository;
     private final MedicalRecordClient medicalRecordClient;
+    private final NotificationClient notificationClient;
 
     public AppointmentService(
             AppointmentRepository appointmentRepository,
             SlotInventoryRepository slotInventoryRepository,
             MedicalRecordEventRepository integrationEventRepository,
-            MedicalRecordClient medicalRecordClient) {
+            MedicalRecordClient medicalRecordClient,
+            NotificationClient notificationClient) {
         this.appointmentRepository = appointmentRepository;
         this.slotInventoryRepository = slotInventoryRepository;
         this.integrationEventRepository = integrationEventRepository;
         this.medicalRecordClient = medicalRecordClient;
+        this.notificationClient = notificationClient;
     }
 
     public List<Appointment> list(String doctorId, String patientId, String status) {
@@ -51,7 +54,11 @@ public class AppointmentService {
         return appointmentRepository.findAll().stream()
                 .filter(a->a.getDoctorId().equals(doctorId) && a.getVisitDate().equals(LocalDate.now()))
                 .filter(a->List.of(AppointmentStatus.WAITING,AppointmentStatus.CALLED,AppointmentStatus.IN_VISIT,AppointmentStatus.REVISIT_WAITING,AppointmentStatus.FINISHED).contains(a.getStatus()))
-                .sorted(java.util.Comparator.comparingInt(Appointment::getQueueNumber)).toList();
+                .sorted(java.util.Comparator
+                        .<Appointment,Boolean>comparing(a ->
+                            a.getMissedCount() > 0 && (a.getStatus() == AppointmentStatus.WAITING || a.getStatus() == AppointmentStatus.CALLED))
+                        .thenComparing(Appointment::getStartTime)
+                        .thenComparingInt(Appointment::getQueueNumber)).toList();
     }
 
     public void validatePatientAccess(String appointmentId, String actorId, String role) {
@@ -118,6 +125,12 @@ public class AppointmentService {
                 appointment, Optional.ofNullable(amount).orElse(BigDecimal.ZERO),
                 Optional.ofNullable(operatorId).orElse(appointment.getPatientId()));
         integrationEventRepository.enqueueMedicalRecord(appointment);
+        try {
+            String dept = appointment.getDepartmentName() != null ? appointment.getDepartmentName() : "";
+            notificationClient.notify(appointment.getPatientId(), "PAYMENT_CONFIRMED",
+                    "挂号缴费成功，" + appointment.getDoctorName() + "医生" + dept + "，队列号" + appointment.getQueueNumber(), null,
+                    "APPOINTMENT", appointment.getId());
+        } catch (Exception ignored) { /* notification failure must not fail the transaction */ }
         return saved;
     }
 
@@ -158,7 +171,15 @@ public class AppointmentService {
     public Appointment call(String id,String doctorId) {
         Appointment appointment=appointmentRepository.findByIdForUpdate(id).orElseThrow(()->new IllegalArgumentException("挂号记录不存在"));
         validateDoctor(appointment,doctorId);
-        appointment.markCalled(); return appointmentRepository.save(appointment);
+        appointment.markCalled();
+        Appointment saved = appointmentRepository.save(appointment);
+        try {
+            String dept = appointment.getDepartmentName() != null ? appointment.getDepartmentName() : "诊室";
+            notificationClient.notify(appointment.getPatientId(), "CALLED",
+                    "您" + appointment.getDoctorName() + "医生已叫号，请前往" + dept + "就诊", null,
+                    "APPOINTMENT", appointment.getId());
+        } catch (Exception ignored) { /* notification failure must not fail the transaction */ }
+        return saved;
     }
 
     @Transactional
@@ -172,10 +193,7 @@ public class AppointmentService {
     public Appointment skip(String id, String doctorId) {
         Appointment appt = get(id);
         validateDoctor(appt, doctorId);
-        int missed = appt.getMissedCount();
-        // 第1次过号挪3位，第2次挪5位，第3次及之后移至当日队尾
-        int positions = missed == 0 ? 3 : missed == 1 ? 5 : Integer.MAX_VALUE;
-        return appointmentRepository.skipByPositions(id, positions);
+        return appointmentRepository.moveToTail(id);
     }
 
     private void validateDoctor(Appointment appointment,String doctorId) {

@@ -33,10 +33,13 @@
           v-for="item in quickEntries"
           :key="item.url"
           :class="['quick-card', item.tone]"
-          @tap="go(item.url)"
+          @tap="go(item.url, item.readCategories)"
         >
         <view class="quick-icon">
           <MedicalIcon :name="item.icon" :size="34" />
+          <view v-if="item.readCategories && quickBadgeCount(item.readCategories) > 0" class="card-badge">
+            <text>{{ quickBadgeCount(item.readCategories) }}</text>
+          </view>
         </view>
         <view>
           <view class="quick-name">{{ item.name }}</view>
@@ -66,10 +69,13 @@
           v-for="item in group.items"
           :key="item.url"
           class="service-item"
-          @tap="go(item.url)"
+          @tap="go(item.url, item.readCategories)"
         >
           <view class="service-icon" :style="{ background: item.iconBg }">
             <MedicalIcon :name="item.icon" :size="32" variant="white" />
+            <view v-if="item.readCategories && serviceBadgeCount(item.readCategories) > 0" class="service-badge">
+              <text>{{ serviceBadgeCount(item.readCategories) }}</text>
+            </view>
           </view>
           <view class="service-name">{{ item.name }}</view>
         </view>
@@ -81,11 +87,13 @@
 </template>
 
 <script setup lang="ts">
-import { onShow } from '@dcloudio/uni-app';
+import { onHide, onShow } from '@dcloudio/uni-app';
 import { ref } from 'vue';
 import MedicalIcon from '../../components/MedicalIcon.vue';
 import type { MedicalIconName } from '../../constants/medical-icons';
+import { markAllRead } from '../../api/notification';
 import { useAuthStore } from '../../stores/auth';
+import { useNotificationStore } from '../../stores/notification';
 
 interface QuickEntry {
   name: string;
@@ -93,6 +101,7 @@ interface QuickEntry {
   icon: MedicalIconName;
   tone: string;
   url: string;
+  readCategories?: string[];
 }
 
 interface ServiceItem {
@@ -100,6 +109,7 @@ interface ServiceItem {
   icon: MedicalIconName;
   iconBg: string;
   url: string;
+  readCategories?: string[];
 }
 
 interface ServiceGroup {
@@ -108,13 +118,16 @@ interface ServiceGroup {
 }
 
 const auth = useAuthStore();
+const notifStore = useNotificationStore();
 const activeGroup = ref('门诊');
+
+let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 const quickEntries: QuickEntry[] = [
   { name: 'AI问诊建议', desc: '智能推荐科室', icon: 'stethoscope', tone: 'tone-disease', url: '/pages/consultation/index' },
   { name: '预约挂号', desc: '选择院区科室', icon: 'hospital', tone: 'tone-dept', url: '/pages/booking/index' },
   { name: '就诊人管理', desc: '切换电子就诊卡', icon: 'user-round-plus', tone: 'tone-report', url: '/pages/real-name/index' },
-  { name: '门诊缴费', desc: '挂号药品等缴费', icon: 'wallet-cards', tone: 'tone-payment', url: '/pages/pending-payments/index' }
+  { name: '门诊缴费', desc: '挂号药品等缴费', icon: 'wallet-cards', tone: 'tone-payment', url: '/pages/pending-payments/index', readCategories: ['PENDING_PAYMENT'] }
 ];
 
 const serviceGroups: ServiceGroup[] = [
@@ -122,9 +135,9 @@ const serviceGroups: ServiceGroup[] = [
     title: '门诊',
     items: [
       { name: '我的挂号', icon: 'calendar-days', iconBg: 'linear-gradient(135deg, #0cbdcc 0%, #0899a5 100%)', url: '/pages/appointments/index' },
-      { name: '待处置安排', icon: 'syringe', iconBg: 'linear-gradient(135deg, #E88870 0%, #D06050 100%)', url: '/pages/disposals/index?mode=arrangement' },
-      { name: '待检查/检验安排', icon: 'microscope', iconBg: 'linear-gradient(135deg, #F0A860 0%, #E08840 100%)', url: '/pages/medical-orders/index?mode=arrangement' },
-      { name: '待取药安排', icon: 'pill-bottle', iconBg: 'linear-gradient(135deg, #5CBF98 0%, #3DA878 100%)', url: '/pages/prescriptions/index?mode=arrangement' }
+      { name: '待处置安排', icon: 'syringe', iconBg: 'linear-gradient(135deg, #E88870 0%, #D06050 100%)', url: '/pages/disposals/index?mode=arrangement', readCategories: ['DISPOSAL_COMPLETED'] },
+      { name: '待检查/检验安排', icon: 'microscope', iconBg: 'linear-gradient(135deg, #F0A860 0%, #E08840 100%)', url: '/pages/medical-orders/index?mode=arrangement', readCategories: ['EXAM_COMPLETED', 'REPORT_PUBLISHED', 'CALLED'] },
+      { name: '待取药安排', icon: 'pill-bottle', iconBg: 'linear-gradient(135deg, #5CBF98 0%, #3DA878 100%)', url: '/pages/prescriptions/index?mode=arrangement', readCategories: ['DRUGS_DISPENSED'] }
     ]
   },
   {
@@ -150,13 +163,47 @@ onShow(async () => {
   } catch {
     // ignore profile refresh failure
   }
+
+  await notifStore.refreshUnreadCount();
+
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(() => {
+    notifStore.refreshUnreadCount();
+  }, 30000);
 });
 
-function go(url: string) {
+onHide(() => {
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+});
+
+function quickBadgeCount(categories: string[]): number {
+  let total = 0;
+  for (const cat of categories) {
+    total += notifStore.unreadByCategory[cat] || 0;
+  }
+  return total;
+}
+
+function serviceBadgeCount(categories: string[]): number {
+  let total = 0;
+  for (const cat of categories) {
+    total += notifStore.unreadByCategory[cat] || 0;
+  }
+  return total;
+}
+
+function go(url: string, readCategories?: string[]) {
   if (url !== '/pages/real-name/index' && !auth.boundPatient) {
     uni.showToast({ title: '请先添加并绑定就诊人', icon: 'none', duration: 3000 });
     uni.navigateTo({ url: '/pages/real-name/index?prompt=needPatient' });
     return;
+  }
+  if (readCategories && readCategories.length > 0) {
+    Promise.allSettled(readCategories.map((cat) => markAllRead(cat).catch(() => {})));
+    notifStore.clearCategories(readCategories);
   }
   uni.navigateTo({ url });
 }
@@ -354,6 +401,29 @@ function go(url: string) {
   line-height: 1.35;
 }
 
+/* Card badge (for quick grid items) */
+.card-badge {
+  position: absolute;
+  top: -8rpx;
+  right: -8rpx;
+  min-width: 32rpx;
+  height: 32rpx;
+  padding: 0 8rpx;
+  border-radius: 999rpx;
+  background: #e74c3c;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+}
+
+.card-badge text {
+  color: #fff;
+  font-size: 20rpx;
+  font-weight: 700;
+  line-height: 1;
+}
+
 .service-panel {
   overflow: hidden;
   padding: 0 0 22rpx;
@@ -425,6 +495,7 @@ function go(url: string) {
 }
 
 .service-icon {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -433,6 +504,29 @@ function go(url: string) {
   border-radius: 24rpx;
   background: var(--patient-theme-soft);
   box-shadow: inset 0 -6rpx 12rpx rgba(80, 100, 95, 0.06), 0 6rpx 16rpx rgba(80, 100, 95, 0.06);
+}
+
+/* Service badge (for service grid items) */
+.service-badge {
+  position: absolute;
+  top: -8rpx;
+  right: -8rpx;
+  min-width: 30rpx;
+  height: 30rpx;
+  padding: 0 6rpx;
+  border-radius: 999rpx;
+  background: #e74c3c;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+}
+
+.service-badge text {
+  color: #fff;
+  font-size: 18rpx;
+  font-weight: 700;
+  line-height: 1;
 }
 
 .service-name {

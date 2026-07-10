@@ -10,6 +10,7 @@ import com.cloudbrain.medicalorder.domain.MedicalOrder;
 import com.cloudbrain.medicalorder.domain.MedicalReport;
 import com.cloudbrain.medicalorder.repository.MedicalOrderRepository;
 import com.cloudbrain.medicalorder.repository.MedicalReportRepository;
+import com.cloudbrain.medicalorder.service.NotificationClient;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -39,6 +40,7 @@ class MedicalReportServiceTest {
             workflow,
             patientAccessClient,
             auditPublisher,
+            null,
             360);
 
     @Test

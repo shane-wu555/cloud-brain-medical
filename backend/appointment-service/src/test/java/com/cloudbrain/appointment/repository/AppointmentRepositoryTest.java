@@ -302,7 +302,7 @@ class AppointmentRepositoryTest {
     }
 
     @Test
-    void skipByPositionsReturnsWaitingAppointmentWhenNoNextPatientsExist() {
+    void moveToTailSetsQueueNumberToTailAndIncrementsMissedCount() {
         AppointmentRepository repository = spy(new AppointmentRepository(jdbcTemplate));
         Appointment current = appointment("appt-1", AppointmentStatus.WAITING, PaymentStatus.PAID);
         Appointment updated = appointment("appt-1", AppointmentStatus.WAITING, PaymentStatus.PAID);
@@ -311,17 +311,22 @@ class AppointmentRepositoryTest {
         doReturn(Optional.of(current)).when(repository).findByIdForUpdate("appt-1");
         when(jdbcTemplate.query(eq("select pg_advisory_xact_lock(hashtext(?))"), any(ResultSetExtractor.class), anyString()))
                 .thenReturn(null);
-        when(jdbcTemplate.query(contains("select queue_number from appointment"), any(RowMapper.class),
-                eq("doctor-1"), eq(current.getVisitDate()), eq(1), eq(3))).thenReturn(List.of());
+        when(jdbcTemplate.queryForObject(
+                eq("select coalesce(max(queue_number), 0) + 1 from appointment where doctor_id = ? and visit_date = ?::date"),
+                eq(Integer.class),
+                eq("doctor-1"),
+                eq(current.getVisitDate()))).thenReturn(99);
 
-        Appointment skipped = repository.skipByPositions("appt-1", 3);
+        Appointment skipped = repository.moveToTail("appt-1");
 
         assertThat(skipped.getMissedCount()).isEqualTo(1);
-        verify(jdbcTemplate).update(eq("update appointment set missed_count=missed_count+1,status='WAITING' where id=?::uuid"), eq("appt-1"));
+        verify(jdbcTemplate).update(
+                eq("update appointment set queue_number = ?, missed_count = missed_count + 1, status = 'WAITING' where id = ?::uuid"),
+                eq(99), eq("appt-1"));
     }
 
     @Test
-    void skipByPositionsRejectsNonWaitingStatus() {
+    void moveToTailRejectsNonWaitingStatus() {
         AppointmentRepository repository = spy(new AppointmentRepository(jdbcTemplate));
         Appointment current = appointment("appt-1", AppointmentStatus.CANCELLED, PaymentStatus.CANCELLED);
         doReturn(Optional.of(current), Optional.of(current)).when(repository).findById("appt-1");
@@ -329,27 +334,7 @@ class AppointmentRepositoryTest {
         when(jdbcTemplate.query(eq("select pg_advisory_xact_lock(hashtext(?))"), any(ResultSetExtractor.class), anyString()))
                 .thenReturn(null);
 
-        assertThatThrownBy(() -> repository.skipByPositions("appt-1", 3)).isInstanceOf(IllegalStateException.class);
-    }
-
-    @Test
-    void skipByPositionsReordersQueueWhenFollowingPatientsExist() {
-        AppointmentRepository repository = spy(new AppointmentRepository(jdbcTemplate));
-        Appointment current = appointment("appt-1", AppointmentStatus.WAITING, PaymentStatus.PAID);
-        Appointment updated = appointment("appt-1", AppointmentStatus.WAITING, PaymentStatus.PAID);
-        updated.restorePersistenceState(null, 2);
-        doReturn(Optional.of(current), Optional.of(updated)).when(repository).findById("appt-1");
-        doReturn(Optional.of(current)).when(repository).findByIdForUpdate("appt-1");
-        when(jdbcTemplate.query(eq("select pg_advisory_xact_lock(hashtext(?))"), any(ResultSetExtractor.class), anyString()))
-                .thenReturn(null);
-        when(jdbcTemplate.query(contains("select queue_number from appointment"), any(RowMapper.class),
-                eq("doctor-1"), eq(current.getVisitDate()), eq(1), eq(5))).thenReturn(List.of(3, 4, 5));
-
-        Appointment skipped = repository.skipByPositions("appt-1", 5);
-
-        assertThat(skipped.getMissedCount()).isEqualTo(2);
-        verify(jdbcTemplate).update(eq("update appointment set queue_number=?,missed_count=missed_count+1,status='WAITING' where id=?::uuid"),
-                eq(5), eq("appt-1"));
+        assertThatThrownBy(() -> repository.moveToTail("appt-1")).isInstanceOf(IllegalStateException.class);
     }
 
     @SuppressWarnings("unchecked")

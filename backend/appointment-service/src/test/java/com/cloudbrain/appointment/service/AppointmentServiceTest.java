@@ -33,10 +33,11 @@ class AppointmentServiceTest {
     @Mock SlotInventoryRepository slots;
     @Mock MedicalRecordEventRepository events;
     @Mock MedicalRecordClient medicalRecords;
+    @Mock NotificationClient notifications;
     AppointmentService service;
 
     @BeforeEach void setUp() {
-        service = new AppointmentService(appointments, slots, events, medicalRecords);
+        service = new AppointmentService(appointments, slots, events, medicalRecords, notifications);
     }
 
     @Test void repeatedPaymentConfirmationDoesNotConsumeAnotherSlot() {

@@ -30,6 +30,7 @@ public class MedicalReportService {
     private final ClinicalWorkflowClient workflow;
     private final PatientAccessClient patientAccessClient;
     private final AuditPublisher auditPublisher;
+    private final NotificationClient notificationClient;
     private final long ctTaskTimeoutSeconds;
 
     public MedicalReportService(
@@ -42,6 +43,7 @@ public class MedicalReportService {
             ClinicalWorkflowClient workflow,
             PatientAccessClient patientAccessClient,
             AuditPublisher auditPublisher,
+            NotificationClient notificationClient,
             @Value("${ai.ct.task-timeout-seconds:360}") long ctTaskTimeoutSeconds) {
         this.reports = reports;
         this.orders = orders;
@@ -52,6 +54,7 @@ public class MedicalReportService {
         this.workflow = workflow;
         this.patientAccessClient = patientAccessClient;
         this.auditPublisher = auditPublisher;
+        this.notificationClient = notificationClient;
         this.ctTaskTimeoutSeconds = ctTaskTimeoutSeconds;
     }
 
@@ -190,6 +193,11 @@ public class MedicalReportService {
                             "adoptionStatus", report.modifiedFromAi() ? "MODIFIED" : "ADOPTED",
                             "reportType", report.reportType()));
         }
+        try {
+            notificationClient.notify(orderForPublish.patientId(), "REPORT_PUBLISHED",
+                    orderForPublish.itemName() + "报告已发布，请查看", null,
+                    "MEDICAL_ORDER", orderForPublish.id());
+        } catch (Exception ignored) { /* notification failure must not fail the transaction */ }
         return report;
     }
 

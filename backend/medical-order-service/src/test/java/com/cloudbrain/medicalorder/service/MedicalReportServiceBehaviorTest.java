@@ -13,6 +13,7 @@ import com.cloudbrain.medicalorder.domain.MedicalOrder;
 import com.cloudbrain.medicalorder.domain.MedicalReport;
 import com.cloudbrain.medicalorder.repository.MedicalOrderRepository;
 import com.cloudbrain.medicalorder.repository.MedicalReportRepository;
+import com.cloudbrain.medicalorder.service.NotificationClient;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -37,7 +38,7 @@ class MedicalReportServiceBehaviorTest {
     private final PatientAccessClient patientAccessClient = Mockito.mock(PatientAccessClient.class);
     private final AuditPublisher auditPublisher = Mockito.mock(AuditPublisher.class);
     private final MedicalReportService service = new MedicalReportService(
-            reports, orders, orderService, storage, ai, mapper, workflow, patientAccessClient, auditPublisher, 360);
+            reports, orders, orderService, storage, ai, mapper, workflow, patientAccessClient, auditPublisher, null, 360);
 
     @Test
     void uploadSupportsCheckAndLabOrdersAndWrapsIoFailure() throws Exception {
