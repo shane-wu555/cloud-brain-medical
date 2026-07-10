@@ -88,6 +88,17 @@ const highlightColor = '#0899a5';
 let searchTimer: ReturnType<typeof setTimeout> | undefined;
 let searchSequence = 0;
 
+function getEventValue(event: unknown) {
+  if (event && typeof event === 'object' && 'detail' in event) {
+    const detail = (event as { detail?: unknown }).detail;
+    if (detail && typeof detail === 'object' && 'value' in detail) {
+      const value = (detail as { value?: unknown }).value;
+      return typeof value === 'string' ? value : '';
+    }
+  }
+  return '';
+}
+
 function normalizeText(value: unknown) {
   if (typeof value === 'string') {
     return value;
@@ -155,15 +166,15 @@ function doctorLabelNodes(doctor: Doctor) {
   return `${highlight(doctor.name)} ${escapeHtml(title)} ${escapeHtml(dept)}`;
 }
 
-function onKeywordInput(event: { detail: { value?: string } }) {
-  const value = event.detail.value ?? '';
+function onKeywordInput(event: unknown) {
+  const value = getEventValue(event);
   if (keyword.value !== value) {
     keyword.value = value;
   }
 }
 
-function onKeywordBlur(event: { detail: { value?: string } }) {
-  const value = event.detail.value ?? '';
+function onKeywordBlur(event: unknown) {
+  const value = getEventValue(event);
   if (keyword.value !== value) {
     keyword.value = value;
   }

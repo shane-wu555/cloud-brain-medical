@@ -59,6 +59,18 @@ class PharmacyServiceAdditionalTest {
     }
 
     @Test
+    void drugsSkipSearchIndexWhenKeywordIsBlank() {
+        PharmacyService service = service();
+        List<PharmacyRepository.Drug> drugs = List.of(drug("drug-1"));
+        when(repository.drugs(" ", "ROOM")).thenReturn(drugs);
+
+        List<PharmacyRepository.Drug> result = service.drugs(" ", "ROOM");
+
+        assertThat(result).isSameAs(drugs);
+        verify(drugSearchIndexService, never()).searchDrugIds(any(), any(), org.mockito.ArgumentMatchers.anyInt());
+    }
+
+    @Test
     void reindexDrugSearchDelegatesRepositorySnapshot() {
         PharmacyService service = service();
         List<PharmacyRepository.Drug> drugs = List.of(drug("drug-1"), drug("drug-2"));
@@ -160,6 +172,119 @@ class PharmacyServiceAdditionalTest {
         assertThatThrownBy(() -> service.prescribe(request, "doctor-1"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("Unsupported AI adoption status");
+    }
+
+    @Test
+    void prescribeDefaultsBlankAiStatusToHumanOnlyWithoutAiAudit() {
+        PharmacyService service = service();
+        AtomicReference<Prescription> inserted = new AtomicReference<>();
+        when(repository.drug("drug-1")).thenReturn(drug("drug-1"));
+        org.mockito.Mockito.doAnswer(invocation -> {
+            inserted.set(invocation.getArgument(0));
+            return null;
+        }).when(repository).insertPrescription(any(Prescription.class));
+        when(repository.findPrescription(any())).thenAnswer(invocation -> inserted.get());
+        PharmacyController.CreatePrescriptionRequest request = new PharmacyController.CreatePrescriptionRequest(
+                "appt-2",
+                "mr-2",
+                "patient-1",
+                "Alice",
+                "diagnosis",
+                null,
+                " ",
+                null,
+                List.of(new PharmacyController.PrescriptionItemRequest(
+                        "drug-1",
+                        1,
+                        "100mg",
+                        "oral",
+                        "daily",
+                        5,
+                        null)));
+
+        Prescription created = service.prescribe(request, "doctor-1");
+
+        assertThat(created.aiAdoptionStatus()).isEqualTo("HUMAN_ONLY");
+        verify(auditPublisher, never()).publish(
+                eq("AI_RESULT_CONFIRMED"),
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any(),
+                any());
+    }
+
+    @Test
+    void prescribeRejectsEmptyItems() {
+        PharmacyService service = service();
+        PharmacyController.CreatePrescriptionRequest request = new PharmacyController.CreatePrescriptionRequest(
+                "appt-3",
+                "mr-3",
+                "patient-1",
+                "Alice",
+                "diagnosis",
+                null,
+                null,
+                null,
+                List.of());
+
+        assertThatThrownBy(() -> service.prescribe(request, "doctor-1"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("at least one item");
+    }
+
+    @Test
+    void prescribeRejectsMissingRequiredFields() {
+        PharmacyService service = service();
+        PharmacyController.CreatePrescriptionRequest request = new PharmacyController.CreatePrescriptionRequest(
+                " ",
+                "mr-3",
+                "patient-1",
+                "Alice",
+                " ",
+                null,
+                null,
+                null,
+                List.of(new PharmacyController.PrescriptionItemRequest(
+                        "drug-1",
+                        1,
+                        "100mg",
+                        "oral",
+                        "daily",
+                        5,
+                        null)));
+
+        assertThatThrownBy(() -> service.prescribe(request, "doctor-1"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("appointmentId, patientId and diagnosis");
+    }
+
+    @Test
+    void prescribeRejectsMissingMedicationInstructions() {
+        PharmacyService service = service();
+        PharmacyController.CreatePrescriptionRequest request = new PharmacyController.CreatePrescriptionRequest(
+                "appt-4",
+                "mr-4",
+                "patient-1",
+                "Alice",
+                "diagnosis",
+                null,
+                null,
+                null,
+                List.of(new PharmacyController.PrescriptionItemRequest(
+                        "drug-1",
+                        1,
+                        " ",
+                        "oral",
+                        "daily",
+                        5,
+                        null)));
+
+        assertThatThrownBy(() -> service.prescribe(request, "doctor-1"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("dosage, usage and frequency");
     }
 
     @Test
@@ -273,6 +398,59 @@ class PharmacyServiceAdditionalTest {
     }
 
     @Test
+    void createDrugReturnRejectsWhenPrescriptionChangesBeforeTransition() {
+        PharmacyService service = service();
+        Prescription prescription = prescription("pres-1", PrescriptionStatus.WAITING_DISPENSE);
+        DrugReturnOrder order = order("return-1", DrugReturnStatus.RETURN_PENDING_REFUND);
+        when(repository.findPrescription("pres-1")).thenReturn(prescription);
+        when(repository.createDrugReturn(
+                prescription,
+                "doctor-1",
+                "approved",
+                "template-1",
+                DrugReturnStatus.RETURN_PENDING_REFUND)).thenReturn(order);
+        when(repository.markReturnedBeforeDispense(
+                "pres-1",
+                "doctor-1",
+                "return-before-dispense-RT-1",
+                PrescriptionStatus.RETURN_PENDING_REFUND)).thenReturn(false);
+
+        assertThatThrownBy(() -> service.createDrugReturn(
+                "pres-1",
+                new PharmacyController.CreateDrugReturnRequest("approved", "template-1"),
+                "doctor-1"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("status changed");
+    }
+
+    @Test
+    void createDrugReturnReturnsCompletedStatusForUnpaidPrescription() {
+        PharmacyService service = service();
+        Prescription prescription = prescription("pres-1", PrescriptionStatus.PENDING_PAYMENT);
+        DrugReturnOrder order = order("return-1", DrugReturnStatus.RETURNED);
+        when(repository.findPrescription("pres-1")).thenReturn(prescription);
+        when(repository.createDrugReturn(
+                prescription,
+                "doctor-1",
+                "approved",
+                "template-1",
+                DrugReturnStatus.RETURNED)).thenReturn(order);
+        when(repository.markReturnedBeforeDispense(
+                "pres-1",
+                "doctor-1",
+                "return-before-dispense-RT-1",
+                PrescriptionStatus.RETURNED)).thenReturn(true);
+        when(repository.findDrugReturn("return-1")).thenReturn(order);
+
+        DrugReturnOrder created = service.createDrugReturn(
+                "pres-1",
+                new PharmacyController.CreateDrugReturnRequest("approved", "template-1"),
+                "doctor-1");
+
+        assertThat(created.status()).isEqualTo(DrugReturnStatus.RETURNED);
+    }
+
+    @Test
     void pagedDrugReturnsUseBoundPatientScope() {
         PharmacyService service = service();
         List<DrugReturnOrder> orders = List.of(order("return-1", DrugReturnStatus.RETURN_PENDING_REFUND));
@@ -305,6 +483,38 @@ class PharmacyServiceAdditionalTest {
     }
 
     @Test
+    void listUsesDispenseRecordViewStatuses() {
+        PharmacyService service = service();
+        List<PrescriptionStatus> statuses = List.of(
+                PrescriptionStatus.DISPENSED,
+                PrescriptionStatus.RETURNED,
+                PrescriptionStatus.RETURN_PENDING_REFUND,
+                PrescriptionStatus.RETURN_REFUNDED,
+                PrescriptionStatus.CANCELLED);
+        List<Prescription> prescriptions = List.of(prescription("pres-1", PrescriptionStatus.DISPENSED));
+        when(repository.listByStatuses("patient-1", statuses)).thenReturn(prescriptions);
+
+        List<Prescription> result = service.list("patient-1", null, "dispense_record", "cashier-1", "CASHIER");
+
+        assertThat(result).isSameAs(prescriptions);
+        verify(repository).listByStatuses("patient-1", statuses);
+        verify(auditPublisher).publish(
+                eq("PRESCRIPTION_LIST_VIEW"),
+                eq("PRESCRIPTION"),
+                isNull(),
+                eq("patient-1"),
+                isNull(),
+                eq("cashier-1"),
+                eq("CASHIER"),
+                eq(Map.of(
+                        "accessScope", "LIST",
+                        "view", "DISPENSE_RECORD",
+                        "auditSummary", "查看了取药退药记录",
+                        "statusFilter", List.of("DISPENSED", "RETURNED", "RETURN_PENDING_REFUND", "RETURN_REFUNDED", "CANCELLED"),
+                        "resultCount", 1)));
+    }
+
+    @Test
     void completeDrugReturnPublishesAuditAfterRefundCompletion() {
         PharmacyService service = service();
         DrugReturnOrder refunded = order("return-1", DrugReturnStatus.RETURN_REFUNDED);
@@ -324,6 +534,34 @@ class PharmacyServiceAdditionalTest {
                 eq("cashier-1"),
                 eq("CASHIER"),
                 eq(Map.of("refundOrderId", "refund-1", "status", "RETURN_REFUNDED")));
+    }
+
+    @Test
+    void completeDrugReturnRejectsUnexpectedPrescriptionStateWhenRefundStatusUpdateMisses() {
+        PharmacyService service = service();
+        DrugReturnOrder refunded = order("return-1", DrugReturnStatus.RETURN_REFUNDED);
+        when(repository.completeDrugReturn("return-1", "cashier-1", "refund-1")).thenReturn(true);
+        when(repository.findDrugReturn("return-1")).thenReturn(refunded);
+        when(repository.markReturnRefunded("pres-1")).thenReturn(false);
+        when(repository.findPrescription("pres-1")).thenReturn(prescription("pres-1", PrescriptionStatus.RETURNED));
+
+        assertThatThrownBy(() -> service.completeDrugReturn("return-1", "cashier-1", "refund-1"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("waiting for refund");
+    }
+
+    @Test
+    void completeDrugReturnAcceptsAlreadyRefundedPrescriptionState() {
+        PharmacyService service = service();
+        DrugReturnOrder refunded = order("return-1", DrugReturnStatus.RETURN_REFUNDED);
+        when(repository.completeDrugReturn("return-1", "cashier-1", "refund-1")).thenReturn(true);
+        when(repository.findDrugReturn("return-1")).thenReturn(refunded).thenReturn(refunded);
+        when(repository.markReturnRefunded("pres-1")).thenReturn(false);
+        when(repository.findPrescription("pres-1")).thenReturn(prescription("pres-1", PrescriptionStatus.RETURN_REFUNDED));
+
+        DrugReturnOrder result = service.completeDrugReturn("return-1", "cashier-1", "refund-1");
+
+        assertThat(result).isSameAs(refunded);
     }
 
     @Test
@@ -354,6 +592,81 @@ class PharmacyServiceAdditionalTest {
         Prescription idempotent = service.confirmPayment("pres-1", "patient-1", "payment-1");
 
         assertThat(idempotent).isSameAs(waiting);
+    }
+
+    @Test
+    void confirmPaymentAcceptsAlreadyDispensedPrescription() {
+        PharmacyService service = service();
+        Prescription dispensed = prescription("pres-1", PrescriptionStatus.DISPENSED);
+        when(repository.markPaid("pres-1", "patient-1", "payment-1")).thenReturn(false);
+        when(repository.findPrescription("pres-1")).thenReturn(dispensed);
+
+        Prescription result = service.confirmPayment("pres-1", "patient-1", "payment-1");
+
+        assertThat(result).isSameAs(dispensed);
+    }
+
+    @Test
+    void pagedPrescriptionListUsesExplicitStatusFilterBeforeViewStatuses() {
+        PharmacyService service = service();
+        List<Prescription> prescriptions = List.of(prescription("pres-1", PrescriptionStatus.PAID));
+        when(repository.list("patient-1", "PAID", "Alice", "RX-1", 0, 10)).thenReturn(prescriptions);
+
+        List<Prescription> result = service.list(
+                "patient-1",
+                "PAID",
+                "dispense_record",
+                "Alice",
+                "RX-1",
+                0,
+                10,
+                "cashier-1",
+                "CASHIER");
+
+        assertThat(result).isSameAs(prescriptions);
+        verify(repository).list("patient-1", "PAID", "Alice", "RX-1", 0, 10);
+        verify(auditPublisher).publish(
+                eq("PRESCRIPTION_LIST_VIEW"),
+                eq("PRESCRIPTION"),
+                isNull(),
+                eq("patient-1"),
+                isNull(),
+                eq("cashier-1"),
+                eq("CASHIER"),
+                eq(Map.of(
+                        "accessScope", "LIST",
+                        "view", "DISPENSE_RECORD",
+                        "auditSummary", "查看了取药退药记录",
+                        "statusFilter", "PAID",
+                        "resultCount", 1)));
+    }
+
+    @Test
+    void dispenseRejectsConcurrentProcessing() {
+        PharmacyService service = service();
+        Prescription waiting = prescription("pres-1", PrescriptionStatus.WAITING_DISPENSE);
+        when(repository.findPrescription("pres-1")).thenReturn(waiting);
+        when(repository.markDispensed("pres-1", "pharmacist-1")).thenReturn(false);
+
+        assertThatThrownBy(() -> service.dispense("pres-1", "pharmacist-1"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("another request");
+    }
+
+    @Test
+    void returnDrugsRejectsConcurrentProcessing() {
+        PharmacyService service = service();
+        Prescription waiting = prescription("pres-1", PrescriptionStatus.WAITING_DISPENSE);
+        when(repository.findPrescription("pres-1")).thenReturn(waiting);
+        when(repository.markReturnedBeforeDispense(
+                "pres-1",
+                "pharmacist-1",
+                "return-before-dispense",
+                PrescriptionStatus.RETURN_PENDING_REFUND)).thenReturn(false);
+
+        assertThatThrownBy(() -> service.returnDrugs("pres-1", "pharmacist-1", " "))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("another request");
     }
 
     @Test

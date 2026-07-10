@@ -1,5 +1,5 @@
 <template>
-  <view class="patient-nav-bar">
+  <view class="patient-nav-bar" :style="{ paddingTop: statusBarHeight }">
     <view class="nav-inner">
       <view class="nav-side nav-left" @tap="handleBack()">
         <view v-if="canBack" class="back-icon"></view>
@@ -19,6 +19,7 @@ defineProps<{
 }>();
 
 const canBack = ref(false);
+const statusBarHeight = `${uni.getSystemInfoSync().statusBarHeight ?? 0}px`;
 
 onMounted(updateCanBack);
 onShow(updateCanBack);
@@ -38,7 +39,6 @@ function handleBack() {
 
 <style scoped>
 .patient-nav-bar {
-  padding-top: var(--status-bar-height, 0px);
   background: linear-gradient(135deg, var(--patient-theme) 0%, var(--patient-theme-strong) 100%);
   color: #fff;
 }

@@ -82,17 +82,51 @@ import { computed, ref } from 'vue';
 import MedicalIcon from '../../components/MedicalIcon.vue';
 import { useAuthStore } from '../../stores/auth';
 
+type MedicalIconName =
+  | 'book-open-text'
+  | 'calendar-days'
+  | 'clipboard-list'
+  | 'flask-conical'
+  | 'home'
+  | 'hospital'
+  | 'microscope'
+  | 'pill-bottle'
+  | 'stethoscope'
+  | 'syringe'
+  | 'user-round-plus'
+  | 'wallet-cards';
+
+interface QuickEntry {
+  name: string;
+  desc: string;
+  icon: MedicalIconName;
+  tone: string;
+  url: string;
+}
+
+interface ServiceItem {
+  name: string;
+  icon: MedicalIconName;
+  iconBg: string;
+  url: string;
+}
+
+interface ServiceGroup {
+  title: string;
+  items: ServiceItem[];
+}
+
 const auth = useAuthStore();
 const activeGroup = ref('门诊');
 
-const quickEntries = [
+const quickEntries: QuickEntry[] = [
   { name: 'AI问诊建议', desc: '智能推荐科室', icon: 'stethoscope', tone: 'tone-disease', url: '/pages/consultation/index' },
   { name: '预约挂号', desc: '选择院区科室', icon: 'hospital', tone: 'tone-dept', url: '/pages/booking/index' },
   { name: '就诊人管理', desc: '切换电子就诊卡', icon: 'user-round-plus', tone: 'tone-report', url: '/pages/real-name/index' },
   { name: '门诊缴费', desc: '挂号药品等缴费', icon: 'wallet-cards', tone: 'tone-payment', url: '/pages/pending-payments/index' }
 ];
 
-const serviceGroups = [
+const serviceGroups: ServiceGroup[] = [
   {
     title: '门诊',
     items: [

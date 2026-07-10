@@ -25,6 +25,19 @@ class PatientControllerTest {
     PatientRepository repository;
 
     @Test
+    void meDelegatesToRepositoryAccountState() {
+        PatientController controller = new PatientController(repository);
+        PatientRepository.PatientAccountState state =
+                new PatientRepository.PatientAccountState(List.of(profile("patient-1")), profile("patient-1"));
+        when(repository.accountState("account-1")).thenReturn(state);
+
+        PatientRepository.PatientAccountState result = controller.me(authentication("account-1", "13800000000"));
+
+        assertThat(result).isSameAs(state);
+        verify(repository).accountState("account-1");
+    }
+
+    @Test
     void addProfileNormalizesFieldsAndInfersBirthDate() {
         PatientController controller = new PatientController(repository);
         PatientRepository.PatientProfile profile = profile("patient-1");
@@ -124,6 +137,18 @@ class PatientControllerTest {
     }
 
     @Test
+    void searchByIdNumberDelegatesToRepository() {
+        PatientController controller = new PatientController(repository);
+        List<PatientRepository.PatientProfile> profiles = List.of(profile("patient-9"));
+        when(repository.findByIdNumber("ID_CARD", "110105199001012420")).thenReturn(profiles);
+
+        List<PatientRepository.PatientProfile> result = controller.search(null, null, "110105199001012420");
+
+        assertThat(result).isSameAs(profiles);
+        verify(repository).findByIdNumber("ID_CARD", "110105199001012420");
+    }
+
+    @Test
     void bindDelegatesToRepository() {
         PatientController controller = new PatientController(repository);
         PatientRepository.PatientProfile profile = profile("patient-4");
@@ -164,6 +189,67 @@ class PatientControllerTest {
                 argThat(id -> id.startsWith("UNKNOWN-")),
                 eq("UNKNOWN"),
                 eq(null));
+    }
+
+    @Test
+    void legacyVerifyWithIdCardInfersGenderAndBirthDate() {
+        PatientController controller = new PatientController(repository);
+        PatientRepository.PatientProfile profile = profile("patient-6");
+        when(repository.createForAccount(
+                eq("account-1"),
+                eq("13800000000"),
+                eq("Legacy User"),
+                eq("ID_CARD"),
+                eq("110105199001012420"),
+                eq("FEMALE"),
+                eq(LocalDate.of(1990, 1, 1))))
+                .thenReturn(profile);
+
+        PatientRepository.PatientProfile result = controller.legacyVerify(
+                new PatientController.LegacyRealNameRequest(" Legacy User ", " 110105199001012420 "),
+                authentication("account-1", "13800000000"));
+
+        assertThat(result).isSameAs(profile);
+        verify(repository).createForAccount(
+                "account-1",
+                "13800000000",
+                "Legacy User",
+                "ID_CARD",
+                "110105199001012420",
+                "FEMALE",
+                LocalDate.of(1990, 1, 1));
+    }
+
+    @Test
+    void createOfflineUsesProvidedGenderForNonIdCardWithoutBirthDateInference() {
+        PatientController controller = new PatientController(repository);
+        PatientRepository.PatientProfile profile = profile("patient-7");
+        when(repository.createOffline(
+                eq("PASSPORT"),
+                eq("P12345678"),
+                eq("Carol"),
+                eq("13700000000"),
+                eq("UNKNOWN"),
+                eq(null)))
+                .thenReturn(profile);
+
+        PatientRepository.PatientProfile result = controller.createOffline(
+                new PatientController.OfflinePatientRequest(
+                        " passport ",
+                        " p12345678 ",
+                        " Carol ",
+                        "13700000000",
+                        " unknown ",
+                        null));
+
+        assertThat(result).isSameAs(profile);
+        verify(repository).createOffline(
+                "PASSPORT",
+                "P12345678",
+                "Carol",
+                "13700000000",
+                "UNKNOWN",
+                null);
     }
 
     @Test

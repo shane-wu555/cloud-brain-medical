@@ -261,6 +261,30 @@ class CashierRepositoryAdditionalTest {
     }
 
     @Test
+    void recordRefundLoadsPaidAmountWhenRefundAmountIsZero() {
+        CashierRepository repository = spy(new CashierRepository(jdbcTemplate));
+        CashierRepository.Payment payment = payment("payment-7", "PRESCRIPTION", "biz-7", "patient-7", "PAID");
+        when(jdbcTemplate.query(
+                eq("select amount from payment where business_type=? and business_id=? and status='PAID'"),
+                org.mockito.ArgumentMatchers.<org.springframework.jdbc.core.RowMapper<BigDecimal>>any(),
+                eq("PRESCRIPTION"),
+                eq("biz-7")))
+                .thenReturn(List.of(new BigDecimal("18.88")));
+        doReturn(payment).when(repository).findByBusiness("PRESCRIPTION", "biz-7");
+
+        assertThatThrownBy(() -> repository.recordRefund(
+                "PRESCRIPTION",
+                "biz-7",
+                "patient-7",
+                BigDecimal.ZERO,
+                "reason",
+                "operator-7"))
+                .isInstanceOf(IllegalStateException.class);
+
+        verify(jdbcTemplate).update(anyString(), any(), eq("payment-7"), eq(new BigDecimal("18.88")), eq("reason"), eq("operator-7"));
+    }
+
+    @Test
     void findOptionalByBusinessReturnsEmptyWhenNoPaymentExists() {
         CashierRepository repository = new CashierRepository(jdbcTemplate);
         when(jdbcTemplate.query(
