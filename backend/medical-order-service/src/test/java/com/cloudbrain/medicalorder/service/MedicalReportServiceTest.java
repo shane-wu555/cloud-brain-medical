@@ -17,6 +17,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class MedicalReportServiceTest {
@@ -48,8 +49,9 @@ class MedicalReportServiceTest {
         MedicalReport report1 = report("report-1", "order-1");
         MedicalReport report2 = report("report-2", "order-2");
         when(reports.reports()).thenReturn(List.of(report1, report2));
-        when(orders.findById("order-1")).thenReturn(Optional.of(order("order-1", "doctor-1", "patient-1")));
-        when(orders.findById("order-2")).thenReturn(Optional.of(order("order-2", "doctor-1", "patient-2")));
+        when(orders.findByIds(Set.of("order-1", "order-2"))).thenReturn(Map.of(
+                "order-1", order("order-1", "doctor-1", "patient-1"),
+                "order-2", order("order-2", "doctor-1", "patient-2")));
 
         List<MedicalReport> visible = service.list(null, "doctor-1", "OUTPATIENT_DOCTOR");
 
