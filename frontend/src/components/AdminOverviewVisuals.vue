@@ -2,14 +2,15 @@
   <div class="overview-dashboard">
     <section class="overview-hero">
       <div class="overview-hero__copy">
-        <span class="overview-hero__eyebrow">智慧运营驾驶舱</span>
+        <span class="overview-hero__eyebrow">智慧运营可视化</span>
         <h2>实时运营总览</h2>
       </div>
 
       <div class="overview-hero__chips">
         <div v-for="chip in heroChips" :key="chip.label" class="hero-chip">
-          <span>{{ chip.label }}</span>
+          <span class="hero-chip__label">{{ chip.label }}</span>
           <strong>{{ chip.value }}</strong>
+          <small v-if="chip.note" class="hero-chip__note">{{ chip.note }}</small>
         </div>
       </div>
     </section>
@@ -31,7 +32,7 @@
       <section class="viz-card viz-card--tasks">
         <div class="card-head">
           <div>
-            <h3>待处理事项</h3>
+            <h3>待处理事项信息</h3>
           </div>
         </div>
         <div class="task-grid">
@@ -62,7 +63,7 @@
       <section class="viz-card candidate-card candidate-card--narrow viz-card--aurora">
         <div class="card-head">
           <div>
-            <h3>预约转化漏斗</h3>
+            <h3>一周预约转化漏斗</h3>
           </div>
         </div>
         <div class="funnel-surface chart-surface--candidate">
@@ -89,7 +90,7 @@
       <section class="viz-card candidate-card candidate-card--wide viz-card--violet">
         <div class="card-head">
           <div>
-            <h3>分时段热力图</h3>
+            <h3>一周分时段热力图</h3>
           </div>
         </div>
         <div class="heatmap-panel chart-surface--candidate">
@@ -331,7 +332,7 @@ const funnelData = computed(() => {
   return [
     { name: '总号源', value: totalSupply },
     { name: '已预约', value: bookedStage },
-    { name: 'AI 问诊', value: aiStage },
+    { name: 'AI 问诊建议', value: aiStage },
     { name: '待接诊', value: waitingStage }
   ];
 });
@@ -370,11 +371,10 @@ const funnelSvgStages = computed(() => {
 });
 
 const heroChips = computed(() => [
-  { label: '未来 7 日号源', value: totalSevenDayCapacity.value },
-  { label: '启用账号', value: `${activeAccountCount.value}/${props.staffAccounts.length || 0}` },
-  { label: '候诊压力', value: `${waitingPressureRate.value}%` },
-  { label: '诊室出诊覆盖率', value: `${doctorCoverageRate.value}%` },
-  { label: 'AI 问诊覆盖率', value: `${aiCoverageRate.value}%` }
+  { label: '未来 7 日号源', value: totalSevenDayCapacity.value, note: '未来一周可预约总量' },
+  { label: '候诊压力', value: `${waitingPressureRate.value}%`, note: '候诊队列人数 / 总预约人数' },
+  { label: '诊室出诊覆盖率', value: `${doctorCoverageRate.value}%`, note: '值班诊室数 / 总诊室数' },
+  { label: 'AI 问诊覆盖率', value: `${aiCoverageRate.value}%`, note: 'AI 推荐挂号数 / 总挂号数' }
 ]);
 
 const kpiCards = computed(() => {
@@ -785,9 +785,9 @@ function formatMonthDay(isoDate: string) {
   overflow: hidden;
   padding: 24px 24px 22px;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: start;
-  gap: 18px;
+  grid-template-columns: minmax(180px, 220px) minmax(0, 1fr);
+  align-items: stretch;
+  gap: 20px;
   border-radius: 24px;
   background:
     radial-gradient(circle at 84% 18%, rgb(255 255 255 / 20%) 0 8%, transparent 8%),
@@ -826,33 +826,43 @@ function formatMonthDay(isoDate: string) {
 
 .overview-hero__chips {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
   align-content: start;
 }
 
 .hero-chip {
-  min-height: 98px;
-  padding: 14px;
+  min-height: 112px;
+  padding: 14px 16px;
   border: 1px solid rgb(255 255 255 / 16%);
   border-radius: 18px;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: space-between;
+  gap: 8px;
   background: linear-gradient(180deg, rgb(255 255 255 / 20%), rgb(255 255 255 / 10%));
   backdrop-filter: blur(10px);
 }
 
-.hero-chip span {
+.hero-chip__label {
   color: rgb(240 253 250 / 84%);
   font-size: 12px;
+  font-weight: 700;
 }
 
 .hero-chip strong {
-  margin-top: 8px;
   color: #fff;
-  font-size: 24px;
+  font-size: 26px;
   line-height: 1;
+}
+
+.hero-chip__note {
+  overflow: hidden;
+  color: rgb(240 253 250 / 72%);
+  font-size: 11px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .stat-strip {
@@ -1196,7 +1206,7 @@ function formatMonthDay(isoDate: string) {
   }
 
   .overview-hero__chips {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
   .stat-strip {

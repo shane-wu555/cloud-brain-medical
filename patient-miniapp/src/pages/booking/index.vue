@@ -314,8 +314,53 @@ function isWithinBookingWindow(workDate: string) {
   return workDate >= startDate && workDate <= endDate;
 }
 
+function slotDateTime(workDate: string, startTime: string) {
+  const time = normalizeStartTime(startTime);
+  if (!workDate || !time) {
+    return null;
+  }
+  const parsed = new Date(`${workDate}T${time}:00`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function normalizeStartTime(startTime: string) {
+  const match = /^(\d{1,2}):(\d{2})/.exec(startTime || '');
+  if (!match) {
+    return '';
+  }
+  return `${match[1].padStart(2, '0')}:${match[2]}`;
+}
+
+function isBookableSlot(workDate: string, slot: TimeSlot) {
+  const dateTime = slotDateTime(workDate, slot.startTime);
+  if (!dateTime) {
+    return false;
+  }
+  return dateTime.getTime() > Date.now();
+}
+
+function toBookableSchedule(schedule: Schedule) {
+  const timeSlots = schedule.timeSlots
+    .filter((slot) => isBookableSlot(schedule.workDate, slot))
+    .map((slot) => ({ ...slot, period: slot.period || schedule.period }));
+  if (!timeSlots.length) {
+    return null;
+  }
+  return {
+    ...schedule,
+    capacity: timeSlots.reduce((sum, slot) => sum + slot.capacity, 0),
+    booked: timeSlots.reduce((sum, slot) => sum + slot.booked, 0),
+    locked: timeSlots.reduce((sum, slot) => sum + slot.locked, 0),
+    available: timeSlots.reduce((sum, slot) => sum + slot.available, 0),
+    timeSlots
+  };
+}
+
 const bookableSchedules = computed(() =>
-  schedules.value.filter((item) => isWithinBookingWindow(item.workDate))
+  schedules.value
+    .filter((item) => isWithinBookingWindow(item.workDate))
+    .map(toBookableSchedule)
+    .filter((item): item is Schedule => item !== null)
 );
 const visibleSchedules = computed(() =>
   focusedDoctorId.value
@@ -324,9 +369,7 @@ const visibleSchedules = computed(() =>
 );
 const availableDates = computed(() => Array.from(new Set(visibleSchedules.value.map((item) => item.workDate))).sort());
 const doctorMap = computed(() => new Map(doctors.value.map((item) => [item.id, item])));
-const displaySchedules = computed(() =>
-  focusedDoctorId.value ? visibleSchedules.value.map(withSlotPeriod) : aggregateSchedules(visibleSchedules.value)
-);
+const displaySchedules = computed(() => aggregateSchedules(visibleSchedules.value));
 const filteredSchedules = computed(() =>
   displaySchedules.value
     .filter((item) => !selectedDate.value || item.workDate === selectedDate.value)
@@ -453,7 +496,7 @@ function toTimeSlot(item: Record<string, unknown>): TimeSlot {
   return {
     id: normalizeText(item.id),
     period: normalizeText(item.period),
-    startTime: normalizeText(item.startTime).slice(0, 5),
+    startTime: normalizeStartTime(normalizeText(item.startTime)),
     capacity: Number(item.capacity ?? 0),
     booked: Number(item.booked ?? 0),
     locked: Number(item.locked ?? 0),
@@ -698,6 +741,10 @@ function selectSlot(schedule: Schedule, slot: TimeSlot) {
   if (slot.available <= 0) {
     return;
   }
+  if (!isBookableSlot(schedule.workDate, slot)) {
+    uni.showToast({ title: '该时间段已过，请选择其他号源', icon: 'none' });
+    return;
+  }
   pendingBooking.value = { schedule, slot };
 }
 
@@ -715,6 +762,12 @@ async function confirmBooking() {
   }
 
   const { schedule, slot } = pendingBooking.value;
+  if (!isBookableSlot(schedule.workDate, slot)) {
+    uni.showToast({ title: '该时间段已过，请重新选择', icon: 'none' });
+    pendingBooking.value = null;
+    await loadDepartmentResources();
+    return;
+  }
   let patient;
   try {
     patient = auth.requireBoundPatient();

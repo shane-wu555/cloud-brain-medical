@@ -240,6 +240,8 @@ public class ScheduleController {
         List<PublishAiScheduleRequest> validSuggestions=new ArrayList<>();
         for(PublishAiScheduleRequest item:suggestions) {
             if(item.departmentId()==null||item.workDate()==null||item.period()==null||item.doctorId()==null) continue;
+            LocalDate workDate=LocalDate.parse(item.workDate());
+            if(workDate.isBefore(LocalDate.now())) throw new IllegalArgumentException("新增排班日期不能早于今天");
             DoctorCatalogRepository.OutpatientRoom room=repository.outpatientRoomForDoctor(item.doctorId());
             if(hasPublishRoomMismatch(item.roomId(),room)) {
                 log.warn("AI schedule publish room mismatch ignored: context=batch:{}:{}, doctorId={}, suggestionRoomId={}, boundRoomId={}",
