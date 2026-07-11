@@ -8,8 +8,8 @@
     >
       <view class="tab-icon-wrap">
         <image class="tab-icon" :src="currentTab === item.key ? item.activeIcon : item.icon" mode="aspectFit" />
-        <view v-if="item.key === 'home' && notifStore.unreadTotal > 0" class="tab-badge">
-          <text v-if="notifStore.unreadTotal <= 99">{{ notifStore.unreadTotal }}</text>
+        <view v-if="item.key === 'home' && notifStore.badgeTotal > 0" class="tab-badge">
+          <text v-if="notifStore.badgeTotal <= 99">{{ notifStore.badgeTotal }}</text>
           <text v-else>99+</text>
         </view>
       </view>
@@ -37,21 +37,21 @@ const tabs = [
     key: 'home' as const,
     label: '首页',
     icon: getMedicalIcon('home'),
-    activeIcon: getMedicalIcon('home', 'white'),
+    activeIcon: getMedicalIcon('home', 'theme'),
     url: '/pages/home/index',
   },
   {
     key: 'records' as const,
     label: '就诊记录',
     icon: getMedicalIcon('calendar-days'),
-    activeIcon: getMedicalIcon('calendar-days', 'white'),
+    activeIcon: getMedicalIcon('calendar-days', 'theme'),
     url: '/pages/visit-records/index',
   },
   {
     key: 'my' as const,
     label: '我的',
     icon: getMedicalIcon('user-round-plus'),
-    activeIcon: getMedicalIcon('user-round-plus', 'white'),
+    activeIcon: getMedicalIcon('user-round-plus', 'theme'),
     url: '/pages/my/index',
   },
 ];

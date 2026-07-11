@@ -13,7 +13,9 @@ import java.math.RoundingMode;
 import com.cloudbrain.appointment.repository.SlotInventoryRepository;
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.dao.DuplicateKeyException;
@@ -28,29 +30,43 @@ public class AppointmentService {
     private final MedicalRecordEventRepository integrationEventRepository;
     private final MedicalRecordClient medicalRecordClient;
     private final NotificationClient notificationClient;
+    private final DoctorRoomClient doctorRoomClient;
 
     public AppointmentService(
             AppointmentRepository appointmentRepository,
             SlotInventoryRepository slotInventoryRepository,
             MedicalRecordEventRepository integrationEventRepository,
             MedicalRecordClient medicalRecordClient,
-            NotificationClient notificationClient) {
+            NotificationClient notificationClient,
+            DoctorRoomClient doctorRoomClient) {
         this.appointmentRepository = appointmentRepository;
         this.slotInventoryRepository = slotInventoryRepository;
         this.integrationEventRepository = integrationEventRepository;
         this.medicalRecordClient = medicalRecordClient;
         this.notificationClient = notificationClient;
+        this.doctorRoomClient = doctorRoomClient;
     }
 
     public List<Appointment> list(String doctorId, String patientId, String status) {
+        Map<String, Optional<String>> roomNameCache = new HashMap<>();
         return appointmentRepository.findAll().stream()
                 .filter(item -> Optional.ofNullable(doctorId).map(id -> id.equals(item.getDoctorId())).orElse(true))
                 .filter(item -> Optional.ofNullable(patientId).map(id -> id.equals(item.getPatientId())).orElse(true))
                 .filter(item -> Optional.ofNullable(status).map(value -> value.equals(item.getStatus().name())).orElse(true))
+                .map(item -> enrichRoomName(item, roomNameCache))
                 .toList();
     }
 
+    public List<Appointment> list(String doctorId, String patientId, String status, boolean includeRoom) {
+        if (includeRoom) {
+            return list(doctorId, patientId, status);
+        }
+        List<Appointment> appointments = appointmentRepository.find(doctorId, patientId, status);
+        return appointments;
+    }
+
     public List<Appointment> todayQueue(String doctorId) {
+        Map<String, Optional<String>> roomNameCache = new HashMap<>();
         return appointmentRepository.findAll().stream()
                 .filter(a->a.getDoctorId().equals(doctorId) && a.getVisitDate().equals(LocalDate.now()))
                 .filter(a->List.of(AppointmentStatus.WAITING,AppointmentStatus.CALLED,AppointmentStatus.IN_VISIT,AppointmentStatus.REVISIT_WAITING,AppointmentStatus.FINISHED).contains(a.getStatus()))
@@ -58,7 +74,9 @@ public class AppointmentService {
                         .<Appointment,Boolean>comparing(a ->
                             a.getMissedCount() > 0 && (a.getStatus() == AppointmentStatus.WAITING || a.getStatus() == AppointmentStatus.CALLED))
                         .thenComparing(Appointment::getStartTime)
-                        .thenComparingInt(Appointment::getQueueNumber)).toList();
+                        .thenComparingInt(Appointment::getQueueNumber))
+                .map(item -> enrichRoomName(item, roomNameCache))
+                .toList();
     }
 
     public void validatePatientAccess(String appointmentId, String actorId, String role) {
@@ -174,9 +192,10 @@ public class AppointmentService {
         appointment.markCalled();
         Appointment saved = appointmentRepository.save(appointment);
         try {
-            String dept = appointment.getDepartmentName() != null ? appointment.getDepartmentName() : "诊室";
+            String room = doctorRoomClient.roomNameForDoctor(appointment.getDoctorId())
+                    .orElseGet(() -> Optional.ofNullable(appointment.getDepartmentName()).orElse("诊室"));
             notificationClient.notify(appointment.getPatientId(), "CALLED",
-                    "您" + appointment.getDoctorName() + "医生已叫号，请前往" + dept + "就诊", null,
+                    "您挂号的" + appointment.getDoctorName() + "已叫号，请前往" + room + "就诊", null,
                     "APPOINTMENT", appointment.getId());
         } catch (Exception ignored) { /* notification failure must not fail the transaction */ }
         return saved;
@@ -267,11 +286,20 @@ public class AppointmentService {
     }
 
     public Appointment find(String id) {
-        return get(id);
+        return enrichRoomName(get(id), new HashMap<>());
     }
 
     private Appointment get(String id) {
         return appointmentRepository.findById(id).orElseThrow(() -> new IllegalArgumentException("挂号记录不存在"));
+    }
+
+    private Appointment enrichRoomName(Appointment appointment, Map<String, Optional<String>> roomNameCache) {
+        String doctorId = appointment.getDoctorId();
+        if (doctorId != null && !doctorId.isBlank()) {
+            roomNameCache.computeIfAbsent(doctorId, doctorRoomClient::roomNameForDoctor)
+                    .ifPresent(appointment::attachRoomName);
+        }
+        return appointment;
     }
 
     private Appointment buildAppointment(

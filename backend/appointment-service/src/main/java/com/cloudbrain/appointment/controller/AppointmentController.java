@@ -43,6 +43,7 @@ public class AppointmentController {
             @RequestParam(name = "doctorId", required = false) String doctorId,
             @RequestParam(name = "patientId", required = false) String patientId,
             @RequestParam(name = "status", required = false) String status,
+            @RequestParam(name = "includeRoom", defaultValue = "true") boolean includeRoom,
             JwtAuthenticationToken authentication) {
         if ("PATIENT".equals(authentication.getToken().getClaimAsString("role"))) {
             String accountId = authentication.getToken().getSubject();
@@ -52,6 +53,20 @@ public class AppointmentController {
             }
             if (!patientVerificationClient.owns(accountId, patientId)) {
                 throw new AccessDeniedException("患者只能查看自己账号名下就诊人的挂号记录");
+            }
+        }
+        return appointmentService.list(doctorId, patientId, status, includeRoom);
+    }
+
+    List<Appointment> list(String doctorId, String patientId, String status, JwtAuthenticationToken authentication) {
+        if ("PATIENT".equals(authentication.getToken().getClaimAsString("role"))) {
+            String accountId = authentication.getToken().getSubject();
+            if (patientId == null || patientId.isBlank()) {
+                patientId = patientVerificationClient.boundPatientId(accountId);
+                if (patientId == null || patientId.isBlank()) throw new AccessDeniedException("璇峰厛娣诲姞骞剁粦瀹氬氨璇婁汉");
+            }
+            if (!patientVerificationClient.owns(accountId, patientId)) {
+                throw new AccessDeniedException("鎮ｈ€呭彧鑳芥煡鐪嬭嚜宸辫处鍙峰悕涓嬪氨璇婁汉鐨勬寕鍙疯褰?");
             }
         }
         return appointmentService.list(doctorId, patientId, status);

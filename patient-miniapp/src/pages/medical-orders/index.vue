@@ -118,7 +118,7 @@ interface MedicalOrder {
   purpose: string;
   bodyPart: string;
   paymentStatus: 'UNPAID' | 'PAID' | 'FAILED';
-  status: 'PENDING_PAYMENT' | 'WAITING_TRIAGE' | 'WAITING' | 'IN_PROGRESS' | 'COMPLETED' | 'MISSED';
+  status: 'PENDING_PAYMENT' | 'WAITING_TRIAGE' | 'WAITING' | 'CALLED' | 'IN_PROGRESS' | 'REPORT_PENDING' | 'COMPLETED' | 'MISSED';
   roomName: string;
   roomLocation: string;
   queueNumber?: number;
@@ -132,7 +132,8 @@ const mode = ref<'arrangement' | 'report'>('report');
 
 const pendingOrders = computed(() =>
   orders.value
-    .filter((item) => (item.orderType === 'CHECK' || item.orderType === 'LAB') && item.status !== 'COMPLETED')
+    .filter((item) => (item.orderType === 'CHECK' || item.orderType === 'LAB')
+      && !['COMPLETED', 'MISSED', 'REPORT_PENDING'].includes(item.status))
     .sort((a, b) => orderSortTime(b).localeCompare(orderSortTime(a)))
 );
 const orderById = computed(() => new Map(orders.value.map((item) => [item.id, item])));
@@ -243,7 +244,9 @@ function statusLabel(status: MedicalOrder['status'], paymentStatus: MedicalOrder
     PENDING_PAYMENT: '待缴费',
     WAITING_TRIAGE: '待安排',
     WAITING: '待执行',
+    CALLED: '已叫号',
     IN_PROGRESS: '进行中',
+    REPORT_PENDING: '待报告',
     COMPLETED: '已完成',
     MISSED: '已过号'
   }[status] ?? status;
@@ -257,7 +260,9 @@ function statusClass(status: MedicalOrder['status'], paymentStatus: MedicalOrder
     PENDING_PAYMENT: 'pending',
     WAITING_TRIAGE: 'queued',
     WAITING: 'queued',
+    CALLED: 'queued',
     IN_PROGRESS: 'progress',
+    REPORT_PENDING: 'progress',
     COMPLETED: 'done',
     MISSED: 'muted-tag'
   }[status] ?? 'muted-tag';

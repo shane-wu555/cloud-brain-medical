@@ -75,4 +75,19 @@ class RestClientServicesTest {
             assertThat(boundPatientId).isNull();
         }
     }
+
+    @Test
+    void doctorRoomClientReadsDoctorRoomName() throws Exception {
+        try (TestHttpServer server = new TestHttpServer()) {
+            server.enqueueJson(200, "{\"doctorId\":\"doctor-1\",\"roomId\":\"room-1\",\"roomName\":\"全科医学2号诊室\"}");
+            DoctorRoomClient client = new DoctorRoomClient(server.baseUrl(), "secret");
+
+            assertThat(client.roomNameForDoctor("doctor-1")).contains("全科医学2号诊室");
+
+            List<TestHttpServer.RecordedRequest> requests = server.requests();
+            assertThat(requests.get(0).method()).isEqualTo("GET");
+            assertThat(requests.get(0).path()).isEqualTo("/api/internal/doctor-operations/doctors/doctor-1/room");
+            assertThat(requests.get(0).headers().getFirst("X-Internal-Api-Key")).isEqualTo("secret");
+        }
+    }
 }

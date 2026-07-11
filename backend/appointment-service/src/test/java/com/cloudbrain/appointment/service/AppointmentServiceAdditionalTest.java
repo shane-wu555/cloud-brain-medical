@@ -42,11 +42,12 @@ class AppointmentServiceAdditionalTest {
     @Mock MedicalRecordEventRepository events;
     @Mock MedicalRecordClient medicalRecords;
     @Mock NotificationClient notifications;
+    @Mock DoctorRoomClient doctorRooms;
     AppointmentService service;
 
     @BeforeEach
     void setUp() {
-        service = new AppointmentService(appointments, slots, events, medicalRecords, notifications);
+        service = new AppointmentService(appointments, slots, events, medicalRecords, notifications, doctorRooms);
     }
 
     @Test
@@ -58,6 +59,16 @@ class AppointmentServiceAdditionalTest {
         when(appointments.findAll()).thenReturn(List.of(match, otherDoctor, otherPatient, otherStatus));
 
         assertThat(service.list("doctor-1", "patient-1", "WAITING")).containsExactly(match);
+    }
+
+    @Test
+    void listIncludesScheduleRoomName() {
+        Appointment appointment = appointment("appt", "doctor-1", "patient-1", AppointmentStatus.WAITING, PaymentStatus.PAID);
+        when(appointments.findAll()).thenReturn(List.of(appointment));
+        when(doctorRooms.roomNameForDoctor("doctor-1")).thenReturn(Optional.of("全科医学2号诊室"));
+
+        assertThat(service.list(null, "patient-1", null).get(0).getRoomName())
+                .isEqualTo("全科医学2号诊室");
     }
 
     @Test
@@ -241,9 +252,17 @@ class AppointmentServiceAdditionalTest {
         Appointment waiting = appointment("appt", "doctor-1", "patient-1", AppointmentStatus.WAITING, PaymentStatus.PAID);
         when(appointments.findByIdForUpdate("appt")).thenReturn(Optional.of(waiting));
         when(appointments.save(waiting)).thenReturn(waiting);
+        when(doctorRooms.roomNameForDoctor("doctor-1")).thenReturn(Optional.of("全科医学2号诊室"));
 
         Appointment called = service.call("appt", "doctor-1");
         assertThat(called.getStatus()).isEqualTo(AppointmentStatus.CALLED);
+        verify(notifications).notify(
+                eq("patient-1"),
+                eq("CALLED"),
+                eq("您挂号的Doctor已叫号，请前往全科医学2号诊室就诊"),
+                eq(null),
+                eq("APPOINTMENT"),
+                eq("appt"));
 
         waiting = appointment("appt2", "doctor-1", "patient-1", AppointmentStatus.CALLED, PaymentStatus.PAID);
         when(appointments.findByIdForUpdate("appt2")).thenReturn(Optional.of(waiting));

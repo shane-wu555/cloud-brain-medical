@@ -22,6 +22,18 @@ import stethoscopeWhiteIcon from '../static/icons/white/stethoscope.svg';
 import syringeWhiteIcon from '../static/icons/white/syringe.svg';
 import userRoundPlusWhiteIcon from '../static/icons/white/user-round-plus.svg';
 import walletCardsWhiteIcon from '../static/icons/white/wallet-cards.svg';
+import bookOpenTextThemeIcon from '../static/icons/theme/book-open-text.svg';
+import calendarDaysThemeIcon from '../static/icons/theme/calendar-days.svg';
+import clipboardListThemeIcon from '../static/icons/theme/clipboard-list.svg';
+import flaskConicalThemeIcon from '../static/icons/theme/flask-conical.svg';
+import homeThemeIcon from '../static/icons/theme/home.svg';
+import hospitalThemeIcon from '../static/icons/theme/hospital.svg';
+import microscopeThemeIcon from '../static/icons/theme/microscope.svg';
+import pillBottleThemeIcon from '../static/icons/theme/pill-bottle.svg';
+import stethoscopeThemeIcon from '../static/icons/theme/stethoscope.svg';
+import syringeThemeIcon from '../static/icons/theme/syringe.svg';
+import userRoundPlusThemeIcon from '../static/icons/theme/user-round-plus.svg';
+import walletCardsThemeIcon from '../static/icons/theme/wallet-cards.svg';
 
 export const medicalIcons = {
   dark: {
@@ -51,6 +63,20 @@ export const medicalIcons = {
     syringe: syringeWhiteIcon,
     'user-round-plus': userRoundPlusWhiteIcon,
     'wallet-cards': walletCardsWhiteIcon
+  },
+  theme: {
+    'book-open-text': bookOpenTextThemeIcon,
+    'calendar-days': calendarDaysThemeIcon,
+    'clipboard-list': clipboardListThemeIcon,
+    'flask-conical': flaskConicalThemeIcon,
+    home: homeThemeIcon,
+    hospital: hospitalThemeIcon,
+    microscope: microscopeThemeIcon,
+    'pill-bottle': pillBottleThemeIcon,
+    stethoscope: stethoscopeThemeIcon,
+    syringe: syringeThemeIcon,
+    'user-round-plus': userRoundPlusThemeIcon,
+    'wallet-cards': walletCardsThemeIcon
   }
 } as const;
 
@@ -62,5 +88,5 @@ export function getMedicalIcon(name: MedicalIconName, variant: MedicalIconVarian
 }
 
 export function getAllMedicalIcons() {
-  return [...Object.values(medicalIcons.dark), ...Object.values(medicalIcons.white)];
+  return [...Object.values(medicalIcons.dark), ...Object.values(medicalIcons.white), ...Object.values(medicalIcons.theme)];
 }

@@ -96,6 +96,18 @@ public class NotificationRepository {
                 """, patientId);
     }
 
+    public int markReferenceRead(String patientId, String category, String referenceType, String referenceId) {
+        return jdbc.update("""
+                update patient_notification
+                set is_read = true, read_at = now()
+                where patient_id = ?::uuid
+                  and category = ?
+                  and reference_type = ?
+                  and reference_id = ?
+                  and is_read = false
+                """, patientId, category, referenceType, referenceId);
+    }
+
     private PatientNotification findById(String id) {
         return jdbc.query("select * from patient_notification where id = ?::uuid",
                 (rs, row) -> map(rs), id)

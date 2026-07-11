@@ -57,6 +57,27 @@ public class InternalNotificationController {
                 request.referenceType(), request.referenceId()));
     }
 
+    @PutMapping("/notifications/read-reference")
+    public void markReferenceRead(
+            @RequestBody MarkReferenceReadRequest request,
+            @RequestHeader(name = "X-Internal-Api-Key", required = false) String key) {
+        check(key);
+        if (request.patientId() == null || request.patientId().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "patientId is required");
+        }
+        if (request.category() == null || request.category().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "category is required");
+        }
+        if (request.referenceType() == null || request.referenceType().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "referenceType is required");
+        }
+        if (request.referenceId() == null || request.referenceId().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "referenceId is required");
+        }
+        repository.markReferenceRead(
+                request.patientId(), request.category(), request.referenceType(), request.referenceId());
+    }
+
     private void check(String key) {
         if (!internalApiKey.equals(key)) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "内部接口认证失败");
@@ -66,4 +87,7 @@ public class InternalNotificationController {
     public record CreateNotificationRequest(
             String patientId, String category, String title, String body,
             String referenceType, String referenceId) {}
+
+    public record MarkReferenceReadRequest(
+            String patientId, String category, String referenceType, String referenceId) {}
 }

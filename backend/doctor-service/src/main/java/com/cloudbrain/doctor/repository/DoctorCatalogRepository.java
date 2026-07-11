@@ -488,6 +488,7 @@ public class DoctorCatalogRepository {
     }, allEntries = true)
     public Schedule createSchedule(String doctorId, String departmentId,
             LocalDate date, String period, int capacity) {
+        validateScheduleDateNotBeforeToday(date);
         validateSchedulingDepartment(departmentId);
         validateSchedulePeriod(period);
         validateDoctorCanScheduleOnDate(doctorId, date, period, null);
@@ -543,8 +544,8 @@ public class DoctorCatalogRepository {
             "doctor:timeSlots"
     }, allEntries = true)
     public Schedule suspendSchedule(String id, String reason) {
-        if (jdbc.update("update schedule set status='SUSPENDED', suspension_reason=? where id=? and status='PUBLISHED'",
-                reason, id) != 1) throw new IllegalArgumentException("排班不存在或已停诊");
+        if (jdbc.update("update schedule set status='SUSPENDED', suspension_reason=? where id=? and status='PUBLISHED' and work_date >= current_date",
+                reason, id) != 1) throw new IllegalArgumentException("排班不存在、已停诊或早于今天");
         return findSchedule(id);
     }
 
@@ -568,6 +569,12 @@ public class DoctorCatalogRepository {
     private void validateSchedulePeriod(String period) {
         if (!List.of("上午", "下午").contains(period)) {
             throw new IllegalArgumentException("排班时段只能是上午或下午");
+        }
+    }
+
+    private void validateScheduleDateNotBeforeToday(LocalDate date) {
+        if (date == null || date.isBefore(LocalDate.now())) {
+            throw new IllegalArgumentException("新增排班日期不能早于今天");
         }
     }
 

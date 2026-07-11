@@ -109,8 +109,10 @@ public class MedicalOrderService {
         }
         MedicalOrder afterPay = get(id);
         try {
-            notificationClient.notify(afterPay.patientId(), "PAYMENT_CONFIRMED",
-                    "缴费成功，" + afterPay.itemName() + "已安排检查", null,
+            notificationClient.markReferenceRead(afterPay.patientId(), "PENDING_PAYMENT",
+                    "MEDICAL_ORDER", afterPay.id());
+            notificationClient.notify(afterPay.patientId(), arrangementCategory(afterPay.orderType()),
+                    "缴费成功：" + afterPay.itemName(), null,
                     "MEDICAL_ORDER", afterPay.id());
         } catch (Exception ignored) { /* notification failure must not fail the transaction */ }
         return afterPay;
@@ -182,13 +184,7 @@ public class MedicalOrderService {
             throw new IllegalStateException("医技单未开始、已完成或执行房间不匹配");
         }
         MedicalOrder completed = get(id);
-        if ("DISPOSAL".equals(completed.orderType())) {
-            try {
-                notificationClient.notify(completed.patientId(), "DISPOSAL_COMPLETED",
-                        completed.itemName() + "处置已完成", null,
-                        "MEDICAL_ORDER", completed.id());
-            } catch (Exception ignored) { /* notification failure must not fail the transaction */ }
-        }
+        markArrangementRead(completed);
         return completed;
     }
 
@@ -205,12 +201,19 @@ public class MedicalOrderService {
             throw new IllegalStateException("只有执行中的医技单可以标记为待报告");
         }
         MedicalOrder updated = get(id);
-        try {
-            notificationClient.notify(updated.patientId(), "EXAM_COMPLETED",
-                    updated.itemName() + "检查已完成，等待报告发布", null,
-                    "MEDICAL_ORDER", updated.id());
-        } catch (Exception ignored) { /* notification failure must not fail the transaction */ }
+        markArrangementRead(updated);
         return updated;
+    }
+
+    private void markArrangementRead(MedicalOrder order) {
+        try {
+            notificationClient.markReferenceRead(order.patientId(), arrangementCategory(order.orderType()),
+                    "MEDICAL_ORDER", order.id());
+        } catch (Exception ignored) { /* notification failure must not fail the transaction */ }
+    }
+
+    private static String arrangementCategory(String orderType) {
+        return "DISPOSAL".equals(orderType) ? "DISPOSAL_ARRANGEMENT" : "EXAM_ARRANGEMENT";
     }
 
     private MedicalOrder get(String id) {

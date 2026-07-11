@@ -379,13 +379,18 @@ public class PharmacyService {
             }
             if (prescription.status() == PrescriptionStatus.WAITING_DISPENSE
                     || prescription.status() == PrescriptionStatus.DISPENSED) {
+                markPendingPaymentRead(prescription);
+                if (prescription.status() == PrescriptionStatus.DISPENSED) {
+                    markDispenseArrangementRead(prescription);
+                }
                 return prescription;
             }
             throw new IllegalStateException("Prescription cannot confirm payment in current status");
         }
         Prescription paid = repository.findPrescription(id);
         try {
-            notificationClient.notify(paid.patientId(), "PAYMENT_CONFIRMED",
+            markPendingPaymentRead(paid);
+            notificationClient.notify(paid.patientId(), "DISPENSE_ARRANGEMENT",
                     "处方缴费成功，请前往药房取药", null,
                     "PRESCRIPTION", paid.id());
         } catch (Exception ignored) { /* notification failure must not fail the transaction */ }
@@ -415,11 +420,7 @@ public class PharmacyService {
                 operatorId,
                 "PHARMACY_STAFF",
                 Map.of("status", dispensed.status().name()));
-        try {
-            notificationClient.notify(dispensed.patientId(), "DRUGS_DISPENSED",
-                    "药品已发出，请取药", null,
-                    "PRESCRIPTION", dispensed.id());
-        } catch (Exception ignored) { /* notification failure must not fail the transaction */ }
+        markDispenseArrangementRead(dispensed);
         return dispensed;
     }
 
@@ -447,7 +448,22 @@ public class PharmacyService {
                 operatorId,
                 "PHARMACY_STAFF",
                 Map.of("status", returned.status().name(), "reason", returnReason));
+        markDispenseArrangementRead(returned);
         return returned;
+    }
+
+    private void markPendingPaymentRead(Prescription prescription) {
+        try {
+            notificationClient.markReferenceRead(prescription.patientId(), "PENDING_PAYMENT",
+                    "PRESCRIPTION", prescription.id());
+        } catch (Exception ignored) { /* notification failure must not fail the transaction */ }
+    }
+
+    private void markDispenseArrangementRead(Prescription prescription) {
+        try {
+            notificationClient.markReferenceRead(prescription.patientId(), "DISPENSE_ARRANGEMENT",
+                    "PRESCRIPTION", prescription.id());
+        } catch (Exception ignored) { /* notification failure must not fail the transaction */ }
     }
 
     private PrescriptionItem item(String prescriptionId, PharmacyController.PrescriptionItemRequest request) {

@@ -72,29 +72,29 @@
               </div>
               <el-form label-position="top" class="compact-form ai-param-form">
                 <el-form-item label="排班科室">
-                  <el-select v-model="aiForm.departmentId" class="full" clearable filterable placeholder="全部门诊科室">
+                  <el-select v-model="aiForm.departmentId" class="full" clearable filterable placeholder="全部重排科室">
                     <el-option
-                      v-for="department in schedulableDepartments"
+                      v-for="department in aiReplanDepartments"
                       :key="department.id"
                       :label="department.name"
                       :value="department.id"
                     />
                   </el-select>
                 </el-form-item>
+                <el-form-item label="查看医生">
+                  <el-select v-model="aiFilter.doctorId" class="full" clearable filterable placeholder="全部医生">
+                    <el-option
+                      v-for="doctor in filteredAiDoctors"
+                      :key="doctor.id"
+                      :label="doctor.name"
+                      :value="doctor.id"
+                    />
+                  </el-select>
+                </el-form-item>
                 <el-form-item label="基础预计挂号量/诊室">
                   <el-input-number v-model="aiForm.baseVisits" class="full-number" :min="1" :max="100" />
                 </el-form-item>
-                <div class="peak-row">
-                  <el-checkbox v-model="aiForm.weekdayPeak">工作日高峰</el-checkbox>
-                  <el-slider v-model="aiForm.weekdayIncrease" :min="0" :max="80" :step="5" />
-                  <span>{{ aiForm.weekdayIncrease }}%</span>
-                </div>
-                <div class="peak-row">
-                  <el-checkbox v-model="aiForm.morningPeak">上午高峰</el-checkbox>
-                  <el-slider v-model="aiForm.morningIncrease" :min="0" :max="80" :step="5" />
-                  <span>{{ aiForm.morningIncrease }}%</span>
-                </div>
-                <el-button type="primary" class="full" :loading="suggestionLoading" @click="loadAiReplanPreview(true)">
+                <el-button type="primary" class="ai-refresh-button" :loading="suggestionLoading" @click="loadAiReplanPreview(true)">
                   刷新待确认重排建议
                 </el-button>
               </el-form>
@@ -188,7 +188,7 @@
               <div class="schedule-board-footer">
                 <el-button
                   type="success"
-                  :disabled="pendingSuggestions.length === 0"
+                  :disabled="visiblePendingSuggestions.length === 0"
                   :loading="publishLoading"
                   @click="publishPendingSuggestions"
                 >
@@ -206,7 +206,7 @@
                   {{ aiSourceLabel }}
                 </el-tag>
               </div>
-              <el-table :data="suggestions" empty-text="暂无 AI 建议" width="100%">
+              <el-table :data="visibleAiSuggestions" empty-text="暂无 AI 建议" width="100%">
                 <el-table-column prop="workDate" label="日期" min-width="112" />
                 <el-table-column prop="period" label="时段" min-width="86" />
                 <el-table-column prop="doctorName" label="医生" min-width="112" />
@@ -341,7 +341,7 @@
           </div>
 
           <section class="work-card">
-            <el-table :data="schedules" empty-text="暂无排班">
+            <el-table :data="filteredManualSchedules" empty-text="暂无排班">
               <el-table-column prop="doctorName" label="医生" min-width="140" />
               <el-table-column prop="roomName" label="诊室" min-width="140" />
               <el-table-column label="科室" min-width="160">
@@ -360,7 +360,13 @@
               </el-table-column>
               <el-table-column label="操作" width="100" fixed="right">
                 <template #default="{ row }">
-                  <el-button v-if="row.status === 'PUBLISHED'" type="danger" link @click="stopSchedule(row)">
+                  <el-button
+                    v-if="row.status === 'PUBLISHED'"
+                    type="danger"
+                    link
+                    :disabled="isPastSchedule(row)"
+                    @click="stopSchedule(row)"
+                  >
                     停诊
                   </el-button>
                 </template>
@@ -539,7 +545,13 @@
             </el-form-item>
             <div class="form-grid">
               <el-form-item label="日期">
-                <el-date-picker v-model="manualScheduleForm.workDate" class="full" type="date" value-format="YYYY-MM-DD" />
+                <el-date-picker
+                  v-model="manualScheduleForm.workDate"
+                  class="full"
+                  type="date"
+                  value-format="YYYY-MM-DD"
+                  :disabled-date="disablePastScheduleDate"
+                />
               </el-form-item>
               <el-form-item label="时段">
                 <el-select v-model="manualScheduleForm.period" class="full">
@@ -807,6 +819,10 @@ const aiForm = reactive({
   morningIncrease: 25
 });
 
+const aiFilter = reactive({
+  doctorId: ''
+});
+
 const scheduleFilter = reactive({
   departmentId: '',
   doctorId: ''
@@ -876,6 +892,11 @@ const navItems = computed<Array<{ key: PageKey; label: string; badge?: number }>
 ]);
 
 const aiDoctors = computed(() => schedulableDoctors.value.filter((doctor) => doctor.departmentId === aiForm.departmentId));
+const aiReplanDepartmentIds = computed(() => collectReplanDepartmentIds());
+const aiReplanDepartments = computed(() =>
+  schedulableDepartments.value.filter((department) => aiReplanDepartmentIds.value.includes(department.id))
+);
+const aiVisibleDepartmentIds = computed(() => (aiForm.departmentId ? [aiForm.departmentId] : aiReplanDepartmentIds.value));
 const aiRooms = computed(() => {
   const map = new Map<string, { roomId: string; roomName: string }>();
   aiDoctors.value.forEach((doctor) => {
@@ -889,6 +910,17 @@ const aiRooms = computed(() => {
 
 const filteredScheduleDoctors = computed(() =>
   schedulableDoctors.value.filter((doctor) => !scheduleFilter.departmentId || doctor.departmentId === scheduleFilter.departmentId)
+);
+const filteredAiDoctors = computed(() => {
+  const visibleDepartmentIds = new Set(aiVisibleDepartmentIds.value);
+  return schedulableDoctors.value.filter((doctor) => visibleDepartmentIds.has(doctor.departmentId));
+});
+const filteredManualSchedules = computed(() =>
+  schedules.value.filter(
+    (schedule) =>
+      (!scheduleFilter.departmentId || schedule.departmentId === scheduleFilter.departmentId) &&
+      (!scheduleFilter.doctorId || schedule.doctorId === scheduleFilter.doctorId)
+  )
 );
 
 const filteredDoctors = computed(() => {
@@ -918,6 +950,13 @@ const filteredDoctorEvents = computed(() => {
 });
 
 const suggestions = computed(() => aiResponse.value?.suggestions ?? []);
+const visibleAiSuggestions = computed(() =>
+  suggestions.value.filter(
+    (suggestion) =>
+      aiVisibleDepartmentIds.value.includes(suggestion.departmentId) &&
+      (!aiFilter.doctorId || suggestion.doctorId === aiFilter.doctorId)
+  )
+);
 const aiSourceLabel = computed(() => {
   if (!aiResponse.value) return '';
   const provider = aiResponse.value.provider || (aiResponse.value.fallbackUsed ? 'backend' : 'AI');
@@ -933,6 +972,9 @@ const aiTaskNotice = computed(() => {
 
 const pendingSuggestions = computed(() =>
   suggestions.value.filter((suggestion) => !isSuggestionPublished(suggestion.suggestionId))
+);
+const visiblePendingSuggestions = computed(() =>
+  visibleAiSuggestions.value.filter((suggestion) => !isSuggestionPublished(suggestion.suggestionId))
 );
 
 const aiScheduleBoardStartDate = computed(() => addDays(aiForm.startDate, aiScheduleBoardWeekOffset.value * 7));
@@ -976,7 +1018,28 @@ watch(
   () => {
     const firstDoctor = aiDoctors.value[0];
     selectedDoctorId.value = firstDoctor?.id ?? '';
+    if (aiFilter.doctorId && !filteredAiDoctors.value.some((doctor) => doctor.id === aiFilter.doctorId)) {
+      aiFilter.doctorId = '';
+    }
     if (selectedDoctorId.value) ensureAvailability(selectedDoctorId.value);
+  }
+);
+
+watch(
+  aiReplanDepartmentIds,
+  (departmentIds) => {
+    if (aiForm.departmentId && !departmentIds.includes(aiForm.departmentId)) {
+      aiForm.departmentId = '';
+    }
+  }
+);
+
+watch(
+  filteredAiDoctors,
+  (doctorList) => {
+    if (aiFilter.doctorId && !doctorList.some((doctor) => doctor.id === aiFilter.doctorId)) {
+      aiFilter.doctorId = '';
+    }
   }
 );
 
@@ -1039,8 +1102,6 @@ async function refreshAll() {
 
 async function loadSchedules() {
   schedules.value = await getSchedules({
-    departmentId: scheduleFilter.departmentId || undefined,
-    doctorId: scheduleFilter.doctorId || undefined,
     bookingWindowOnly: false
   });
 }
@@ -1152,9 +1213,9 @@ function startAiTaskPolling(taskId: string, notifyOnCompletion: boolean) {
         publishedSuggestionIds.value = [];
         if (notifyOnCompletion) {
           if (suggestions.value.length > 0) {
-            ElMessage.success(`AI 排班已完成，生成 ${suggestions.value.length} 条第 8-15 天待确认建议`);
+            ElMessage.success(`AI 排班已完成，生成 ${suggestions.value.length} 条第 8-14 天待确认建议`);
           } else {
-            ElMessage.warning('AI 排班已完成，当前窗口暂无可用重排建议');
+            ElMessage.warning('排班已完成，第 8-14 天已排班且无新增手术/请假，无需重排');
           }
         }
       } else if (task.status === 'FAILED') {
@@ -1281,9 +1342,9 @@ async function publishSuggestion(suggestion: AiScheduleSuggestion, silent = fals
 }
 
 async function publishPendingSuggestions() {
-  if (pendingSuggestions.value.length === 0) return;
+  if (visiblePendingSuggestions.value.length === 0) return;
   try {
-    await ElMessageBox.confirm(`确认发布 ${pendingSuggestions.value.length} 条 AI 排班建议并更新对应日期窗口？`, '批量确认', {
+    await ElMessageBox.confirm(`确认发布 ${visiblePendingSuggestions.value.length} 条 AI 排班建议并更新对应日期窗口？`, '批量确认', {
       type: 'warning'
     });
   } catch {
@@ -1293,12 +1354,15 @@ async function publishPendingSuggestions() {
   try {
     await publishAiScheduleSuggestions({
       aiRecordId: aiResponse.value?.aiRecordId ?? null,
-      suggestions: pendingSuggestions.value.map((suggestion) => ({
+      suggestions: visiblePendingSuggestions.value.map((suggestion) => ({
         ...normalizeAiSuggestionForPublish(suggestion),
         aiRecordId: aiResponse.value?.aiRecordId ?? null
       }))
     });
-    publishedSuggestionIds.value = suggestions.value.map((suggestion) => suggestion.suggestionId);
+    publishedSuggestionIds.value = [
+      ...publishedSuggestionIds.value,
+      ...visiblePendingSuggestions.value.map((suggestion) => suggestion.suggestionId)
+    ];
     ElMessage.success('AI 排班建议已确认并更新正式排班');
     await loadSchedules();
   } catch (error) {
@@ -1317,6 +1381,9 @@ function openManualScheduleCreate() {
   if (!manualScheduleForm.doctorId) {
     manualScheduleForm.doctorId = schedulableDoctors.value[0]?.id ?? '';
   }
+  if (isBeforeToday(manualScheduleForm.workDate)) {
+    manualScheduleForm.workDate = todayIso();
+  }
   syncManualDoctor();
   manualScheduleDialogVisible.value = true;
 }
@@ -1325,6 +1392,10 @@ async function submitManualSchedule() {
   syncManualDoctor();
   if (!manualScheduleForm.doctorId || !manualScheduleForm.departmentId || !manualScheduleForm.workDate) {
     ElMessage.warning('请补全医生、科室和日期');
+    return;
+  }
+  if (isBeforeToday(manualScheduleForm.workDate)) {
+    ElMessage.warning('新增排班日期不能早于今天');
     return;
   }
   scheduleSaving.value = true;
@@ -1347,6 +1418,10 @@ async function submitManualSchedule() {
 }
 
 async function stopSchedule(schedule: Schedule) {
+  if (isPastSchedule(schedule)) {
+    ElMessage.warning('今日之前的排班不能停诊');
+    return;
+  }
   try {
     await ElMessageBox.confirm(`确认停诊 ${schedule.workDate} ${schedule.period} ${schedule.doctorName}？`, '停诊确认', {
       type: 'warning'
@@ -1667,7 +1742,10 @@ function buildScheduleBoardRows(days: ScheduleBoardDay[], includeAiSuggestions: 
   const doctorMap = new Map<string, { doctorId: string; doctorName: string; subtitle: string; departmentId: string; roomName: string }>();
   const entries = new Map<string, ScheduleBoardEntry[]>();
   const selectedDepartmentId = includeAiSuggestions ? aiForm.departmentId : scheduleFilter.departmentId;
-  const selectedDoctor = includeAiSuggestions ? '' : scheduleFilter.doctorId;
+  const selectedDoctor = includeAiSuggestions ? aiFilter.doctorId : scheduleFilter.doctorId;
+  const selectedDepartmentIds = includeAiSuggestions ? new Set(aiVisibleDepartmentIds.value) : new Set(selectedDepartmentId ? [selectedDepartmentId] : []);
+  const matchesDepartment = (departmentId: string) =>
+    includeAiSuggestions ? selectedDepartmentIds.has(departmentId) : !selectedDepartmentId || departmentId === selectedDepartmentId;
 
   const ensureDoctor = (doctorId: string, doctorName: string, departmentId: string, roomName = '') => {
     if (!doctorId || doctorMap.has(doctorId)) return;
@@ -1691,7 +1769,7 @@ function buildScheduleBoardRows(days: ScheduleBoardDay[], includeAiSuggestions: 
   schedules.value
     .filter((schedule) => schedule.status === 'PUBLISHED')
     .filter((schedule) => dateSet.has(schedule.workDate))
-    .filter((schedule) => !selectedDepartmentId || schedule.departmentId === selectedDepartmentId)
+    .filter((schedule) => matchesDepartment(schedule.departmentId))
     .filter((schedule) => !selectedDoctor || schedule.doctorId === selectedDoctor)
     .forEach((schedule) => {
       ensureDoctor(schedule.doctorId, schedule.doctorName, schedule.departmentId, schedule.roomName || '');
@@ -1711,7 +1789,7 @@ function buildScheduleBoardRows(days: ScheduleBoardDay[], includeAiSuggestions: 
   doctorEvents.value.forEach((event) => {
     const doctor = doctors.value.find((item) => item.id === event.doctorId);
     const departmentId = doctor?.departmentId || '';
-    if (selectedDepartmentId && departmentId !== selectedDepartmentId) return;
+    if (!matchesDepartment(departmentId)) return;
     if (selectedDoctor && event.doctorId !== selectedDoctor) return;
     event.dates
       .filter((date) => dateSet.has(date))
@@ -1736,9 +1814,8 @@ function buildScheduleBoardRows(days: ScheduleBoardDay[], includeAiSuggestions: 
   });
 
   if (includeAiSuggestions) {
-    suggestions.value
+    visibleAiSuggestions.value
       .filter((suggestion) => dateSet.has(suggestion.workDate))
-      .filter((suggestion) => !selectedDepartmentId || suggestion.departmentId === selectedDepartmentId)
       .forEach((suggestion) => {
         ensureDoctor(suggestion.doctorId, suggestion.doctorName, suggestion.departmentId, suggestion.roomName || '');
         pushEntry(suggestion.doctorId, suggestion.workDate, {
@@ -1754,11 +1831,17 @@ function buildScheduleBoardRows(days: ScheduleBoardDay[], includeAiSuggestions: 
         });
       });
 
-    if (selectedDepartmentId) {
-      aiDoctors.value.forEach((doctor) => ensureDoctor(doctor.id, doctor.name, doctor.departmentId, doctor.roomName || ''));
+    if (selectedDepartmentIds.size > 0 || selectedDoctor) {
+      const visibleDoctors = selectedDoctor
+        ? filteredAiDoctors.value.filter((doctor) => doctor.id === selectedDoctor)
+        : filteredAiDoctors.value;
+      visibleDoctors.forEach((doctor) => ensureDoctor(doctor.id, doctor.name, doctor.departmentId, doctor.roomName || ''));
     }
   } else if (selectedDepartmentId || selectedDoctor) {
-    filteredScheduleDoctors.value.forEach((doctor) => ensureDoctor(doctor.id, doctor.name, doctor.departmentId, doctor.roomName || ''));
+    const visibleDoctors = selectedDoctor
+      ? filteredScheduleDoctors.value.filter((doctor) => doctor.id === selectedDoctor)
+      : filteredScheduleDoctors.value;
+    visibleDoctors.forEach((doctor) => ensureDoctor(doctor.id, doctor.name, doctor.departmentId, doctor.roomName || ''));
   }
 
   const doctorRows = Array.from(doctorMap.values())
@@ -1927,6 +2010,20 @@ function todayIso() {
   return now.toISOString().slice(0, 10);
 }
 
+function isBeforeToday(isoDate: string) {
+  return Boolean(isoDate) && isoDate < todayIso();
+}
+
+function isPastSchedule(schedule: Schedule) {
+  return isBeforeToday(schedule.workDate);
+}
+
+function disablePastScheduleDate(date: Date) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return date < today;
+}
+
 function addDays(isoDate: string, days: number) {
   const date = new Date(`${isoDate}T00:00:00`);
   date.setDate(date.getDate() + days);
@@ -1946,15 +2043,15 @@ function disablePastAndToday(date: Date) {
   return date < earliest;
 }
 
-function needsAutomaticReplan() {
+function collectReplanDepartmentIds() {
   const start = addDays(todayIso(), REPLAN_WINDOW_START_OFFSET);
   const end = addDays(start, REPLAN_WINDOW_DAYS - 1);
   const doctorDepartmentIds = new Set(schedulableDoctors.value.map((doctor) => doctor.departmentId));
-  const departmentIds = aiForm.departmentId
-    ? [aiForm.departmentId]
-    : schedulableDepartments.value.map((department) => department.id).filter((id) => doctorDepartmentIds.has(id));
+  const departmentIds = schedulableDepartments.value
+    .map((department) => department.id)
+    .filter((id) => doctorDepartmentIds.has(id));
 
-  return departmentIds.some((departmentId) => {
+  return departmentIds.filter((departmentId) => {
     const windowSchedules = schedules.value.filter(
       (schedule) =>
         schedule.departmentId === departmentId &&
@@ -1988,6 +2085,11 @@ function needsAutomaticReplan() {
     }
     return windowSchedules.some((schedule) => hasDoctorEventConflict(schedule, start, end));
   });
+}
+
+function needsAutomaticReplan() {
+  const replanDepartmentIds = collectReplanDepartmentIds();
+  return aiForm.departmentId ? replanDepartmentIds.includes(aiForm.departmentId) : replanDepartmentIds.length > 0;
 }
 
 function coversSchedulePeriod(items: Schedule[], workDate: string, period: string) {
@@ -2341,17 +2443,18 @@ onUnmounted(clearAiTaskPolling);
 
 .ai-param-form {
   display: grid;
-  grid-template-columns: minmax(240px, 1.2fr) minmax(180px, 0.8fr) minmax(280px, 1.4fr) minmax(280px, 1.4fr) minmax(180px, 0.8fr);
+  grid-template-columns: 180px 180px 160px auto;
   gap: 12px;
   align-items: end;
+  justify-content: start;
 }
 
 .ai-param-form :deep(.el-form-item) {
   margin-bottom: 0;
 }
 
-.ai-param-form > .peak-row {
-  min-height: 32px;
+.ai-refresh-button {
+  min-width: 156px;
 }
 
 .form-grid {
@@ -2369,15 +2472,6 @@ onUnmounted(clearAiTaskPolling);
 
 .inline-form :deep(.el-form-item) {
   margin-bottom: 0;
-}
-
-.peak-row {
-  display: grid;
-  grid-template-columns: 88px minmax(0, 1fr) 44px;
-  align-items: center;
-  gap: 10px;
-  min-height: 36px;
-  color: #475569;
 }
 
 .ai-summary {

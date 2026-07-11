@@ -230,13 +230,16 @@ class DoctorCatalogRepositoryTest {
                         eq(workDate)))
                 .thenReturn(List.of());
         when(jdbc.update(
-                        "update schedule set status='SUSPENDED', suspension_reason=? where id=? and status='PUBLISHED'",
+                        "update schedule set status='SUSPENDED', suspension_reason=? where id=? and status='PUBLISHED' and work_date >= current_date",
                         "leave",
                         "missing"))
                 .thenReturn(0);
 
         assertThatThrownBy(() -> repository.suspendSchedule("missing", "leave"))
                 .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> repository.createSchedule("doctor-1", "dept-1", LocalDate.now().minusDays(1), MORNING, 20))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("不能早于今天");
         assertThatThrownBy(() -> repository.createSchedule("doctor-1", "dept-1", workDate, "EVENING", 20))
                 .isInstanceOf(IllegalArgumentException.class);
 

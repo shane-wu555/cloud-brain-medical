@@ -69,7 +69,7 @@ interface MedicalOrder {
   purpose: string;
   amount: number;
   paymentStatus: 'UNPAID' | 'PAID' | 'FAILED';
-  status: 'PENDING_PAYMENT' | 'WAITING_TRIAGE' | 'WAITING' | 'IN_PROGRESS' | 'COMPLETED' | 'MISSED';
+  status: 'PENDING_PAYMENT' | 'WAITING_TRIAGE' | 'WAITING' | 'CALLED' | 'IN_PROGRESS' | 'REPORT_PENDING' | 'COMPLETED' | 'MISSED';
   roomName: string;
   roomLocation: string;
   queueNumber: number | null;
@@ -99,8 +99,8 @@ const disposals = computed(() =>
 const visibleDisposals = computed(() =>
   disposals.value.filter((item) =>
     mode.value === 'arrangement'
-      ? item.paymentStatus === 'UNPAID' || !['COMPLETED', 'MISSED'].includes(item.status)
-      : ['COMPLETED', 'MISSED'].includes(item.status)
+      ? item.paymentStatus === 'UNPAID' || !['COMPLETED', 'MISSED', 'REPORT_PENDING'].includes(item.status)
+      : ['COMPLETED', 'MISSED', 'REPORT_PENDING'].includes(item.status)
   )
 );
 const pageTitle = computed(() => (mode.value === 'arrangement' ? '待处置安排' : '处置记录'));
@@ -144,7 +144,9 @@ function statusLabel(status: MedicalOrder['status'], paymentStatus: MedicalOrder
     PENDING_PAYMENT: '待缴费',
     WAITING_TRIAGE: '待安排',
     WAITING: '待处置',
+    CALLED: '已叫号',
     IN_PROGRESS: '处置中',
+    REPORT_PENDING: '待记录',
     COMPLETED: '已完成',
     MISSED: '已顺延'
   }[status] ?? status;
@@ -158,7 +160,9 @@ function statusClass(status: MedicalOrder['status'], paymentStatus: MedicalOrder
     PENDING_PAYMENT: 'pending',
     WAITING_TRIAGE: 'queued',
     WAITING: 'queued',
+    CALLED: 'queued',
     IN_PROGRESS: 'progress',
+    REPORT_PENDING: 'progress',
     COMPLETED: 'done',
     MISSED: 'muted-tag'
   }[status] ?? 'muted-tag';

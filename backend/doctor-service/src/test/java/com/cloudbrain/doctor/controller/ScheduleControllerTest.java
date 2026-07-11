@@ -170,6 +170,21 @@ class ScheduleControllerTest {
         assertThat(controller.publishAiSuggestions(
                         new ScheduleController.PublishAiScheduleBatchRequest("ai-record", List.of())))
                 .isEmpty();
+        assertThatThrownBy(() -> controller.publishAiSuggestions(new ScheduleController.PublishAiScheduleBatchRequest(
+                        "ai-record",
+                        List.of(new ScheduleController.PublishAiScheduleRequest(
+                                "ai-record",
+                                "doctor-1",
+                                "Doctor",
+                                "dept-1",
+                                "room-1",
+                                "Room 1",
+                                LocalDate.now().minusDays(1).toString(),
+                                MORNING,
+                                20,
+                                true)))))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("不能早于今天");
         verify(slotInventoryService).syncSlotsBatch(any());
     }
 
