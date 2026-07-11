@@ -5,6 +5,7 @@ import java.time.LocalDate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -26,9 +27,24 @@ public class InternalDoctorOperationsController {
     @GetMapping("/today")
     public DoctorCatalogRepository.DoctorOperationsStats today(
             @RequestHeader(name = "X-Internal-Api-Key", required = false) String apiKey) {
+        validateInternalKey(apiKey);
+        return repository.doctorOperationsStats(LocalDate.now());
+    }
+
+    @GetMapping("/doctors/{id}/room")
+    public DoctorRoom doctorRoom(
+            @PathVariable("id") String id,
+            @RequestHeader(name = "X-Internal-Api-Key", required = false) String apiKey) {
+        validateInternalKey(apiKey);
+        DoctorCatalogRepository.Doctor doctor = repository.findDoctor(id);
+        return new DoctorRoom(doctor.id(), doctor.roomId(), doctor.roomName());
+    }
+
+    private void validateInternalKey(String apiKey) {
         if (!internalApiKey.equals(apiKey)) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "internal api authentication failed");
         }
-        return repository.doctorOperationsStats(LocalDate.now());
     }
+
+    public record DoctorRoom(String doctorId, String roomId, String roomName) {}
 }

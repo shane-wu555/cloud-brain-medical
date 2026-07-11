@@ -91,7 +91,7 @@ import { onHide, onShow } from '@dcloudio/uni-app';
 import { ref } from 'vue';
 import MedicalIcon from '../../components/MedicalIcon.vue';
 import type { MedicalIconName } from '../../constants/medical-icons';
-import { markAllRead } from '../../api/notification';
+import { request } from '../../api/http';
 import { useAuthStore } from '../../stores/auth';
 import { useNotificationStore } from '../../stores/notification';
 
@@ -117,6 +117,21 @@ interface ServiceGroup {
   items: ServiceItem[];
 }
 
+interface Appointment {
+  id: string;
+  paymentStatus: string;
+}
+
+interface MedicalOrder {
+  id: string;
+  paymentStatus: string;
+}
+
+interface Prescription {
+  id: string;
+  status: string;
+}
+
 const auth = useAuthStore();
 const notifStore = useNotificationStore();
 const activeGroup = ref('门诊');
@@ -135,9 +150,9 @@ const serviceGroups: ServiceGroup[] = [
     title: '门诊',
     items: [
       { name: '我的挂号', icon: 'calendar-days', iconBg: 'linear-gradient(135deg, #0cbdcc 0%, #0899a5 100%)', url: '/pages/appointments/index' },
-      { name: '待处置安排', icon: 'syringe', iconBg: 'linear-gradient(135deg, #E88870 0%, #D06050 100%)', url: '/pages/disposals/index?mode=arrangement', readCategories: ['DISPOSAL_COMPLETED'] },
-      { name: '待检查/检验安排', icon: 'microscope', iconBg: 'linear-gradient(135deg, #F0A860 0%, #E08840 100%)', url: '/pages/medical-orders/index?mode=arrangement', readCategories: ['EXAM_COMPLETED', 'REPORT_PUBLISHED', 'CALLED'] },
-      { name: '待取药安排', icon: 'pill-bottle', iconBg: 'linear-gradient(135deg, #5CBF98 0%, #3DA878 100%)', url: '/pages/prescriptions/index?mode=arrangement', readCategories: ['DRUGS_DISPENSED'] }
+      { name: '待处置安排', icon: 'syringe', iconBg: 'linear-gradient(135deg, #E88870 0%, #D06050 100%)', url: '/pages/disposals/index?mode=arrangement', readCategories: ['DISPOSAL_ARRANGEMENT'] },
+      { name: '待检查/检验安排', icon: 'microscope', iconBg: 'linear-gradient(135deg, #F0A860 0%, #E08840 100%)', url: '/pages/medical-orders/index?mode=arrangement', readCategories: ['EXAM_ARRANGEMENT'] },
+      { name: '待取药安排', icon: 'pill-bottle', iconBg: 'linear-gradient(135deg, #5CBF98 0%, #3DA878 100%)', url: '/pages/prescriptions/index?mode=arrangement', readCategories: ['DISPENSE_ARRANGEMENT'] }
     ]
   },
   {
@@ -164,11 +179,11 @@ onShow(async () => {
     // ignore profile refresh failure
   }
 
-  await notifStore.refreshUnreadCount();
+  await refreshNotifications();
 
   if (pollTimer) clearInterval(pollTimer);
   pollTimer = setInterval(() => {
-    notifStore.refreshUnreadCount();
+    refreshNotifications();
   }, 30000);
 });
 
@@ -182,7 +197,7 @@ onHide(() => {
 function quickBadgeCount(categories: string[]): number {
   let total = 0;
   for (const cat of categories) {
-    total += notifStore.unreadByCategory[cat] || 0;
+    total += categoryBadgeCount(cat);
   }
   return total;
 }
@@ -190,9 +205,50 @@ function quickBadgeCount(categories: string[]): number {
 function serviceBadgeCount(categories: string[]): number {
   let total = 0;
   for (const cat of categories) {
-    total += notifStore.unreadByCategory[cat] || 0;
+    total += categoryBadgeCount(cat);
   }
   return total;
+}
+
+function categoryBadgeCount(category: string) {
+  if (category === 'PENDING_PAYMENT') {
+    return notifStore.pendingPaymentCount;
+  }
+  return notifStore.unreadByCategory[category] || 0;
+}
+
+async function refreshNotifications() {
+  await Promise.all([
+    notifStore.refreshUnreadCount(),
+    refreshPendingPaymentTodoCount(),
+  ]);
+}
+
+async function refreshPendingPaymentTodoCount() {
+  if (!auth.boundPatient) {
+    notifStore.setPendingPaymentTodoCount(0);
+    return;
+  }
+  try {
+    const patientQuery = `patientId=${encodeURIComponent(auth.boundPatient.id)}`;
+    const [appointments, medicalOrders, prescriptions] = await Promise.all([
+      request<Appointment[]>({ url: `/appointments?status=PENDING_PAYMENT&${patientQuery}`, method: 'GET' }),
+      request<MedicalOrder[]>({ url: `/medical-orders?status=PENDING_PAYMENT&${patientQuery}&view=OUTPATIENT_PAYMENT`, method: 'GET' }),
+      request<Prescription[]>({ url: `/prescriptions?${patientQuery}&view=OUTPATIENT_PAYMENT`, method: 'GET' }),
+    ]);
+    const registrationCount = appointments
+      .filter((item) => item.paymentStatus === 'UNPAID' || item.paymentStatus === 'FAILED')
+      .length;
+    const medicalOrderCount = medicalOrders
+      .filter((item) => item.paymentStatus === 'UNPAID')
+      .length;
+    const prescriptionCount = prescriptions
+      .filter((item) => item.status === 'PENDING_PAYMENT' || item.status === 'CONFIRMED')
+      .length;
+    notifStore.setPendingPaymentTodoCount(registrationCount + medicalOrderCount + prescriptionCount);
+  } catch {
+    // keep existing notification count fallback when business data polling fails
+  }
 }
 
 function go(url: string, readCategories?: string[]) {
@@ -200,10 +256,6 @@ function go(url: string, readCategories?: string[]) {
     uni.showToast({ title: '请先添加并绑定就诊人', icon: 'none', duration: 3000 });
     uni.navigateTo({ url: '/pages/real-name/index?prompt=needPatient' });
     return;
-  }
-  if (readCategories && readCategories.length > 0) {
-    Promise.allSettled(readCategories.map((cat) => markAllRead(cat).catch(() => {})));
-    notifStore.clearCategories(readCategories);
   }
   uni.navigateTo({ url });
 }

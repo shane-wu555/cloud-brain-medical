@@ -1125,9 +1125,9 @@ async function loadPaymentsPage() {
   loadingAll.value = true;
   try {
     const [appointmentsResult, prescriptionsResult, medicalOrdersResult] = await Promise.allSettled([
-      getAppointments(),
-      getPrescriptions(),
-      getMedicalOrders()
+      getAppointments({ status: 'PENDING_PAYMENT', includeRoom: false }),
+      getPrescriptions({ view: 'OUTPATIENT_PAYMENT' }),
+      getMedicalOrders({ status: 'PENDING_PAYMENT' })
     ]);
     appointments.value = unwrap(appointmentsResult, [], '挂号记录');
     prescriptions.value = unwrap(prescriptionsResult, [], '处方');
@@ -1140,11 +1140,22 @@ async function loadPaymentsPage() {
 async function loadAppointmentRecordsPage() {
   loadingAll.value = true;
   try {
+    const patientId = firstResolvedPatientId(appointmentRecordSearch);
+    const appointmentStatus = appointmentRecordSearch.status && appointmentRecordSearch.status !== 'REGISTERED'
+      ? appointmentRecordSearch.status
+      : undefined;
     const [appointmentsResult, doctorsResult, schedulesResult, paymentsResult] = await Promise.allSettled([
-      getAppointments(),
+      getAppointments({
+        patientId,
+        status: appointmentStatus,
+        includeRoom: false
+      }),
       getDoctors(),
       getSchedules(),
-      getPayments({ businessType: 'APPOINTMENT' })
+      getPayments({
+        patientId,
+        businessType: 'APPOINTMENT'
+      })
     ]);
     appointments.value = unwrap(appointmentsResult, [], '挂号记录');
     doctors.value = unwrap(doctorsResult, doctors.value, '医生列表');
@@ -1159,11 +1170,17 @@ async function loadAppointmentRecordsPage() {
 async function loadPaymentRecordsPage() {
   loadingAll.value = true;
   try {
+    const patientId = firstResolvedPatientId(paymentRecordSearch);
+    const paymentParams = {
+      patientId,
+      businessType: paymentRecordSearch.businessType || undefined,
+      status: paymentRecordSearch.status || undefined
+    };
     const [appointmentsResult, prescriptionsResult, medicalOrdersResult, paymentsResult] = await Promise.allSettled([
-      getAppointments(),
-      getPrescriptions(),
-      getMedicalOrders(),
-      getPayments()
+      getAppointments({ patientId, includeRoom: false }),
+      getPrescriptions({ patientId }),
+      getMedicalOrders({ patientId }),
+      getPayments(paymentParams)
     ]);
     appointments.value = unwrap(appointmentsResult, [], '挂号记录');
     prescriptions.value = unwrap(prescriptionsResult, [], '处方');
@@ -1188,9 +1205,9 @@ async function loadDrugReturnRefundPage() {
 
 async function refreshWorkbenchAlerts() {
   const [appointmentsResult, prescriptionsResult, medicalOrdersResult, drugReturnsResult] = await Promise.allSettled([
-    getAppointments(),
-    getPrescriptions(),
-    getMedicalOrders(),
+    getAppointments({ status: 'PENDING_PAYMENT', includeRoom: false }),
+    getPrescriptions({ view: 'OUTPATIENT_PAYMENT' }),
+    getMedicalOrders({ status: 'PENDING_PAYMENT' }),
     getDrugReturns({ status: 'RETURN_PENDING_REFUND' })
   ]);
 
@@ -1313,6 +1330,7 @@ async function applyAppointmentRecordSearch() {
   searchingAppointmentRecords.value = true;
   try {
     appointmentRecordSearch.patientIds = await resolvePatientIds(appointmentRecordSearch.keyword);
+    if (currentPage.value === 'appointmentRecords') await loadAppointmentRecordsPage();
   } finally {
     searchingAppointmentRecords.value = false;
   }
@@ -1326,12 +1344,14 @@ function clearAppointmentRecordSearch() {
 function resetAppointmentRecordSearch() {
   clearAppointmentRecordSearch();
   appointmentRecordSearch.status = '';
+  if (currentPage.value === 'appointmentRecords') void loadAppointmentRecordsPage();
 }
 
 async function applyPaymentRecordSearch() {
   searchingPaymentRecords.value = true;
   try {
     paymentRecordSearch.patientIds = await resolvePatientIds(paymentRecordSearch.keyword);
+    if (currentPage.value === 'paymentRecords') await loadPaymentRecordsPage();
   } finally {
     searchingPaymentRecords.value = false;
   }
@@ -1346,6 +1366,7 @@ function resetPaymentRecordSearch() {
   clearPaymentRecordSearch();
   paymentRecordSearch.businessType = '';
   paymentRecordSearch.status = '';
+  if (currentPage.value === 'paymentRecords') void loadPaymentRecordsPage();
 }
 
 async function applyDrugReturnSearch() {
@@ -1404,6 +1425,10 @@ function matchesPatientSearch(patientId: string, patientName: string, text: stri
   if (!keyword) return true;
   if (search.patientIds) return search.patientIds.includes(patientId);
   return `${patientName} ${text}`.toLowerCase().includes(keyword);
+}
+
+function firstResolvedPatientId(search: { patientIds: string[] | null }) {
+  return search.patientIds?.length === 1 ? search.patientIds[0] : undefined;
 }
 
 async function openQr(item: PendingFeeItem, flow: 'payment' | 'registration' = 'payment') {
@@ -1524,7 +1549,7 @@ async function syncRefundStatus() {
   refundDialog.checking = true;
   try {
     if (refundDialog.target.pollType === 'appointment') {
-      const list = await getAppointments();
+      const list = await getAppointments({ patientId: refundDialog.target.patientId, includeRoom: false });
       const appointment = list.find(item => item.id === refundDialog.target?.businessId);
       if (appointment?.paymentStatus === 'REFUNDED') {
         await handleRefundSuccess();
@@ -1777,7 +1802,7 @@ function buildRegistrationPendingItem(appointment: Appointment): PendingFeeItem 
 }
 
 async function refreshAppointments() {
-  appointments.value = await getAppointments();
+  appointments.value = await getAppointments({ includeRoom: false });
   await syncPatientProfiles();
 }
 

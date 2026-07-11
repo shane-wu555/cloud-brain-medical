@@ -29,6 +29,7 @@ public class Appointment {
     private final LocalDateTime createdAt;
     private LocalDateTime paidAt;
     private LocalDateTime cancelledAt;
+    private String roomName;
 
     public Appointment(
             String id,
@@ -103,6 +104,14 @@ public class Appointment {
 
     public String getDepartmentName() {
         return departmentName;
+    }
+
+    public String getRoomName() {
+        return roomName;
+    }
+
+    public void attachRoomName(String roomName) {
+        this.roomName = roomName;
     }
 
     public LocalDate getVisitDate() {

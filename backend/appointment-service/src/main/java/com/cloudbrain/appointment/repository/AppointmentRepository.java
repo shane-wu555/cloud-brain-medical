@@ -30,6 +30,28 @@ public class AppointmentRepository {
         return jdbcTemplate.query("select * from appointment order by visit_date, queue_number", rowMapper);
     }
 
+    public List<Appointment> find(String doctorId, String patientId, String status) {
+        StringBuilder sql = new StringBuilder("""
+                select * from appointment
+                where 1 = 1
+                """);
+        List<Object> args = new ArrayList<>();
+        if (doctorId != null && !doctorId.isBlank()) {
+            sql.append(" and doctor_id = ?");
+            args.add(doctorId);
+        }
+        if (patientId != null && !patientId.isBlank()) {
+            sql.append(" and patient_id = ?::uuid");
+            args.add(patientId);
+        }
+        if (status != null && !status.isBlank()) {
+            sql.append(" and status = ?");
+            args.add(status);
+        }
+        sql.append(" order by visit_date, queue_number");
+        return jdbcTemplate.query(sql.toString(), rowMapper, args.toArray());
+    }
+
     public Optional<Appointment> findById(String id) {
         List<Appointment> result = jdbcTemplate.query("select * from appointment where id = ?::uuid", rowMapper, id);
         return result.stream().findFirst();

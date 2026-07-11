@@ -39,4 +39,21 @@ public class NotificationClient {
             log.warn("Failed to create notification for patient {}: {}", patientId, e.getMessage());
         }
     }
+
+    public void markReferenceRead(String patientId, String category, String referenceType, String referenceId) {
+        try {
+            client.put()
+                    .uri("/api/internal/patients/notifications/read-reference")
+                    .header("X-Internal-Api-Key", internalApiKey)
+                    .body(Map.of(
+                            "patientId", patientId,
+                            "category", category,
+                            "referenceType", referenceType,
+                            "referenceId", referenceId))
+                    .retrieve()
+                    .toBodilessEntity();
+        } catch (Exception e) {
+            log.warn("Failed to mark notification read for patient {}: {}", patientId, e.getMessage());
+        }
+    }
 }

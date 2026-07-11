@@ -6,6 +6,7 @@
         <view class="appointment-main">
           <view class="title-sm">{{ item.departmentName || '门诊科室' }}</view>
           <view class="doctor-line">{{ item.doctorName || '待分配医生' }}</view>
+          <view v-if="item.roomName" class="room-line">{{ item.roomName }}</view>
         </view>
         <view :class="['status-tag', appointmentStatusClass(item)]">{{ appointmentStatusLabel(item) }}</view>
       </view>
@@ -64,6 +65,7 @@ interface Appointment {
   businessNo?: string;
   departmentName: string;
   doctorName: string;
+  roomName?: string;
   visitDate: string;
   period?: string;
   startTime?: string | number[] | { hour?: number; minute?: number; second?: number };
@@ -274,6 +276,13 @@ async function revisit(item: Appointment) {
   margin-top: 8rpx;
   color: #334155;
   font-size: 28rpx;
+}
+
+.room-line {
+  margin-top: 6rpx;
+  color: #0f766e;
+  font-size: 26rpx;
+  font-weight: 700;
 }
 
 .visit-line {

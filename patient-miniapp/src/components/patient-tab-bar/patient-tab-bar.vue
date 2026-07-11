@@ -8,8 +8,8 @@
     >
       <view class="tab-icon-wrap">
         <image class="tab-icon" :src="currentTab === item.key ? item.activeIcon : item.icon" mode="aspectFit" />
-        <view v-if="item.key === 'home' && notifStore.unreadTotal > 0" class="tab-badge">
-          <text v-if="notifStore.unreadTotal <= 99">{{ notifStore.unreadTotal }}</text>
+        <view v-if="item.key === 'home' && notifStore.badgeTotal > 0" class="tab-badge">
+          <text v-if="notifStore.badgeTotal <= 99">{{ notifStore.badgeTotal }}</text>
           <text v-else>99+</text>
         </view>
       </view>

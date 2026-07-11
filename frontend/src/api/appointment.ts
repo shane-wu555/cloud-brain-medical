@@ -10,6 +10,7 @@ export interface Appointment {
   doctorName: string;
   departmentId: string;
   departmentName: string;
+  roomName?: string;
   visitDate: string;
   period: string;
   startTime?: string;
@@ -24,7 +25,7 @@ export interface Appointment {
   missedCount: number;
   createdAt: string;
 }
-export async function getAppointments(params:{doctorId?:string;patientId?:string;status?:string}={}){return(await http.get<Appointment[]>('/appointments',{params})).data;}
+export async function getAppointments(params:{doctorId?:string;patientId?:string;status?:string;includeRoom?:boolean}={}){return(await http.get<Appointment[]>('/appointments',{params})).data;}
 export async function skipAppointment(id:string){return(await http.post<Appointment>(`/appointments/${id}/skip`)).data;}
 export async function updateAppointmentStatus(id:string,status:string){return(await http.patch<Appointment>(`/appointments/${id}/status`,{status})).data;}
 export async function createOfflineAppointment(payload:Record<string,unknown>){return(await http.post<Appointment>('/appointments/offline',payload)).data;}
