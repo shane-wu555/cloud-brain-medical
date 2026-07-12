@@ -26,3 +26,4 @@ ai-service/training/__pycache__/
 
 # Model files are committed to git for team sharing.
 # ai-service/models/*.onnx is intentionally not ignored.
+.ipynb_checkpoints/
