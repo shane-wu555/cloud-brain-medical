@@ -55,7 +55,7 @@ spring:
           predicates:
             - Path=/api/audit/**
         - id: ai-service
-          uri: ${AI_SERVICE_URL:http://127.0.0.1:8000}
+          uri: ${AI_SERVICE_URL:http://127.0.0.1:18000}
           predicates:
             - Path=/api/ai/**
 
