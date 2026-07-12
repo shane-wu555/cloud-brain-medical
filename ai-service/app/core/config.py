@@ -18,6 +18,11 @@ class AiSettings:
     rag_embedding_dim: int
     rag_connect_timeout_seconds: float
 
+    ct_classifier_model: str | None
+    ct_segmentation_model: str | None
+    ct_metal_segmentation_model: str | None
+    ct_metal_classifier_model: str | None
+
     @property
     def llm_enabled(self) -> bool:
         return self.provider == "openai_compatible" and bool(self.openai_api_key)
@@ -35,4 +40,10 @@ def settings() -> AiSettings:
         rag_schema=os.getenv("AI_RAG_SCHEMA", "ai"),
         rag_embedding_dim=int(os.getenv("AI_RAG_EMBEDDING_DIM", "64")),
         rag_connect_timeout_seconds=float(os.getenv("AI_RAG_CONNECT_TIMEOUT_SECONDS", "3")),
+        
+        # CT models
+        ct_classifier_model=os.getenv("CT_CLASSIFIER_MODEL"),
+        ct_segmentation_model=os.getenv("CT_SEGMENTATION_MODEL"),
+        ct_metal_segmentation_model=os.getenv("CT_METAL_SEGMENTATION_MODEL"),
+        ct_metal_classifier_model=os.getenv("CT_METAL_CLASSIFIER_MODEL"),
     )
