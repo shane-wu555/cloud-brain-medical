@@ -3,7 +3,6 @@ param(
     [switch]$SkipBackendBuild,
     [switch]$SkipBackend,
     [switch]$SkipAi,
-    [switch]$SkipDicom,
     [switch]$SkipFrontend,
     [switch]$SkipMiniapp,
     [switch]$InstallFrontendDeps,
@@ -145,15 +144,6 @@ if (-not $SkipAi) {
         -WorkingDirectory $root
 }
 
-if (-not $SkipDicom) {
-    Write-Step "Starting DICOM service"
-    $dicomPython = Get-Python -VenvDir (Join-Path $root "dicom-service\.venv")
-    Start-LoggedProcess -Name "dicom-service" `
-        -FilePath $dicomPython `
-        -ArgumentList @("-m", "uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8765", "--reload") `
-        -WorkingDirectory (Join-Path $root "dicom-service")
-}
-
 if (-not $SkipFrontend) {
     Write-Step "Starting PC frontend"
     if ($InstallFrontendDeps) {
@@ -192,5 +182,5 @@ Write-Host "`nAll requested services have been launched." -ForegroundColor Cyan
 Write-Host "Gateway:  http://localhost:8080"
 Write-Host "Frontend: http://localhost:5173"
 Write-Host "AI:       http://localhost:8000/health"
-Write-Host "DICOM:    http://localhost:8765/docs"
+Write-Host "DICOM:    http://localhost:8000/api/ai/dicom/health"
 Write-Host "Logs:     $logsDir"
