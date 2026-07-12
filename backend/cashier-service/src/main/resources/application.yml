@@ -36,7 +36,7 @@ internal:
 payment:
   test-mode-enabled: ${PAYMENT_TEST_MODE_ENABLED:true}
   # Configure a phone-accessible public domain or tunnel URL here for cross-network QR scans.
-  public-scan-base-url: https://gentle-hounds-grow.loca.lt
+  public-scan-base-url: ${PAYMENT_PUBLIC_SCAN_BASE_URL:}
 services:
   appointment:
     base-url: ${APPOINTMENT_SERVICE_URL:http://localhost:8104}
