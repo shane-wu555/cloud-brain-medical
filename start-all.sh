@@ -30,6 +30,36 @@ echo "================================="
 echo " Cloud Brain Medical Deployment "
 echo "================================="
 
+# ==============================
+# RDS PostgreSQL Configuration
+# ==============================
+
+export DB_HOST="pgm-2ze9qv77u8k2847vmo.pg.rds.aliyuncs.com"
+
+export DB_USERNAME="postgreSQL_user"
+
+export DB_PASSWORD="postgreDB1"
+
+
+export AUTH_DB_URL="jdbc:postgresql://${DB_HOST}:5432/cloud_brain_medical?currentSchema=auth"
+
+export PATIENT_DB_URL="jdbc:postgresql://${DB_HOST}:5432/cloud_brain_medical?currentSchema=patient"
+
+export DOCTOR_DB_URL="jdbc:postgresql://${DB_HOST}:5432/cloud_brain_medical?currentSchema=doctor"
+
+export APPOINTMENT_DB_URL="jdbc:postgresql://${DB_HOST}:5432/cloud_brain_medical?currentSchema=appointment"
+
+export MEDICAL_ORDER_DB_URL="jdbc:postgresql://${DB_HOST}:5432/cloud_brain_medical?currentSchema=medical_order"
+
+export MEDICAL_RECORD_DB_URL="jdbc:postgresql://${DB_HOST}:5432/cloud_brain_medical?currentSchema=medical_record"
+
+export CASHIER_DB_URL="jdbc:postgresql://${DB_HOST}:5432/cloud_brain_medical?currentSchema=cashier"
+
+export PHARMACY_DB_URL="jdbc:postgresql://${DB_HOST}:5432/cloud_brain_medical?currentSchema=pharmacy"
+
+export REPORT_DB_URL="jdbc:postgresql://${DB_HOST}:5432/cloud_brain_medical?currentSchema=report"
+
+export AUDIT_DB_URL="jdbc:postgresql://${DB_HOST}:5432/cloud_brain_medical?currentSchema=audit"
 
 #################################
 # 1. 启动 Docker 基础服务
