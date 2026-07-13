@@ -2810,6 +2810,7 @@ onUnmounted(() => {
   background: #fff; border-radius: 8px; padding: 14px 18px;
   display: flex; align-items: center; gap: 14px; margin-bottom: 12px;
   box-shadow: 0 1px 3px rgb(0 0 0 / 7%);
+  flex-shrink: 0;
 }
 .pat-avatar {
   width: 46px; height: 46px; border-radius: 50%;
@@ -2829,6 +2830,7 @@ onUnmounted(() => {
   background: #fff; border-radius: 8px 8px 0 0;
   border-bottom: 1px solid #e5e7eb;
   box-shadow: 0 1px 2px rgb(0 0 0 / 4%);
+  flex-shrink: 0;
 }
 .mtab {
   padding: 11px 24px; border: none; background: none;
@@ -2844,6 +2846,9 @@ onUnmounted(() => {
   box-shadow: 0 1px 3px rgb(0 0 0 / 5%);
   flex: 1;
   min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
 }
 
 /* ── main-content viewer override ── */
