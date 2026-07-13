@@ -150,7 +150,7 @@
                     <div v-if="volLoading" class="ct-loading">解析体积影像中…</div>
 
                     <template v-else-if="volume">
-                      <div class="ct-image-stage">
+                      <div class="ct-image-stage" :style="axialImageStageStyle">
                       <canvas ref="canvasAxial" class="ct-panel__canvas"></canvas>
                       <div v-if="showImageAiOverlay" class="ct-ai-overlay">
                         <button
@@ -189,7 +189,7 @@
                     </template>
 
                     <template v-else-if="imagePreviewUrl">
-                      <div class="ct-image-stage">
+                      <div class="ct-image-stage" :style="axialImageStageStyle">
                       <img :src="imagePreviewUrl" class="ct-panel__img" alt="轴位" />
                       <div v-if="showImageAiOverlay" class="ct-ai-overlay">
                         <button
@@ -334,40 +334,45 @@
                       <button type="button" @click="closeCtZoom">✕</button>
                     </div>
                     <div class="ct-zoom__stage">
-                      <template v-if="ctZoomView === 'axial' && imagePreviewUrl && !volume">
-                        <img :src="imagePreviewUrl" class="ct-zoom__img" alt="轴位放大" />
-                      </template>
+                      <div v-if="ctZoomView === 'axial'" class="ct-zoom-image-stage" :style="axialImageStageStyle">
+                        <template v-if="imagePreviewUrl && !volume">
+                          <img :src="imagePreviewUrl" class="ct-zoom__img" alt="轴位放大" />
+                        </template>
+                        <template v-else>
+                          <canvas ref="canvasZoom" class="ct-zoom__canvas"></canvas>
+                        </template>
+
+                        <div v-if="showImageAiOverlay" class="ct-ai-overlay ct-ai-overlay--zoom">
+                          <button
+                            v-for="item in imageAiFindings"
+                            :key="`zoom-${item.id}`"
+                            :class="['ct-ai-marker', `ct-ai-marker--${item.tone}`]"
+                            type="button"
+                            :title="item.label"
+                            :aria-label="item.label"
+                            :style="{ left: item.x, top: item.y }"
+                            @click.stop="focusAiFinding(item)"
+                          >
+                            <span class="ct-ai-marker__dot"></span>
+                          </button>
+                          <button
+                            v-for="item in imageAiFindings"
+                            :key="`zoom-${item.id}-label`"
+                            :class="['ct-ai-label', `ct-ai-label--${item.tone}`, `ct-ai-label--${aiFindingSide(item)}`]"
+                            type="button"
+                            :style="{ top: item.y }"
+                            @click.stop="focusAiFinding(item)"
+                          >
+                            <span>{{ item.label }}</span>
+                          </button>
+                        </div>
+                      </div>
                       <template v-else-if="ctZoomView === '3d'">
                         <canvas ref="canvasZoom3D" class="ct-zoom__canvas"></canvas>
                       </template>
                       <template v-else>
                         <canvas ref="canvasZoom" class="ct-zoom__canvas"></canvas>
                       </template>
-
-                      <div v-if="ctZoomView === 'axial' && showImageAiOverlay" class="ct-ai-overlay ct-ai-overlay--zoom">
-                        <button
-                          v-for="item in imageAiFindings"
-                          :key="`zoom-${item.id}`"
-                          :class="['ct-ai-marker', `ct-ai-marker--${item.tone}`]"
-                          type="button"
-                          :title="item.label"
-                          :aria-label="item.label"
-                          :style="{ left: item.x, top: item.y }"
-                          @click.stop="focusAiFinding(item)"
-                        >
-                          <span class="ct-ai-marker__dot"></span>
-                        </button>
-                        <button
-                          v-for="item in imageAiFindings"
-                          :key="`zoom-${item.id}-label`"
-                          :class="['ct-ai-label', `ct-ai-label--${item.tone}`, `ct-ai-label--${aiFindingSide(item)}`]"
-                          type="button"
-                          :style="{ top: item.y }"
-                          @click.stop="focusAiFinding(item)"
-                        >
-                          <span>{{ item.label }}</span>
-                        </button>
-                      </div>
 
                       <div class="ct-line ct-line--h"></div>
                       <div class="ct-line ct-line--v"></div>
@@ -1012,6 +1017,9 @@ const imageAiFindings = computed<ImageAiFinding[]>(() => {
 });
 const showImageAiOverlay = computed(() => imageAiFindings.value.length > 0 && (Boolean(volume.value) || Boolean(imagePreviewUrl.value)));
 const overlaySliceLabel = computed(() => volume.value ? `当前层 ${sliceZ.value + 1}/${volume.value.nz}` : '当前图像');
+const axialImageStageStyle = computed(() => ({
+  aspectRatio: volume.value ? `${volume.value.nx} / ${volume.value.ny}` : '1 / 1',
+}));
 
 function aiFindingSide(item: ImageAiFinding): 'left' | 'right' {
   return Number.parseFloat(item.x) < 50 ? 'left' : 'right';
@@ -2998,9 +3006,6 @@ onUnmounted(() => {
 .ct-panel:nth-child(3),
 .ct-panel:nth-child(4) { border-top: 1px solid #dbe3ef; }
 .ct-panel:nth-child(3) { border-top: 1px solid #dbe3ef; }
-.ct-panel:first-child .ct-panel__canvas {
-  max-height: calc(86% - 18px);
-}
 
 /* Panel overlays */
 .ct-panel__lbl {
@@ -3026,8 +3031,11 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  width: auto;
+  height: calc(86% - 22px);
   max-width: 88%;
-  max-height: calc(86% - 22px);
+  min-width: 0;
+  min-height: 0;
 }
 .ct-image-stage .ct-panel__canvas,
 .ct-image-stage .ct-panel__img {
@@ -3389,7 +3397,7 @@ onUnmounted(() => {
 .ct-zoom__canvas,
 .ct-zoom__img {
   width: auto;
-  height: 96%;
+  height: auto;
   max-width: 98%;
   max-height: 98%;
   object-fit: contain;
@@ -3404,10 +3412,29 @@ onUnmounted(() => {
 .ct-ai-overlay--zoom {
   z-index: 9;
 }
+.ct-zoom-image-stage {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  height: 96%;
+  max-width: 96%;
+  min-width: 0;
+  min-height: 0;
+}
+.ct-zoom-image-stage .ct-zoom__canvas,
+.ct-zoom-image-stage .ct-zoom__img {
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
+}
 .ct-zoom-btn {
   position: absolute;
-  top: 8px;
+  top: auto;
   right: 10px;
+  bottom: 40px;
   z-index: 11;
   height: 24px;
   padding: 0 9px;
@@ -3424,11 +3451,6 @@ onUnmounted(() => {
   border-color: #67e8f9;
   background: rgba(8, 153, 165, 0.86);
   color: #fff;
-}
-.ct-panel--3d .ct-zoom-btn {
-  top: auto;
-  right: 10px;
-  bottom: 40px;
 }
 .ct-3d-controls {
   position: absolute;

@@ -1010,7 +1010,7 @@ const pendingItems = computed<PendingFeeItem[]>(() => {
       patientId: item.patientId,
       patientName: item.patientName,
       feeType: 'REGISTRATION' as const,
-      title: `${item.departmentName} · ${item.doctorName}`,
+      title: '挂号费',
       description: `${item.visitDate} ${normalizeStartTime(item.startTime) || item.period} · ${item.businessNo}`,
       amount: Number(pendingPaymentMap.value.get(`APPOINTMENT:${item.id}`)?.amount ?? registrationFee(item.doctorId)),
       insuranceAmount: insuranceAmount('REGISTRATION', Number(pendingPaymentMap.value.get(`APPOINTMENT:${item.id}`)?.amount ?? registrationFee(item.doctorId))),
@@ -1895,7 +1895,7 @@ function buildRegistrationPendingItem(appointment: Appointment): PendingFeeItem 
     patientId: appointment.patientId,
     patientName: appointment.patientName,
     feeType: 'REGISTRATION',
-    title: `${appointment.departmentName} · ${appointment.doctorName}`,
+    title: '挂号费',
     description: `${appointment.visitDate} ${normalizeStartTime(appointment.startTime) || appointment.period} · ${appointment.businessNo}`,
     amount,
     insuranceAmount: insuranceAmount('REGISTRATION', amount),
@@ -2224,11 +2224,10 @@ function paymentRecordAssignedLocation(item: PaymentOrder) {
 }
 
 function paymentRecordTitle(item: PaymentOrder) {
-  if (item.itemTitle) return item.itemTitle;
   if (item.businessType === 'APPOINTMENT') {
-    const appointment = paymentRecordAppointmentMap.value.get(item.businessId);
-    return appointment ? `${appointment.departmentName} · ${appointment.doctorName}` : '挂号费';
+    return '挂号费';
   }
+  if (item.itemTitle) return item.itemTitle;
   if (item.businessType === 'MEDICAL_ORDER') {
     return paymentRecordMedicalOrderMap.value.get(item.businessId)?.itemName ?? '医技费用';
   }
