@@ -39,7 +39,7 @@ def _get_session():
     preload_cuda_dlls(ort)
     opts = ort.SessionOptions()
     opts.inter_op_num_threads = int(os.getenv("CT_ONNX_INTER_OP_THREADS", "1"))
-    opts.intra_op_num_threads = int(os.getenv("CT_ONNX_INTRA_OP_THREADS", "1"))
+    opts.intra_op_num_threads = int(os.getenv("CT_ONNX_INTRA_OP_THREADS", "4"))
     providers = [
         provider
         for provider in ["CUDAExecutionProvider", "CPUExecutionProvider"]
@@ -85,7 +85,7 @@ def _resolve_model_path(env_key: str, local_default: str,
 
 def classify_volume(
     slices: np.ndarray,          # (N, 3, 512, 512) float32, values [0,1]
-    batch_size: int = 16,
+    batch_size: int | None = None,
 ) -> dict:
     """
     对整个 CT 体积做分类推理。
@@ -108,6 +108,7 @@ def classify_volume(
 
     input_name  = session.get_inputs()[0].name
     output_name = session.get_outputs()[0].name
+    batch_size = max(1, int(os.getenv("CT_CLASSIFIER_BATCH_SIZE", str(batch_size or 32))))
 
     all_probs = []
     for start in range(0, len(slices), batch_size):

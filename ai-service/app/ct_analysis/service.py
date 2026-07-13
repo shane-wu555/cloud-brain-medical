@@ -87,7 +87,7 @@ def _run_inference(request: CtAnalysisRequest, task_id: str) -> dict[str, Any]:
             _tasks[task_id]["progress"] = pct
 
     _progress(20)
-    timeout_seconds = float(os.getenv("CT_INFERENCE_TIMEOUT_SECONDS", "300"))
+    timeout_seconds = float(os.getenv("CT_INFERENCE_TIMEOUT_SECONDS", "600"))
     executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix=f"{task_id}-worker")
     future = executor.submit(
         ml_run,

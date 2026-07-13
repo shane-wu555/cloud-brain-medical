@@ -29,7 +29,7 @@ _DEFAULT_MINIO_OBJECT = "models/metal_severity/metal_classifier_severity.onnx"
 _DEFAULT_LOCAL_CACHE = "/tmp/ct_models/metal_classifier_severity.onnx"
 
 
-def classify_metal_artifact(slices: np.ndarray, batch_size: int = 16) -> dict:
+def classify_metal_artifact(slices: np.ndarray, batch_size: int | None = None) -> dict:
     """Classify metal artifact severity for a CT volume."""
     session = _get_session()
     if session is None or slices.size == 0:
@@ -38,6 +38,7 @@ def classify_metal_artifact(slices: np.ndarray, batch_size: int = 16) -> dict:
     model_input = _normalize_channelwise(slices.astype(np.float32, copy=False))
     input_name = session.get_inputs()[0].name
     output_name = session.get_outputs()[0].name
+    batch_size = max(1, int(os.getenv("CT_METAL_CLASSIFIER_BATCH_SIZE", str(batch_size or 32))))
 
     all_probs = []
     for start in range(0, len(model_input), batch_size):
@@ -79,7 +80,7 @@ def _get_session():
 
     opts = ort.SessionOptions()
     opts.inter_op_num_threads = int(os.getenv("CT_ONNX_INTER_OP_THREADS", "1"))
-    opts.intra_op_num_threads = int(os.getenv("CT_ONNX_INTRA_OP_THREADS", "1"))
+    opts.intra_op_num_threads = int(os.getenv("CT_ONNX_INTRA_OP_THREADS", "4"))
     providers = [
         provider
         for provider in ["CUDAExecutionProvider", "CPUExecutionProvider"]

@@ -29,9 +29,9 @@ _DEFAULT_LOCAL_CACHE = "/tmp/ct_models/lesion_segmentation.onnx"
 def segment_lesion(
     hu_volume: np.ndarray,
     valid_indices: np.ndarray | list[int] | None = None,
-    batch_size: int = 8,
+    batch_size: int | None = None,
     threshold: float | None = None,
-    top_k: int = 8,
+    top_k: int | None = None,
 ) -> dict:
     """Run lesion segmentation and return a compact summary."""
     session = _get_session()
@@ -47,6 +47,8 @@ def segment_lesion(
 
     threshold = float(os.getenv("CT_LESION_SEG_THRESHOLD", threshold or 0.35))
     min_area_pixels = int(os.getenv("CT_LESION_SEG_MIN_AREA_PIXELS", "16"))
+    batch_size = max(1, int(os.getenv("CT_LESION_SEG_BATCH_SIZE", str(batch_size or 16))))
+    top_k = max(1, int(os.getenv("CT_LESION_SEG_TOP_K", str(top_k or 12))))
     image_size = _input_size(session)
     model_input = _prepare_slices(hu_volume[valid], image_size)
 
@@ -127,7 +129,7 @@ def _get_session():
 
     opts = ort.SessionOptions()
     opts.inter_op_num_threads = int(os.getenv("CT_ONNX_INTER_OP_THREADS", "1"))
-    opts.intra_op_num_threads = int(os.getenv("CT_ONNX_INTRA_OP_THREADS", "1"))
+    opts.intra_op_num_threads = int(os.getenv("CT_ONNX_INTRA_OP_THREADS", "4"))
     providers = [provider for provider in ["CUDAExecutionProvider", "CPUExecutionProvider"] if provider in ort.get_available_providers()]
     _session = ort.InferenceSession(
         model_path,

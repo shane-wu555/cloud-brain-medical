@@ -138,7 +138,8 @@ def _run_small_models_parallel(
     valid_indices,
 ) -> tuple[dict, dict, dict, dict, list[dict], dict[str, int]]:
     workers = max(1, int(os.getenv("CT_INFERENCE_PARALLEL_WORKERS", "4")))
-    workers = min(workers, 4)
+    max_workers = max(1, int(os.getenv("CT_INFERENCE_MAX_PARALLEL_WORKERS", "8")))
+    workers = min(workers, max_workers)
     timings: dict[str, int] = {}
     with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="ct-ai") as executor:
         classifier_future = executor.submit(_timed_call, "classifier", classify_volume, slices)
@@ -166,7 +167,7 @@ def _limit_model_slices(
     slices,
     valid_indices,
 ) -> tuple[Any, Any, Any, dict[str, int]]:
-    max_slices = int(os.getenv("CT_MAX_MODEL_SLICES", "128"))
+    max_slices = int(os.getenv("CT_MAX_MODEL_SLICES", "0"))
     total = int(len(slices))
     if max_slices <= 0 or total <= max_slices:
         return hu_volume, slices, valid_indices, {
@@ -200,9 +201,10 @@ def _detect_if_needed(clf_result: dict, slices, valid_indices) -> list[dict]:
     slice_probs = clf_result.get("slice_probs")
     detections: list[dict] = []
     if label != "normal" and slice_probs:
-        top_slices = top_abnormal_slices(slice_probs, top_k=5)
-        sorted_slices = slices[top_slices] if top_slices else slices[:5]
-        sorted_indices = valid_indices[top_slices] if top_slices else valid_indices[:5]
+        top_k = max(1, int(os.getenv("CT_DETECTOR_TOP_K_SLICES", "10")))
+        top_slices = top_abnormal_slices(slice_probs, top_k=top_k)
+        sorted_slices = slices[top_slices] if top_slices else slices[:top_k]
+        sorted_indices = valid_indices[top_slices] if top_slices else valid_indices[:top_k]
         detections = detect_volume(sorted_slices, sorted_indices)
         log.info(f"[CT推理] 检测框数量: {len(detections)}")
     return detections

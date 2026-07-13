@@ -62,9 +62,9 @@ def _resolve_model(env_key: str, local_default: str,
 def detect_volume(
     slices: np.ndarray,          # (N, 3, 512, 512) float32 [0,1]
     valid_indices: np.ndarray,   # 原始体积中的切片索引（用于报告坐标）
-    conf_threshold: float = 0.30,
-    iou_threshold: float  = 0.50,
-    top_k_slices: int     = 5,   # 只检测置信度最高的前 K 张切片（节省时间）
+    conf_threshold: float | None = None,
+    iou_threshold: float | None = None,
+    top_k_slices: int | None = None,   # 只检测置信度最高的前 K 张切片（节省时间）
 ) -> list[dict]:
     """
     在切片上运行 YOLOv8 检测。
@@ -84,6 +84,9 @@ def detect_volume(
     model = _get_model()
     if model is None:
         return []
+    conf_threshold = float(os.getenv("CT_DETECTOR_CONF_THRESHOLD", str(conf_threshold or 0.30)))
+    iou_threshold = float(os.getenv("CT_DETECTOR_IOU_THRESHOLD", str(iou_threshold or 0.50)))
+    top_k_slices = max(1, int(os.getenv("CT_DETECTOR_TOP_K_SLICES", str(top_k_slices or 10))))
 
     # 转为 uint8 BGR 图像（YOLO 期望的格式）
     results = []
@@ -123,7 +126,7 @@ def detect_volume(
 
 def top_abnormal_slices(
     slice_probs: list[list[float]],
-    top_k: int = 5,
+    top_k: int | None = None,
 ) -> list[int]:
     """
     从分类器的每层概率中，找出最可能存在病变的切片索引（local index）。
@@ -131,6 +134,7 @@ def top_abnormal_slices(
     """
     if not slice_probs:
         return []
+    top_k = max(1, int(os.getenv("CT_DETECTOR_TOP_K_SLICES", str(top_k or 10))))
     arr = np.array(slice_probs)
     abnormal_score = 1 - arr[:, 0]   # P(异常) = 1 - P(正常)
     return np.argsort(abnormal_score)[::-1][:top_k].tolist()
