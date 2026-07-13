@@ -109,14 +109,14 @@
                     <strong>{{ row.patientName || '-' }}</strong>
                     <em>{{ row.prescriptionNo }}</em>
                   </span>
-                  <span class="rx-card__diagnosis">{{ row.diagnosis || '未填写诊断' }}</span>
+                  <span class="rx-card__diagnosis">{{ row.diagnosis || '' }}</span>
                   <span class="rx-card__meta">
                     <small>{{ activeDispenseTab === 'waiting' ? '开方' : '取药' }}</small>
                     <b>{{ formatDateTime(activeDispenseTab === 'waiting' ? row.createdAt : row.dispensedAt) }}</b>
                   </span>
                   <span class="rx-card__amount">¥{{ amountText(row.totalAmount) }}</span>
                   <span class="rx-card__status">
-                    <el-tag :type="prescriptionTagType(row.status)" effect="plain">
+                    <el-tag :type="prescriptionTagType(row.status)" effect="plain" size="small">
                       {{ prescriptionStatusLabel(row.status) }}
                     </el-tag>
                   </span>
@@ -128,12 +128,12 @@
                     <aside class="rx-detail-summary">
                       <div class="rx-detail-summary__head">
                         <span>{{ row.patientName || '-' }}</span>
-                        <el-tag :type="prescriptionTagType(row.status)" effect="plain">
+                        <el-tag :type="prescriptionTagType(row.status)" effect="plain" size="small">
                           {{ prescriptionStatusLabel(row.status) }}
                         </el-tag>
                       </div>
                       <div class="rx-detail-summary__no">{{ row.prescriptionNo }}</div>
-                      <p>{{ row.diagnosis || '未填写诊断' }}</p>
+                      <p>{{ row.diagnosis || '' }}</p>
                       <div class="rx-detail-stats">
                         <div>
                           <span>药品</span>
@@ -261,7 +261,7 @@
                 <div class="rx-summary">
                   <strong>{{ selected.patientName || '-' }}</strong>
                   <span>{{ selected.prescriptionNo }}</span>
-                  <em>{{ selected.diagnosis || '未填写诊断' }}</em>
+                  <em>{{ selected.diagnosis || '' }}</em>
                 </div>
                 <div class="detail-meta">
                   <span>开方时间</span><strong>{{ formatDateTime(selected.createdAt) }}</strong>
@@ -280,7 +280,7 @@
           </div>
         </section>
 
-        <section v-show="currentPage === 'returns'" class="work-page">
+        <section v-show="currentPage === 'returns'" class="work-page return-page">
           <div class="page-head">
             <div>
               <h1>退药管理</h1>
@@ -304,6 +304,27 @@
 
           <div class="return-layout">
             <section class="work-card">
+              <div class="return-board-head">
+                <div class="return-board-title">
+                  <span>退药管理</span>
+                  <strong>{{ filteredDrugReturns.length }}</strong>
+                  <em>当前退药单</em>
+                </div>
+                <div class="return-board-tools">
+                  <el-input
+                    v-model="returnSearch.keyword"
+                    class="return-search"
+                    clearable
+                    placeholder="退药单号 / 处方号 / 患者"
+                    @keyup.enter="applyReturnSearch"
+                    @clear="clearReturnSearch"
+                  />
+                  <el-button type="primary" @click="applyReturnSearch">搜索</el-button>
+                  <el-button @click="resetReturnSearch">重置</el-button>
+                  <el-segmented v-model="returnStatus" :options="returnStatusOptions" @change="loadReturns" />
+                  <el-button :loading="loadingReturns" @click="loadReturns">刷新</el-button>
+                </div>
+              </div>
               <el-table v-loading="loadingReturns" :data="filteredDrugReturns" row-key="id" empty-text="暂无退药单">
                 <el-table-column prop="returnNo" label="退药单号" min-width="150" />
                 <el-table-column prop="prescriptionNo" label="处方号" min-width="150" />
@@ -1174,7 +1195,7 @@ onMounted(async () => {
 }
 
 .pharmacy-sidebar {
-  width: 190px;
+  width: 230px;
   flex-shrink: 0;
   padding: 12px;
   display: flex;
@@ -1189,24 +1210,24 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   color: #1f2937;
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 700;
 }
 
 .nav-item {
   width: 100%;
-  height: 40px;
+  height: 46px;
   border: none;
   border-radius: 6px;
-  margin-bottom: 6px;
-  padding: 0 10px;
+  margin-bottom: 8px;
+  padding: 0 14px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   background: transparent;
   color: #374151;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 16px;
   text-align: left;
 }
 
@@ -1221,9 +1242,9 @@ onMounted(async () => {
 }
 
 .nav-item em {
-  min-width: 22px;
-  height: 20px;
-  border-radius: 10px;
+  min-width: 24px;
+  height: 22px;
+  border-radius: 11px;
   display: grid;
   place-items: center;
   background: #0cbdcc;
@@ -1240,7 +1261,27 @@ onMounted(async () => {
   flex-direction: column;
   gap: 4px;
   color: #9ca3af;
-  font-size: 12px;
+  font-size: 13px;
+}
+
+.pharmacy-wks :deep(.el-button--primary) {
+  --el-button-bg-color: #0899a5;
+  --el-button-border-color: #0899a5;
+  --el-button-hover-bg-color: #0cbdcc;
+  --el-button-hover-border-color: #0cbdcc;
+  --el-button-active-bg-color: #087f89;
+  --el-button-active-border-color: #087f89;
+}
+
+.pharmacy-wks :deep(.el-button:not(.el-button--primary):not(.is-link)) {
+  --el-button-hover-text-color: #0899a5;
+  --el-button-hover-border-color: #9de3e7;
+  --el-button-hover-bg-color: #f0f9fa;
+}
+
+.pharmacy-wks :deep(.el-segmented) {
+  --el-segmented-item-selected-bg-color: #0899a5;
+  --el-segmented-item-selected-color: #fff;
 }
 
 .work-page {
@@ -1386,6 +1427,11 @@ onMounted(async () => {
   display: none;
 }
 
+.return-page > .page-head,
+.return-page > .query-bar {
+  display: none;
+}
+
 .dispense-board-head {
   display: flex;
   align-items: center;
@@ -1395,7 +1441,25 @@ onMounted(async () => {
   border-bottom: 1px solid #e5e7eb;
 }
 
+.return-board-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
 .dispense-board-title {
+  min-width: 180px;
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: baseline;
+  gap: 2px 10px;
+}
+
+.return-board-title {
   min-width: 180px;
   display: grid;
   grid-template-columns: auto auto;
@@ -1410,13 +1474,32 @@ onMounted(async () => {
   font-weight: 800;
 }
 
+.return-board-title span {
+  grid-column: 1 / -1;
+  color: #111827;
+  font-size: 20px;
+  font-weight: 800;
+}
+
 .dispense-board-title strong {
   color: #0899a5;
   font-size: 28px;
   line-height: 1;
 }
 
+.return-board-title strong {
+  color: #0899a5;
+  font-size: 28px;
+  line-height: 1;
+}
+
 .dispense-board-title em {
+  color: #64748b;
+  font-size: 13px;
+  font-style: normal;
+}
+
+.return-board-title em {
   color: #64748b;
   font-size: 13px;
   font-style: normal;
@@ -1429,6 +1512,23 @@ onMounted(async () => {
   justify-content: flex-end;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.return-board-tools {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.return-search {
+  width: 260px;
+}
+
+.return-page .work-card {
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.05);
 }
 
 .dispense-switch {
@@ -1487,7 +1587,7 @@ onMounted(async () => {
   display: grid;
   place-items: center;
   background: rgba(255, 255, 255, 0.24);
-  font-size: 12px;
+  font-size: 13px;
   font-style: normal;
 }
 
@@ -1578,6 +1678,14 @@ onMounted(async () => {
 .rx-card__status {
   display: flex;
   justify-content: center;
+}
+
+.rx-card__status :deep(.el-tag),
+.rx-detail-summary__head :deep(.el-tag) {
+  height: 22px;
+  padding: 0 7px;
+  font-size: 12px;
+  line-height: 20px;
 }
 
 .rx-card__toggle {
@@ -1780,7 +1888,7 @@ onMounted(async () => {
 
 .rx-card__actions span {
   color: #64748b;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .dispense-layout {
@@ -1930,7 +2038,17 @@ onMounted(async () => {
     flex-direction: column;
   }
 
+  .return-board-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
   .dispense-board-tools {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .return-board-tools {
     width: 100%;
     justify-content: flex-start;
   }
@@ -2018,7 +2136,16 @@ onMounted(async () => {
     align-items: stretch;
   }
 
+  .return-board-tools {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
   .dispense-search {
+    width: 100%;
+  }
+
+  .return-search {
     width: 100%;
   }
 

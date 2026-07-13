@@ -392,7 +392,7 @@
             <el-table-column label="身份证号" min-width="180">
               <template #default="{ row }">{{ paymentRecordIdNumber(row) }}</template>
             </el-table-column>
-            <el-table-column label="项目" min-width="190" show-overflow-tooltip>
+            <el-table-column label="项目" width="130" show-overflow-tooltip>
               <template #default="{ row }">{{ paymentRecordTitle(row) }}</template>
             </el-table-column>
             <el-table-column label="金额" width="110" align="right">
@@ -412,7 +412,7 @@
                 <el-tag :type="paymentTagType(row.status)" effect="plain" size="small">{{ paymentOrderStatusLabel(row.status) }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="分配诊室" min-width="160">
+            <el-table-column label="分配诊室" min-width="240" show-overflow-tooltip>
               <template #default="{ row }">
                 <span v-if="paymentRecordAssignedLocation(row)">{{ paymentRecordAssignedLocation(row) }}</span>
                 <span v-else class="muted-cell">—</span>
@@ -423,7 +423,7 @@
             </el-table-column>
             <el-table-column label="操作" width="110" fixed="right">
               <template #default="{ row }">
-                <el-button v-if="row.status === 'PAID'" type="primary" link @click="printPaymentProof(row)">打印证明</el-button>
+                <el-button v-if="row.status === 'PAID'" type="primary" link @click="printPaymentProof(row)">缴费发票</el-button>
                 <span v-else class="muted-cell">—</span>
               </template>
             </el-table-column>
