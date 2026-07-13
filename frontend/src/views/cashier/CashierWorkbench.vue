@@ -423,6 +423,12 @@
             <el-table-column label="时间" min-width="170">
               <template #default="{ row }">{{ formatDateTime(row.paidAt || row.createdAt) }}</template>
             </el-table-column>
+            <el-table-column label="操作" width="110" fixed="right">
+              <template #default="{ row }">
+                <el-button v-if="row.status === 'PAID'" type="primary" link @click="printPaymentProof(row)">打印证明</el-button>
+                <span v-else class="muted-cell">—</span>
+              </template>
+            </el-table-column>
           </el-table>
         </section>
 
@@ -588,6 +594,93 @@
         </div>
         <div class="print-note">请按队列号候诊，过号后由诊室重新安排。</div>
       </div>
+      <div v-if="printPaymentRecord" class="invoice-print">
+        <div class="invoice-top">
+          <div class="invoice-qr" aria-hidden="true">
+            <span>税</span>
+          </div>
+          <div class="invoice-title-wrap">
+            <h2>电子缴费证明（普通发票）</h2>
+            <div class="invoice-title-rule" />
+            <div class="invoice-stamp">智慧云脑诊疗中心<br />收费专用章</div>
+          </div>
+          <div class="invoice-meta">
+            <p><span>发票号码：</span>{{ paymentProofNumber(printPaymentRecord) }}</p>
+            <p><span>开票日期：</span>{{ paymentProofDate(printPaymentRecord) }}</p>
+          </div>
+        </div>
+
+        <div class="invoice-box">
+          <div class="invoice-party invoice-party--buyer">
+            <div class="invoice-vertical">购买方信息</div>
+            <div class="invoice-party-content">
+              <p><span>名称：</span>{{ paymentRecordPatientName(printPaymentRecord) }}</p>
+              <p><span>统一社会信用代码/纳税人识别号：</span>{{ paymentRecordIdNumber(printPaymentRecord) }}</p>
+            </div>
+          </div>
+          <div class="invoice-party invoice-party--seller">
+            <div class="invoice-vertical">销售方信息</div>
+            <div class="invoice-party-content">
+              <p><span>名称：</span>智慧云脑诊疗中心</p>
+              <p><span>统一社会信用代码/纳税人识别号：</span>91440100CBM000001X</p>
+            </div>
+          </div>
+
+          <table class="invoice-table">
+            <thead>
+              <tr>
+                <th>项目名称</th>
+                <th>规格型号</th>
+                <th>单位</th>
+                <th>数量</th>
+                <th>单价</th>
+                <th>金额</th>
+                <th>税率/征收率</th>
+                <th>税额</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>*医疗服务*{{ paymentRecordTitle(printPaymentRecord) }}</td>
+                <td>{{ paymentProofSpec(printPaymentRecord) }}</td>
+                <td>次</td>
+                <td>1</td>
+                <td>{{ amountText(printPaymentRecord.amount) }}</td>
+                <td>{{ amountText(paymentProofNetAmount(printPaymentRecord)) }}</td>
+                <td>0%</td>
+                <td>{{ amountText(paymentProofTaxAmount(printPaymentRecord)) }}</td>
+              </tr>
+              <tr class="invoice-empty-row"><td colspan="8"></td></tr>
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colspan="5">合计</td>
+                <td>￥{{ amountText(paymentProofNetAmount(printPaymentRecord)) }}</td>
+                <td></td>
+                <td>￥{{ amountText(paymentProofTaxAmount(printPaymentRecord)) }}</td>
+              </tr>
+            </tfoot>
+          </table>
+
+          <div class="invoice-total">
+            <div><span>价税合计（大写）</span>{{ amountToChinese(printPaymentRecord.amount) }}</div>
+            <div><span>（小写）</span>￥{{ amountText(printPaymentRecord.amount) }}</div>
+          </div>
+
+          <div class="invoice-remark">
+            <div class="invoice-vertical">备注</div>
+            <div class="invoice-party-content">
+              <p>{{ paymentProofRemark(printPaymentRecord) }}</p>
+              <p>支付方式：{{ paymentMethodLabel(printPaymentRecord.paymentMethod) }}；交易流水号：{{ printPaymentRecord.channelTradeNo || printPaymentRecord.id }}</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="invoice-footer">
+          <span>开票人：{{ auth.user?.name || '收费员' }}</span>
+          <span>打印时间：{{ printTime }}</span>
+        </div>
+      </div>
     </section>
   </div>
 </template>
@@ -697,6 +790,7 @@ const selectedDoctorId = ref('');
 const selectedSlotId = ref('');
 const lastAppointment = ref<Appointment>();
 const printAppointment = ref<Appointment>();
+const printPaymentRecord = ref<PaymentOrder>();
 const printTime = ref('');
 
 const paymentSearch = reactive({ keyword: '', feeType: 'ALL' as FeeFilter, patientIds: null as string[] | null });
@@ -1941,6 +2035,14 @@ async function refundDrug(row: DrugReturnOrder) {
 
 function printRegistrationSlip(row: Appointment) {
   printAppointment.value = row;
+  printPaymentRecord.value = undefined;
+  printTime.value = new Date().toLocaleString('zh-CN');
+  nextTick(() => window.print());
+}
+
+function printPaymentProof(row: PaymentOrder) {
+  printAppointment.value = undefined;
+  printPaymentRecord.value = row;
   printTime.value = new Date().toLocaleString('zh-CN');
   nextTick(() => window.print());
 }
@@ -2102,6 +2204,82 @@ function paymentRecordTitle(item: PaymentOrder) {
     return medicalOrderMap.value.get(item.businessId)?.itemName ?? '医技费用';
   }
   return prescriptionMap.value.get(item.businessId)?.prescriptionNo ?? '处方药费';
+}
+
+function paymentProofNumber(item: PaymentOrder) {
+  return `CB${compactNumericId(item.id).slice(0, 18).padEnd(18, '0')}`;
+}
+
+function paymentProofDate(item: PaymentOrder) {
+  const source = item.paidAt || item.createdAt;
+  const date = source ? new Date(source) : new Date();
+  if (Number.isNaN(date.getTime())) return today;
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}年${month}月${day}日`;
+}
+
+function paymentProofSpec(item: PaymentOrder) {
+  if (item.businessType === 'APPOINTMENT') return '门诊挂号';
+  if (item.businessType === 'MEDICAL_ORDER') return medicalOrderMap.value.get(item.businessId)?.orderType ?? '医技项目';
+  return '门诊处方';
+}
+
+function paymentProofRemark(item: PaymentOrder) {
+  if (item.businessType === 'APPOINTMENT') {
+    const appointment = appointmentMap.value.get(item.businessId);
+    if (!appointment) return `业务编号：${item.businessId}`;
+    return `挂号单号：${appointment.businessNo}；就诊时间：${appointment.visitDate} ${normalizeStartTime(appointment.startTime) || appointment.period}；队列号：${appointment.queueNumber}`;
+  }
+  if (item.businessType === 'MEDICAL_ORDER') {
+    const order = medicalOrderMap.value.get(item.businessId);
+    const executor = medicalOrderExecutor(item.businessId);
+    return `医嘱编号：${item.businessId}${order?.bodyPart ? `；部位：${order.bodyPart}` : ''}${executor ? `；执行科室：${executor}` : ''}`;
+  }
+  const prescription = prescriptionMap.value.get(item.businessId);
+  return `处方编号：${prescription?.prescriptionNo || item.businessId}`;
+}
+
+function paymentProofNetAmount(item: PaymentOrder) {
+  return Number(item.amount ?? 0);
+}
+
+function paymentProofTaxAmount(_item: PaymentOrder) {
+  return 0;
+}
+
+function compactNumericId(value: string) {
+  const numeric = value.replace(/\D/g, '');
+  if (numeric) return numeric;
+  return Array.from(value).map(char => char.charCodeAt(0).toString()).join('');
+}
+
+function amountToChinese(value: number) {
+  const amount = Math.round(Number(value ?? 0) * 100);
+  if (amount === 0) return '零圆整';
+  const digits = ['零', '壹', '贰', '叁', '肆', '伍', '陆', '柒', '捌', '玖'];
+  const units = ['分', '角', '圆', '拾', '佰', '仟', '万', '拾', '佰', '仟', '亿'];
+  let result = '';
+  let zeroPending = false;
+  for (let index = 0; index < units.length && index < String(amount).length; index += 1) {
+    const digit = Math.floor(amount / Math.pow(10, index)) % 10;
+    if (digit === 0) {
+      zeroPending = true;
+      if (units[index] === '圆' || units[index] === '万' || units[index] === '亿') {
+        result = units[index] + result;
+        zeroPending = false;
+      }
+    } else {
+      result = `${digits[digit]}${units[index]}${zeroPending ? '零' : ''}${result}`;
+      zeroPending = false;
+    }
+  }
+  return result
+    .replace(/零+/g, '零')
+    .replace(/零(万|亿|圆)/g, '$1')
+    .replace(/亿万/g, '亿')
+    .replace(/圆零?/g, '圆')
+    .replace(/零$/, '') + (amount % 100 === 0 ? '整' : '');
 }
 
 function paymentRecordPatientName(item: PaymentOrder) {
@@ -3012,6 +3190,247 @@ onBeforeUnmount(() => {
     margin-top: 28px;
     color: #555;
     font-size: 13px;
+  }
+
+  .invoice-print {
+    width: 930px;
+    margin: 0 auto;
+    padding: 18px 20px;
+    color: #111827;
+    font-family: "SimSun", "Microsoft YaHei", sans-serif;
+    background: #fff;
+  }
+
+  .invoice-top {
+    display: grid;
+    grid-template-columns: 120px 1fr 250px;
+    align-items: start;
+    gap: 16px;
+    margin-bottom: 12px;
+  }
+
+  .invoice-qr {
+    width: 94px;
+    height: 94px;
+    position: relative;
+    border: 5px solid #111827;
+    background:
+      linear-gradient(90deg, #111827 10px, transparent 10px) 0 0 / 18px 18px,
+      linear-gradient(#111827 10px, transparent 10px) 0 0 / 18px 18px,
+      repeating-linear-gradient(45deg, #111827 0 4px, #fff 4px 8px);
+  }
+
+  .invoice-qr::before,
+  .invoice-qr::after {
+    content: "";
+    position: absolute;
+    width: 24px;
+    height: 24px;
+    border: 7px solid #111827;
+    background: #fff;
+  }
+
+  .invoice-qr::before {
+    left: 6px;
+    top: 6px;
+  }
+
+  .invoice-qr::after {
+    right: 6px;
+    top: 6px;
+  }
+
+  .invoice-qr span {
+    position: absolute;
+    left: 35px;
+    bottom: 20px;
+    color: #b91c1c;
+    font-size: 17px;
+    font-weight: 700;
+  }
+
+  .invoice-title-wrap {
+    position: relative;
+    text-align: center;
+    color: #a51616;
+  }
+
+  .invoice-title-wrap h2 {
+    margin: 14px 0 8px;
+    font-size: 27px;
+    font-weight: 700;
+    letter-spacing: 7px;
+  }
+
+  .invoice-title-rule {
+    width: 340px;
+    margin: 0 auto;
+    border-top: 4px double #bd1f1f;
+  }
+
+  .invoice-stamp {
+    position: absolute;
+    top: -4px;
+    left: 50%;
+    width: 116px;
+    height: 64px;
+    transform: translateX(-50%) rotate(-12deg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 4px double #dc2626;
+    border-radius: 50%;
+    color: #dc2626;
+    font-size: 13px;
+    line-height: 1.35;
+    opacity: 0.9;
+  }
+
+  .invoice-meta {
+    padding-top: 34px;
+    color: #8c1717;
+    font-size: 14px;
+    line-height: 1.9;
+  }
+
+  .invoice-meta p,
+  .invoice-party-content p {
+    margin: 0;
+  }
+
+  .invoice-meta span,
+  .invoice-party-content span,
+  .invoice-total span {
+    color: #a51616;
+  }
+
+  .invoice-box {
+    border: 1.5px solid #bd1f1f;
+  }
+
+  .invoice-party {
+    display: grid;
+    grid-template-columns: 30px 1fr;
+    min-height: 100px;
+    border-bottom: 1.5px solid #bd1f1f;
+  }
+
+  .invoice-party--buyer {
+    float: left;
+    width: 50%;
+    border-right: 1.5px solid #bd1f1f;
+    box-sizing: border-box;
+  }
+
+  .invoice-party--seller {
+    overflow: hidden;
+  }
+
+  .invoice-vertical {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-right: 1.5px solid #bd1f1f;
+    color: #a51616;
+    font-size: 14px;
+    writing-mode: vertical-rl;
+    letter-spacing: 2px;
+  }
+
+  .invoice-party-content {
+    padding: 16px 12px;
+    font-size: 14px;
+    line-height: 2.7;
+  }
+
+  .invoice-table {
+    width: 100%;
+    clear: both;
+    border-collapse: collapse;
+    table-layout: fixed;
+    font-size: 14px;
+  }
+
+  .invoice-table th {
+    color: #a51616;
+    font-weight: 400;
+    padding: 5px 4px;
+    text-align: center;
+  }
+
+  .invoice-table td {
+    padding: 5px 4px;
+    text-align: right;
+    vertical-align: top;
+  }
+
+  .invoice-table th:first-child,
+  .invoice-table td:first-child {
+    width: 210px;
+    text-align: left;
+  }
+
+  .invoice-table th:nth-child(2),
+  .invoice-table td:nth-child(2) {
+    width: 110px;
+    text-align: left;
+  }
+
+  .invoice-empty-row td {
+    height: 126px;
+    border-bottom: 1.5px solid #bd1f1f;
+  }
+
+  .invoice-table tfoot td {
+    border-bottom: 1.5px solid #bd1f1f;
+    color: #111827;
+  }
+
+  .invoice-table tfoot td:first-child {
+    color: #a51616;
+    text-align: center;
+    letter-spacing: 12px;
+  }
+
+  .invoice-total {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    min-height: 36px;
+    border-bottom: 1.5px solid #bd1f1f;
+    font-size: 14px;
+  }
+
+  .invoice-total div {
+    padding: 8px 16px;
+  }
+
+  .invoice-total div:first-child {
+    border-right: 1.5px solid #bd1f1f;
+  }
+
+  .invoice-total span {
+    display: inline-block;
+    min-width: 156px;
+    text-align: center;
+  }
+
+  .invoice-remark {
+    display: grid;
+    grid-template-columns: 30px 1fr;
+    min-height: 82px;
+  }
+
+  .invoice-remark .invoice-party-content {
+    line-height: 1.9;
+    padding-top: 10px;
+  }
+
+  .invoice-footer {
+    display: flex;
+    justify-content: space-between;
+    padding: 22px 68px 0;
+    color: #8c1717;
+    font-size: 14px;
   }
 }
 
