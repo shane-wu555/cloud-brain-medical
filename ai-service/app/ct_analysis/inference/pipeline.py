@@ -43,17 +43,15 @@ FINDINGS_TEMPLATE = {
 }
 
 CONCLUSION_TEMPLATE = {
-    "normal":     "未见明确急性颅内出血或梗死征象，请结合临床综合判断。",
-    "hemorrhage": "颅内出血可能性大（AI 置信度 {confidence:.0%}），"
-                  "建议立即通知临床医生并由检查医生复核确认。",
-    "ischemia":   "脑缺血性改变可能（AI 置信度 {confidence:.0%}），"
-                  "建议结合 DWI/MRI 进一步评估，由检查医生复核。",
+    "normal":     "未见明确急性颅内出血或梗死征象。",
+    "hemorrhage": "颅内出血可能性大。",
+    "ischemia":   "脑缺血性改变可能。",
 }
 
 RISK_ADVICE = {
-    "normal":     "AI 初步筛查未见异常，仍需检查医生确认后方可发布报告。",
-    "hemorrhage": "⚠️ 高风险：检测到颅内出血征象，请立即通知值班医生，按急诊流程处理。",
-    "ischemia":   "⚠️ 注意：存在脑缺血性改变迹象，建议优先安排 MRI 检查并联系神经内科。",
+    "normal":     "建议结合临床表现及既往资料综合评估，必要时随访观察。",
+    "hemorrhage": "高风险：颅内出血征象明确，建议立即按急诊流程处理。",
+    "ischemia":   "存在脑缺血性改变征象，建议完善 DWI/MRI 检查并联系神经内科评估。",
 }
 
 
@@ -82,13 +80,12 @@ def _metal_report_text(metal_result: dict) -> tuple[str, str]:
 
     label = metal_result.get("label", "unknown")
     label_cn = metal_result.get("labelCn", "金属伪影评估未知")
-    confidence = float(metal_result.get("confidence", 0.0))
-    finding = f"金属伪影评估：{label_cn}（AI置信度 {confidence:.0%}）。"
+    finding = f"金属伪影情况：{label_cn}。"
 
     if label in {"moderate_metal", "severe_metal"}:
-        advice = "图像存在较明显金属伪影，相关区域诊断可信度可能下降，建议结合原始薄层图像或必要时复查。"
+        advice = "图像存在较明显金属伪影，相关区域判断受限，必要时可复查或补充其他检查。"
     elif label == "small_metal":
-        advice = "图像存在轻度金属伪影，建议阅片时关注邻近高密度区域。"
+        advice = "图像存在轻度金属伪影，邻近高密度区域需纳入综合评估。"
     else:
         advice = "未见明显影响诊断的金属伪影。"
     return finding, advice
@@ -98,18 +95,17 @@ def _metal_seg_report_text(seg_result: dict) -> tuple[str, str]:
     if not seg_result.get("enabled"):
         return "", ""
     if not seg_result.get("hasArtifactRegion"):
-        return "金属伪影区域分割：未定位到明显疑似区域。", ""
+        return "未见明确金属伪影相关异常区域。", ""
 
     affected = int(seg_result.get("affectedSlices", 0))
     total = int(seg_result.get("totalSlices", 0))
     fg_ratio = float(seg_result.get("foregroundRatio", 0.0))
-    confidence = float(seg_result.get("confidence", 0.0))
     finding = (
-        "金属伪影区域分割：已定位到疑似金属/伪影区域，"
+        "可见金属伪影相关区域，"
         f"累及 {affected}/{total} 层，前景占比 {fg_ratio:.2%}，"
-        f"最高置信度 {confidence:.0%}。"
+        "相关层面图像质量受影响。"
     )
-    advice = "请在金属伪影分割提示区域内结合原始图像复核，该区域的病灶判断需谨慎。"
+    advice = "金属伪影相关层面的病灶判断需谨慎，必要时补充其他检查。"
     return finding, advice
 
 
@@ -117,18 +113,17 @@ def _lesion_seg_report_text(seg_result: dict) -> tuple[str, str]:
     if not seg_result.get("enabled"):
         return "", ""
     if not seg_result.get("hasLesionRegion"):
-        return "病灶分割：未定位到明显疑似病灶区域。", ""
+        return "未见明确局灶性异常密度区域。", ""
 
     affected = int(seg_result.get("affectedSlices", 0))
     total = int(seg_result.get("totalSlices", 0))
     fg_ratio = float(seg_result.get("foregroundRatio", 0.0))
-    confidence = float(seg_result.get("confidence", 0.0))
     finding = (
-        "病灶分割：已定位到疑似病灶区域，"
+        "可见疑似病灶区域，"
         f"累及 {affected}/{total} 层，前景占比 {fg_ratio:.2%}，"
-        f"最高置信度 {confidence:.0%}。"
+        "请结合病灶部位及范围综合判断。"
     )
-    advice = "请结合病灶分割提示区域和原始薄层图像进行人工复核。"
+    advice = "建议结合病灶部位、范围及临床表现制定后续处理方案。"
     return finding, advice
 
 

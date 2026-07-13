@@ -1,3 +1,4 @@
+import re
 from uuid import uuid4
 
 from app.clinical_assistance.models import ClinicalKnowledgeSource
@@ -10,17 +11,42 @@ from .models import ReportDraftRequest, ReportDraftResponse
 
 
 REPORT_DRAFT_SYSTEM_PROMPT = """
-你是医院医技报告草稿助手，只能生成“草稿”和“后续建议”，不能发布正式报告。
+你是医院医技诊断专家，负责直接撰写可放入检查/检验报告的“检查所见、结论、后续建议”。
 你必须严格输出 JSON 对象，字段只能包含 findings、conclusion、advice。
 
-安全规则：
-1. 只能依据用户提供的当前报告所见、当前报告结论、检验明细、病理材料、影像模型结果和 providedKnowledgeSources 生成内容。
-2. 不得编造未提供的症状、疾病、检查结果、影像征象、检验数值、病理诊断或治疗方案。
-3. 如果输入信息不足，必须在对应字段说明“信息不足，需要医技医生结合原始数据补充/复核”，不能用常见模板填充。
-4. reportType=LAB 时，findings 和 conclusion 必须以真实检验明细、当前报告和病理诊断为准；advice 只能围绕已提供的异常指标、参考范围、报告结论提出复核/随访建议。
-5. reportType=CHECK 时，如果没有影像模型结果或医生填写的所见，不得声称“未见异常”“已完成检查”等实质性所见。
-6. 建议必须保持审慎，最终结论由对应医技医生确认。
+写作规则：
+1. 以检查医生、检验医生或病理医生的专业口吻书写，不要自称系统、模型、AI、助手或辅助工具。
+2. findings 写正式报告所见，只描述已提供的影像征象、检验指标或病理材料；不要写“模型分类、置信度、分割、检测提示、AI分析提示”等技术过程。
+3. conclusion 写一行诊断性结论，直接给出医学判断；不要出现“AI、辅助、提示、建议复核、需确认、结合原始图像、人工复核、仅供参考、模型”等字样。
+4. advice 写给临床的后续处理建议，可以多行；不要出现“请医生确认、请人工复核、需结合原始数据、AI提示”等来源或免责话术。
+5. 只能依据 analysisBasis 和 providedKnowledgeSources 中已有信息生成内容，不得编造未提供的症状、病史、检查结果、影像征象、检验数值、病理诊断或治疗方案。
+6. 信息不足时，用中性正式报告语言表达为“资料有限，建议结合临床进一步评估”，不要写“信息不足，需要医生复核/确认”。
+7. reportType=LAB 时，findings 和 conclusion 必须以真实检验明细、当前报告和病理诊断为准；advice 只围绕已提供的异常指标、参考范围和报告结论。
+8. reportType=CHECK 时，如果没有影像分析结果或医生填写的所见，不得声称“未见异常”或“检查完成”。
+9. 输出内容必须可直接粘贴进正式报告，不要包含标题前缀，例如“检查所见建议：”“结论建议：”“后续建议：”。
 """
+
+_BANNED_REPORT_TERMS = (
+    "AI",
+    "人工智能",
+    "辅助",
+    "模型",
+    "置信度",
+    "分类",
+    "分割",
+    "检测提示",
+    "分析提示",
+    "提示",
+    "请复核",
+    "复核",
+    "需确认",
+    "确认",
+    "人工",
+    "仅供参考",
+    "结合原始图像",
+    "结合原始薄层图像",
+    "原始数据",
+)
 
 
 def create_draft(request: ReportDraftRequest) -> ReportDraftResponse:
@@ -54,7 +80,7 @@ def _draft_with_llm(request: ReportDraftRequest, config) -> ReportDraftResponse:
                 "currentFindings": request.findings,
                 "currentConclusion": request.conclusion,
                 "reportContext": request.context,
-                "instruction": "只允许使用 analysisBasis 和 providedKnowledgeSources 中的信息生成草稿。",
+                "instruction": "只允许使用 analysisBasis 和 providedKnowledgeSources 中的信息生成正式报告内容；不要出现 AI、辅助、模型、置信度、复核、确认等过程性话术。",
             },
             "providedKnowledgeSources": [
                 source.model_dump(by_alias=True) for source in knowledge_sources
@@ -62,6 +88,7 @@ def _draft_with_llm(request: ReportDraftRequest, config) -> ReportDraftResponse:
         },
     )
     payload = _validated_llm_payload(extract_json_object(result.content))
+    payload = _sanitize_payload(payload, request)
     return ReportDraftResponse(
         aiRecordId=f"ai-report-{uuid4()}",
         findings=payload["findings"],
@@ -80,28 +107,28 @@ def _mock_draft(request: ReportDraftRequest, fallback_used: bool = False) -> Rep
     conclusion = _clean(request.conclusion)
 
     if not findings:
-        findings = "未接入真实大模型，且当前请求未提供可核验的检查所见；请医技医生结合原始影像、检验明细或病理材料补充。"
+        findings = "资料有限，当前未提供可形成完整报告所见的检查、检验或病理资料。"
     if not conclusion:
-        conclusion = "未接入真实大模型，暂不形成诊断性结论；请医技医生复核原始数据后填写。"
+        conclusion = "资料有限，暂不形成明确诊断性结论。"
 
-    if fallback_used:
-        advice = "真实大模型调用失败，已降级为保守草稿：系统仅保留已提供的报告内容，不新增检查结果或诊断。请检查 AI 服务配置和日志后重试。"
-    else:
-        advice = "当前未配置真实大模型接口，系统仅保留已提供的报告内容，不新增检查结果或诊断。请配置 AI_PROVIDER、AI_OPENAI_BASE_URL、AI_OPENAI_API_KEY 和 AI_OPENAI_MODEL 后重新生成。"
-
+    advice = "建议结合临床表现及既往资料进一步评估，必要时完善相关检查。"
     if request.report_type.upper() == "LAB":
         abnormal_lines = _abnormal_lab_lines(request.context)
         if abnormal_lines:
             items = "；".join(abnormal_lines[:6])
-            advice = f"{advice} 已提供的异常检验指标包括：{items}。请结合临床表现复核这些指标，必要时建议复查或补充相关检查。"
+            advice = f"异常检验指标包括：{items}。建议结合临床表现评估，必要时复查或补充相关检查。"
         elif _has_report_content(request):
-            advice = f"{advice} 当前已提供的检验内容未提示明确异常指标；如症状持续或临床不符，请结合病情复核。"
+            advice = "当前检验内容未提示明确异常指标；如症状持续或临床表现不符，建议结合病情进一步评估。"
 
+    payload = _sanitize_payload(
+        {"findings": findings, "conclusion": conclusion, "advice": advice},
+        request,
+    )
     return ReportDraftResponse(
         aiRecordId=f"ai-report-{uuid4()}",
-        findings=findings,
-        conclusion=conclusion,
-        advice=advice,
+        findings=payload["findings"],
+        conclusion=payload["conclusion"],
+        advice=payload["advice"],
         knowledgeSources=knowledge_sources,
         fallbackUsed=fallback_used,
     )
@@ -115,6 +142,48 @@ def _validated_llm_payload(payload: dict) -> dict[str, str]:
             raise ValueError(f"LLM response field {field} must be a non-empty string")
         expected[field] = value.strip()
     return expected
+
+
+def _sanitize_payload(payload: dict[str, str], request: ReportDraftRequest) -> dict[str, str]:
+    sanitized = {field: _sanitize_report_text(value) for field, value in payload.items()}
+    if not sanitized["findings"]:
+        sanitized["findings"] = _clean(request.findings) or "资料有限，当前未提供可形成完整报告所见的检查、检验或病理资料。"
+    if not sanitized["conclusion"]:
+        sanitized["conclusion"] = _clean(request.conclusion) or "资料有限，暂不形成明确诊断性结论。"
+    if not sanitized["advice"]:
+        sanitized["advice"] = "建议结合临床表现及既往资料进一步评估，必要时完善相关检查。"
+    sanitized["conclusion"] = _one_line(sanitized["conclusion"])
+    return sanitized
+
+
+def _sanitize_report_text(value: str | None) -> str:
+    text = _clean(value)
+    for prefix in ("检查所见建议：", "检查所见：", "结论建议：", "结论：", "后续建议：", "建议："):
+        text = text.replace(prefix, "")
+    text = re.sub(r"影像\s*AI\s*分析提示[：:]\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"AI\s*辅助\s*(检测|诊断)?\s*提示[：:：]?", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"模型\s*(分类|判断)?\s*为[“\"']?([^，。；;、）)]*)[”\"']?", r"\2", text)
+    text = re.sub(r"置信度\s*[:：]?\s*[0-9.％%]+", "", text)
+    text = re.sub(r"（\s*高风险\s*[，,]\s*）", "（高风险）", text)
+    text = re.sub(r"[(（][^）)]*(AI|人工智能|模型|置信度|分割|检测提示|分析提示)[^）)]*[）)]", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"[^。；;]*?(请|需|需要|建议)?[^。；;]*?(复核|确认|人工复核|结合原始图像|结合原始薄层图像|原始数据|仅供参考)[^。；;]*?[。；;]", "", text)
+    for term in _BANNED_REPORT_TERMS:
+        text = text.replace(term, "")
+    text = re.sub(r"\s+", " ", text)
+    text = (
+        text.replace("（高风险，）", "（高风险）")
+        .replace("(高风险，)", "(高风险)")
+        .replace("，，", "，")
+        .replace("，。", "。")
+        .replace("：。", "。")
+        .replace("；。", "。")
+    )
+    cleaned = text.strip(" \n\t；;，,。")
+    return cleaned + ("。" if cleaned else "")
+
+
+def _one_line(value: str) -> str:
+    return " ".join(part.strip() for part in value.splitlines() if part.strip())
 
 
 def _clean(value: str | None) -> str:
