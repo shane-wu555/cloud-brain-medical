@@ -138,47 +138,27 @@ public class CashierRepository {
 
     public List<Payment> payments(String patientId, String businessId, String businessType, String status) {
         StringBuilder sql = new StringBuilder("""
-                select p.*,
-                       coalesce(ap.patient_name, mo.patient_name, rx.patient_name, pat.name) as patient_name,
-                       pat.id_number,
-                       case
-                         when p.business_type = 'APPOINTMENT' and ap.id is not null then concat(ap.department_name, ' · ', ap.doctor_name)
-                         when p.business_type = 'MEDICAL_ORDER' and mo.id is not null then mo.item_name
-                         when p.business_type = 'PRESCRIPTION' and rx.id is not null then '处方药费'
-                         else null
-                       end as item_title,
-                       case
-                         when p.business_type = 'MEDICAL_ORDER' and er.id is not null then concat(er.name, ' · ', er.location)
-                         when p.business_type = 'APPOINTMENT' and ap.id is not null then ap.department_name
-                         when p.business_type = 'PRESCRIPTION' and rx.id is not null then '药房'
-                         else null
-                       end as assigned_location
-                from payment p
-                left join patient pat on pat.id = p.patient_id
-                left join appointment ap on p.business_type = 'APPOINTMENT' and ap.id::text = p.business_id
-                left join medical_order mo on p.business_type = 'MEDICAL_ORDER' and mo.id::text = p.business_id
-                left join examination_room er on er.id = mo.room_id
-                left join prescription rx on p.business_type = 'PRESCRIPTION' and rx.id::text = p.business_id
+                select * from payment
                 where 1 = 1
                 """);
         List<Object> args = new ArrayList<>();
         if (patientId != null && !patientId.isBlank()) {
-            sql.append(" and p.patient_id = ?::uuid");
+            sql.append(" and patient_id = ?::uuid");
             args.add(patientId);
         }
         if (businessId != null && !businessId.isBlank()) {
-            sql.append(" and p.business_id = ?");
+            sql.append(" and business_id = ?");
             args.add(businessId);
         }
         if (businessType != null && !businessType.isBlank()) {
-            sql.append(" and p.business_type = ?");
+            sql.append(" and business_type = ?");
             args.add(businessType);
         }
         if (status != null && !status.isBlank()) {
-            sql.append(" and p.status = ?");
+            sql.append(" and status = ?");
             args.add(status);
         }
-        sql.append(" order by p.created_at desc");
+        sql.append(" order by created_at desc");
         return jdbc.query(sql.toString(), (rs, rowNum) -> payment(rs), args.toArray());
     }
 
@@ -186,9 +166,7 @@ public class CashierRepository {
         return new Payment(rs.getString("id"),rs.getString("business_type"),rs.getString("business_id"),
                 rs.getString("patient_id"),rs.getBigDecimal("amount"),rs.getString("method"),
                 rs.getString("status"),rs.getString("operator_id"),time(rs.getTimestamp("paid_at")),
-                time(rs.getTimestamp("created_at")),null,rs.getString("channel_trade_no"),
-                nullableString(rs, "patient_name"), nullableString(rs, "id_number"),
-                nullableString(rs, "item_title"), nullableString(rs, "assigned_location"));
+                time(rs.getTimestamp("created_at")),null,rs.getString("channel_trade_no"));
     }
 
     public List<Refund> refunds(String patientId, String businessId) {
@@ -219,19 +197,10 @@ public class CashierRepository {
         return value == null ? null : value.toLocalDateTime();
     }
 
-    private static String nullableString(java.sql.ResultSet rs, String column) throws java.sql.SQLException {
-        try {
-            return rs.getString(column);
-        } catch (java.sql.SQLException ignored) {
-            return null;
-        }
-    }
-
     public record Payment(
             String id, String businessType, String businessId, String patientId, BigDecimal amount,
             String paymentMethod, String status, String operatorId, LocalDateTime paidAt,
-            LocalDateTime createdAt,String paymentScene,String channelTradeNo,
-            String patientName,String idNumber,String itemTitle,String assignedLocation) {}
+            LocalDateTime createdAt,String paymentScene,String channelTradeNo) {}
     public record Refund(
             String id, String businessType, String businessId, String patientId, BigDecimal amount,
             String reason, String status, String operatorId, LocalDateTime refundedAt) {}

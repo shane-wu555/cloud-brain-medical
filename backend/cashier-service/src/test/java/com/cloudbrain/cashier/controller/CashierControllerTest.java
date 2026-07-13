@@ -355,11 +355,7 @@ class CashierControllerTest {
                 LocalDateTime.of(2026, 7, 9, 10, 0),
                 LocalDateTime.of(2026, 7, 9, 9, 0),
                 null,
-                "trade-1",
-                null,
-                null,
-                null,
-                null);
+                "trade-1");
     }
 
     private CashierRepository.Refund refund(String id, String businessType, String businessId, String patientId) {
