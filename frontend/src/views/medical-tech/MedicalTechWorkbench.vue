@@ -142,13 +142,15 @@
                 <div v-show="ctViewerMode === 'mpr'" class="ct-panels">
 
                   <!-- Axial -->
-                  <div class="ct-panel ct-panel--zoomable" @click="openCtZoom('axial', $event)" @dragover.prevent @drop.prevent="handleDrop" @wheel.prevent="onWheelPanel('axial', $event)">
+                  <div class="ct-panel ct-panel--zoomable" @dblclick="openCtZoom('axial', $event)" @dragover.prevent @drop.prevent="handleDrop" @wheel.prevent="onWheelPanel('axial', $event)">
                     <span class="ct-panel__lbl">【轴检 Axial】</span>
                     <span class="ct-panel__slice" v-if="volume">切片: {{ sliceZ + 1 }} / {{ volume.nz }}</span>
+                    <button v-if="volume || imagePreviewUrl" class="ct-zoom-btn" type="button" @click.stop="openCtZoom('axial')">放大</button>
 
                     <div v-if="volLoading" class="ct-loading">解析体积影像中…</div>
 
                     <template v-else-if="volume">
+                      <div class="ct-image-stage">
                       <canvas ref="canvasAxial" class="ct-panel__canvas"></canvas>
                       <div v-if="showImageAiOverlay" class="ct-ai-overlay">
                         <button
@@ -174,6 +176,7 @@
                           <span>{{ item.label }}</span>
                         </button>
                       </div>
+                      </div>
                       <div class="ct-line ct-line--h"></div>
                       <div class="ct-line ct-line--v"></div>
                       <span class="ct-orient ct-orient--ml">R</span>
@@ -186,6 +189,7 @@
                     </template>
 
                     <template v-else-if="imagePreviewUrl">
+                      <div class="ct-image-stage">
                       <img :src="imagePreviewUrl" class="ct-panel__img" alt="轴位" />
                       <div v-if="showImageAiOverlay" class="ct-ai-overlay">
                         <button
@@ -210,6 +214,7 @@
                         >
                           <span>{{ item.label }}</span>
                         </button>
+                      </div>
                       </div>
                       <div class="ct-line ct-line--h"></div>
                       <div class="ct-line ct-line--v"></div>
@@ -237,12 +242,13 @@
 
                   <!-- 3D WebGL reconstruction -->
                   <div class="ct-panel ct-panel--3d ct-panel--zoomable"
-                       @click="openCtZoom('3d', $event)"
+                       @dblclick="openCtZoom('3d', $event)"
                        @mousedown="on3DDown"
                        @mousemove="on3DMove"
                        @mouseup="on3DUp"
                        @mouseleave="on3DUp">
                     <span class="ct-panel__lbl">【3D 重建】</span>
+                    <button v-if="volume" class="ct-zoom-btn" type="button" @click.stop="openCtZoom('3d')">放大</button>
                     <div v-if="volume" class="ct-3d-controls" @mousedown.stop @click.stop>
                       <button :class="['ct-3d-preset', render3DMode === 'brain' && 'ct-3d-preset--active']" @click="set3DMode('brain')">脑实质</button>
                       <button :class="['ct-3d-preset', render3DMode === 'composite' && 'ct-3d-preset--active']" @click="set3DMode('composite')">综合</button>
@@ -266,9 +272,10 @@
                   </div>
 
                   <!-- Coronal -->
-                  <div class="ct-panel ct-panel--zoomable" @click="openCtZoom('coronal', $event)" @wheel.prevent="onWheelPanel('coronal', $event)">
+                  <div class="ct-panel ct-panel--zoomable" @dblclick="openCtZoom('coronal', $event)" @wheel.prevent="onWheelPanel('coronal', $event)">
                     <span class="ct-panel__lbl">【冠状 Coronal】</span>
                     <span class="ct-panel__slice" v-if="volume">切片: {{ sliceY + 1 }} / {{ volume.ny }}</span>
+                    <button v-if="volume" class="ct-zoom-btn" type="button" @click.stop="openCtZoom('coronal')">放大</button>
                     <template v-if="volume">
                       <canvas ref="canvasCoronal" class="ct-panel__canvas"></canvas>
                       <div class="ct-line ct-line--h"></div>
@@ -292,9 +299,10 @@
                   </div>
 
                   <!-- Sagittal -->
-                  <div class="ct-panel ct-panel--zoomable" @click="openCtZoom('sagittal', $event)" @wheel.prevent="onWheelPanel('sagittal', $event)">
+                  <div class="ct-panel ct-panel--zoomable" @dblclick="openCtZoom('sagittal', $event)" @wheel.prevent="onWheelPanel('sagittal', $event)">
                     <span class="ct-panel__lbl">【矢状 Sagittal】</span>
                     <span class="ct-panel__slice" v-if="volume">切片: {{ sliceX + 1 }} / {{ volume.nx }}</span>
+                    <button v-if="volume" class="ct-zoom-btn" type="button" @click.stop="openCtZoom('sagittal')">放大</button>
                     <template v-if="volume">
                       <canvas ref="canvasSagittal" class="ct-panel__canvas"></canvas>
                       <div class="ct-line ct-line--h"></div>
@@ -1144,20 +1152,24 @@ function imageRegionPosition(region: Record<string, any>, index: number): { x: s
   let rawX = numericValue(region.x ?? region.centerX ?? region.cx ?? region.left);
   let rawY = numericValue(region.y ?? region.centerY ?? region.cy ?? region.top);
   if (bbox.length >= 4 && bbox.every(Number.isFinite)) {
-    rawX = (bbox[0] + bbox[2]) / 2;
-    rawY = (bbox[1] + bbox[3]) / 2;
+    const format = String(region.bboxFormat || region.boxFormat || region.format || '').toLowerCase();
+    const looksLikeXywh = format.includes('xywh') || format.includes('width') || bbox[2] < bbox[0] || bbox[3] < bbox[1];
+    rawX = looksLikeXywh ? bbox[0] + bbox[2] / 2 : (bbox[0] + bbox[2]) / 2;
+    rawY = looksLikeXywh ? bbox[1] + bbox[3] / 2 : (bbox[1] + bbox[3]) / 2;
   }
-  const x = rawX !== undefined ? normalizeImagePercent(rawX) : 34 + index * 18;
-  const y = rawY !== undefined ? normalizeImagePercent(rawY) : 42 + index * 12;
+  const x = rawX !== undefined ? normalizeImagePercent(rawX, 'x') : 34 + index * 18;
+  const y = rawY !== undefined ? normalizeImagePercent(rawY, 'y') : 42 + index * 12;
   return {
-    x: `${Math.max(14, Math.min(86, x))}%`,
-    y: `${Math.max(18, Math.min(82, y))}%`,
+    x: `${Math.max(4, Math.min(96, x))}%`,
+    y: `${Math.max(6, Math.min(94, y))}%`,
   };
 }
 
-function normalizeImagePercent(value: number): number {
+function normalizeImagePercent(value: number, axis: 'x' | 'y'): number {
   if (value <= 1) return value * 100;
-  return (value / 512) * 100;
+  const vol = volume.value;
+  const size = axis === 'x' ? vol?.nx : vol?.ny;
+  return (value / (size || 512)) * 100;
 }
 
 function regionLabel(region: Record<string, any>): string {
@@ -2974,7 +2986,7 @@ onUnmounted(() => {
   min-height: 0;
 }
 .ct-panel--zoomable {
-  cursor: zoom-in;
+  cursor: default;
 }
 .ct-panel--zoomable .ct-slider,
 .ct-panel--zoomable button,
@@ -3008,6 +3020,21 @@ onUnmounted(() => {
 .ct-panel__img {
   width: 88%; height: 88%;
   object-fit: contain;
+}
+.ct-image-stage {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 88%;
+  max-height: calc(86% - 22px);
+}
+.ct-image-stage .ct-panel__canvas,
+.ct-image-stage .ct-panel__img {
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
 }
 .ct-ai-overlay {
   position: absolute;
@@ -3305,12 +3332,13 @@ onUnmounted(() => {
   display: flex;
   align-items: stretch;
   justify-content: center;
-  padding: 10px;
+  padding: 6px;
   background: rgba(15, 23, 42, 0.58);
   backdrop-filter: blur(2px);
 }
 .ct-zoom__panel {
-  width: min(100%, 1180px);
+  width: min(96vw, 1440px);
+  height: 100%;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -3360,8 +3388,10 @@ onUnmounted(() => {
 }
 .ct-zoom__canvas,
 .ct-zoom__img {
-  max-width: 96%;
-  max-height: 96%;
+  width: auto;
+  height: 96%;
+  max-width: 98%;
+  max-height: 98%;
   object-fit: contain;
   image-rendering: auto;
 }
@@ -3373,6 +3403,32 @@ onUnmounted(() => {
 }
 .ct-ai-overlay--zoom {
   z-index: 9;
+}
+.ct-zoom-btn {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  z-index: 11;
+  height: 24px;
+  padding: 0 9px;
+  border: 1px solid rgba(148, 163, 184, 0.82);
+  border-radius: 4px;
+  background: rgba(15, 23, 42, 0.72);
+  color: #e5faff;
+  font-size: 11px;
+  line-height: 22px;
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+}
+.ct-zoom-btn:hover {
+  border-color: #67e8f9;
+  background: rgba(8, 153, 165, 0.86);
+  color: #fff;
+}
+.ct-panel--3d .ct-zoom-btn {
+  top: auto;
+  right: 10px;
+  bottom: 40px;
 }
 .ct-3d-controls {
   position: absolute;

@@ -54,6 +54,82 @@
             <el-button @click="resetPrescriptionSearch">重置</el-button>
           </div>
 
+          <section class="dispense-window">
+            <div class="dispense-switch" role="tablist" aria-label="处方取药状态">
+              <button
+                type="button"
+                :class="['dispense-switch__tab', activeDispenseTab === 'waiting' && 'dispense-switch__tab--active']"
+                @click="activeDispenseTab = 'waiting'"
+              >
+                <span>待取药</span>
+                <em>{{ filteredWaitingPrescriptions.length }}</em>
+              </button>
+              <button
+                type="button"
+                :class="['dispense-switch__tab', activeDispenseTab === 'dispensed' && 'dispense-switch__tab--active']"
+                @click="activeDispenseTab = 'dispensed'"
+              >
+                <span>已取药</span>
+                <em>{{ filteredDispensedPrescriptions.length }}</em>
+              </button>
+              <i :class="['dispense-switch__thumb', activeDispenseTab === 'dispensed' && 'dispense-switch__thumb--right']"></i>
+            </div>
+
+            <div v-loading="loadingPrescriptions" class="prescription-window">
+              <el-empty v-if="!activePrescriptionRows.length" :description="activeDispenseTab === 'waiting' ? '暂无待取药处方' : '暂无已取药处方'" :image-size="96" />
+              <article
+                v-for="row in activePrescriptionRows"
+                :key="row.id"
+                :class="['rx-card', isPrescriptionExpanded(row.id) && 'rx-card--open']"
+              >
+                <button class="rx-card__main" type="button" @click="togglePrescriptionDetail(row.id)">
+                  <span class="rx-card__identity">
+                    <strong>{{ row.patientName || '-' }}</strong>
+                    <em>{{ row.prescriptionNo }}</em>
+                  </span>
+                  <span class="rx-card__diagnosis">{{ row.diagnosis || '未填写诊断' }}</span>
+                  <span class="rx-card__meta">
+                    <small>{{ activeDispenseTab === 'waiting' ? '开方' : '取药' }}</small>
+                    <b>{{ formatDateTime(activeDispenseTab === 'waiting' ? row.createdAt : row.dispensedAt) }}</b>
+                  </span>
+                  <span class="rx-card__amount">¥{{ amountText(row.totalAmount) }}</span>
+                  <span class="rx-card__status">
+                    <el-tag :type="prescriptionTagType(row.status)" effect="plain">
+                      {{ prescriptionStatusLabel(row.status) }}
+                    </el-tag>
+                  </span>
+                  <span class="rx-card__toggle">{{ isPrescriptionExpanded(row.id) ? '收起' : '展开' }}</span>
+                </button>
+
+                <div v-show="isPrescriptionExpanded(row.id)" class="rx-card__detail">
+                  <div class="rx-detail-grid">
+                    <span>开方时间</span><strong>{{ formatDateTime(row.createdAt) }}</strong>
+                    <span>取药时间</span><strong>{{ formatDateTime(row.dispensedAt) }}</strong>
+                    <span>药品数量</span><strong>{{ row.items?.length || 0 }} 项</strong>
+                    <span>总金额</span><strong>¥{{ amountText(row.totalAmount) }}</strong>
+                  </div>
+                  <el-table :data="row.items" size="small" empty-text="暂无药品明细" class="rx-detail-table">
+                    <el-table-column prop="drugName" label="药品" min-width="180" show-overflow-tooltip />
+                    <el-table-column prop="quantity" label="数量" width="90" />
+                    <el-table-column label="单价" width="110" align="right">
+                      <template #default="{ row: item }">¥{{ amountText(item.unitPrice) }}</template>
+                    </el-table-column>
+                  </el-table>
+                  <div class="rx-card__actions">
+                    <el-button
+                      v-if="activeDispenseTab === 'waiting'"
+                      type="success"
+                      :loading="dispensingId === row.id"
+                      @click.stop="dispense(row.id)"
+                    >
+                      确认取药
+                    </el-button>
+                  </div>
+                </div>
+              </article>
+            </div>
+          </section>
+
           <div class="dispense-layout">
             <div class="prescription-lists">
               <section class="work-card">
@@ -395,6 +471,8 @@ const router = useRouter();
 const auth = useAuthStore();
 
 const currentPage = ref<PageKey>('dispense');
+const activeDispenseTab = ref<'waiting' | 'dispensed'>('waiting');
+const expandedPrescriptionIds = ref<string[]>([]);
 const waitingPrescriptions = ref<Prescription[]>([]);
 const waitingPrescriptionAlerts = ref<Prescription[]>([]);
 const dispensedPrescriptions = ref<Prescription[]>([]);
@@ -517,6 +595,11 @@ const filteredDispensedPrescriptions = computed(() => {
     return matchesKeywordSearch(keyword, [item.prescriptionNo, item.patientName, item.diagnosis]);
   });
 });
+const activePrescriptionRows = computed(() => (
+  activeDispenseTab.value === 'waiting'
+    ? filteredWaitingPrescriptions.value
+    : filteredDispensedPrescriptions.value
+));
 const filteredDrugReturns = computed(() => {
   const keyword = returnSearch.keyword.trim().toLowerCase();
   return drugReturns.value.filter((item) => {
@@ -628,13 +711,16 @@ async function loadDrugs(criteria?: { keyword?: string; storageCondition?: strin
 async function dispense(id: string) {
   dispensingId.value = id;
   try {
-    selected.value = await dispensePrescription(id);
+    await dispensePrescription(id);
+    selected.value = undefined;
     ElMessage.success('发药完成，库存已扣减');
     const reloads = [loadPrescriptions()];
     if (loadedPages.inventory) {
       reloads.push(loadDrugs());
     }
     await Promise.all(reloads);
+    activeDispenseTab.value = 'dispensed';
+    expandedPrescriptionIds.value = [id];
   } catch (error) {
     handleRequestFailure(error, '发药失败');
   } finally {
@@ -674,6 +760,16 @@ async function submitStockIn() {
 
 function showDetail(row: Prescription) {
   selected.value = row;
+}
+
+function isPrescriptionExpanded(id: string) {
+  return expandedPrescriptionIds.value.includes(id);
+}
+
+function togglePrescriptionDetail(id: string) {
+  expandedPrescriptionIds.value = isPrescriptionExpanded(id)
+    ? expandedPrescriptionIds.value.filter((item) => item !== id)
+    : [id];
 }
 
 function showReturnPrescriptionDetail(row: DrugReturnOrder) {
@@ -900,6 +996,17 @@ watch(currentPage, () => {
   loadCurrentPage();
 });
 
+watch(activeDispenseTab, () => {
+  expandedPrescriptionIds.value = [];
+});
+
+watch(
+  () => prescriptionSearch.keyword,
+  () => {
+    expandedPrescriptionIds.value = [];
+  }
+);
+
 watch(
   () => waitingPrescriptionAlerts.value.map((item) => item.id),
   (ids) => {
@@ -916,7 +1023,7 @@ watch(
 
 // 定时轮询处方列表：缴费后自动刷新待发药列表
 // 查看处方明细时跳过轮询，避免刷新导致选中状态丢失
-const isEditing = computed(() => !!selected.value || !!selectedReturn.value);
+const isEditing = computed(() => !!selected.value || !!selectedReturn.value || expandedPrescriptionIds.value.length > 0);
 useQueuePolling(isEditing, async () => {
   await Promise.all([loadPrescriptions(true), loadReturns(true), refreshWorkbenchAlerts()]);
 });
@@ -1210,7 +1317,202 @@ onMounted(async () => {
   width: 100%;
 }
 
-.dispense-layout,
+.dispense-window {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dispense-switch {
+  position: relative;
+  width: min(420px, 100%);
+  height: 44px;
+  padding: 4px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: 1px solid #b9edf0;
+  border-radius: 8px;
+  background: #f0f9fa;
+}
+
+.dispense-switch__thumb {
+  position: absolute;
+  left: 4px;
+  top: 4px;
+  width: calc(50% - 4px);
+  height: calc(100% - 8px);
+  border-radius: 6px;
+  background: #0899a5;
+  box-shadow: 0 6px 18px rgba(8, 153, 165, 0.2);
+  transition: transform 0.2s ease;
+}
+
+.dispense-switch__thumb--right {
+  transform: translateX(100%);
+}
+
+.dispense-switch__tab {
+  position: relative;
+  z-index: 1;
+  border: none;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: transparent;
+  color: #64748b;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.dispense-switch__tab--active {
+  color: #fff;
+}
+
+.dispense-switch__tab em {
+  min-width: 22px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.24);
+  font-size: 12px;
+  font-style: normal;
+}
+
+.dispense-switch__tab:not(.dispense-switch__tab--active) em {
+  background: #dff7f8;
+  color: #0899a5;
+}
+
+.prescription-window {
+  min-height: 360px;
+  padding: 14px;
+  border: 1px solid #dbe3ef;
+  border-radius: 8px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rx-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+  transition: border-color 0.16s, box-shadow 0.16s;
+}
+
+.rx-card:hover,
+.rx-card--open {
+  border-color: #9de3e7;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
+}
+
+.rx-card__main {
+  width: 100%;
+  min-height: 72px;
+  border: none;
+  padding: 12px 14px;
+  display: grid;
+  grid-template-columns: minmax(150px, 1.1fr) minmax(180px, 1.4fr) minmax(160px, 1fr) 100px 108px 62px;
+  align-items: center;
+  gap: 12px;
+  background: #fff;
+  color: #1f2937;
+  cursor: pointer;
+  text-align: left;
+}
+
+.rx-card__main:hover {
+  background: #f8fafc;
+}
+
+.rx-card__identity,
+.rx-card__meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rx-card__identity strong {
+  color: #111827;
+  font-size: 17px;
+}
+
+.rx-card__identity em,
+.rx-card__meta small {
+  color: #64748b;
+  font-size: 12px;
+  font-style: normal;
+}
+
+.rx-card__diagnosis,
+.rx-card__meta b {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rx-card__amount {
+  color: #0899a5;
+  font-size: 18px;
+  font-weight: 800;
+  text-align: right;
+}
+
+.rx-card__status {
+  display: flex;
+  justify-content: center;
+}
+
+.rx-card__toggle {
+  color: #0899a5;
+  font-weight: 700;
+  text-align: right;
+}
+
+.rx-card__detail {
+  padding: 0 14px 14px;
+  border-top: 1px solid #e5e7eb;
+  background: #fbfdfe;
+}
+
+.rx-detail-grid {
+  padding: 12px 0;
+  display: grid;
+  grid-template-columns: repeat(4, auto minmax(0, 1fr));
+  gap: 8px 10px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.rx-detail-grid strong {
+  color: #111827;
+}
+
+.rx-detail-table {
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.rx-card__actions {
+  padding-top: 12px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.dispense-layout {
+  display: none;
+}
+
 .return-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 360px;
@@ -1345,9 +1647,16 @@ onMounted(async () => {
 }
 
 @media (max-width: 1200px) {
-  .dispense-layout,
   .return-layout {
     grid-template-columns: 1fr;
+  }
+
+  .rx-card__main {
+    grid-template-columns: minmax(150px, 1fr) minmax(180px, 1.2fr) 120px 88px;
+  }
+
+  .rx-card__meta {
+    display: none;
   }
 
   .detail-panel {
@@ -1410,6 +1719,28 @@ onMounted(async () => {
 
   .query-bar .el-select {
     width: 100%;
+  }
+
+  .dispense-switch {
+    width: 100%;
+  }
+
+  .rx-card__main {
+    grid-template-columns: 1fr auto;
+    gap: 8px;
+  }
+
+  .rx-card__diagnosis,
+  .rx-card__status {
+    grid-column: 1 / -1;
+  }
+
+  .rx-card__amount {
+    text-align: left;
+  }
+
+  .rx-detail-grid {
+    grid-template-columns: auto minmax(0, 1fr);
   }
 }
 </style>
