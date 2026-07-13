@@ -1,5 +1,5 @@
 ﻿<template>
-  <patient-nav-bar :title="mode === 'record' ? '缴费退费记录' : '待缴费项目'" />
+  <patient-nav-bar :title="mode === 'record' ? '缴费退费记录' : '门诊缴费'" />
   <view class="page">
     <view v-if="mode === 'record'">
       <view
@@ -29,7 +29,7 @@
       <view v-if="!sortedFinancialRecords.length" class="card muted">暂无缴费退费记录</view>
     </view>
 
-    <view v-else>
+    <view v-else @touchstart="onPaymentTouchStart" @touchend="onPaymentTouchEnd">
     <view v-if="loadWarning" class="card warning-card">
       <view class="warning-title">部分数据加载失败</view>
       <view class="muted">{{ loadWarning }}</view>
@@ -37,16 +37,33 @@
 
     <view class="summary-grid">
       <view class="card summary-card">
-        <view class="summary-label">待缴总金额</view>
-        <view class="summary-value">¥{{ amountText(totalAmount) }}</view>
+        <view class="summary-label">{{ activePaymentTab === 'paid' ? '已缴总金额' : '待缴总金额' }}</view>
+        <view class="summary-value">¥{{ amountText(activeTabAmount) }}</view>
       </view>
       <view class="card summary-card">
         <view class="summary-label">医保参考自付</view>
-        <view class="summary-value insurance-value">¥{{ amountText(totalInsuranceAmount) }}</view>
+        <view class="summary-value insurance-value">¥{{ amountText(activeTabInsuranceAmount) }}</view>
       </view>
       <view class="card summary-card">
-        <view class="summary-label">待缴项目数</view>
-        <view class="summary-value">{{ totalCount }}</view>
+        <view class="summary-label">{{ activePaymentTab === 'paid' ? '已缴项目数' : '待缴项目数' }}</view>
+        <view class="summary-value">{{ activeTabCount }}</view>
+      </view>
+    </view>
+
+    <view class="payment-tabs">
+      <view
+        :class="['payment-tab', activePaymentTab === 'unpaid' && 'active']"
+        @tap="activePaymentTab = 'unpaid'"
+      >
+        <text>未缴费</text>
+        <em>{{ pendingCount }} 项</em>
+      </view>
+      <view
+        :class="['payment-tab', activePaymentTab === 'paid' && 'active']"
+        @tap="activePaymentTab = 'paid'"
+      >
+        <text>已缴费</text>
+        <em>{{ paidCount }} 项</em>
       </view>
     </view>
 
@@ -65,107 +82,27 @@
       </view>
     </view>
 
-    <view v-if="registrationItems.length" class="card fee-card fee-registration">
+    <view v-for="section in activeCategorySections" :key="section.key" :class="['card', 'fee-card', section.cardClass]">
       <view class="section-head">
-        <view class="section-icon reg-icon">号</view>
-        <view class="section-title">挂号费</view>
-        <view class="section-count">{{ registrationItems.length }} 项</view>
+        <view :class="['section-icon', section.iconClass]">{{ section.icon }}</view>
+        <view class="section-title">{{ section.label }}</view>
+        <view class="section-count">{{ section.items.length }} 项</view>
       </view>
-      <view v-for="item in registrationItems" :key="item.businessId" class="item-row">
+      <view v-for="item in section.items" :key="item.businessId" class="item-row">
         <view class="item-main">
           <view class="item-title">{{ item.title }}</view>
           <view class="item-desc">{{ item.description }}</view>
-          <view v-if="item.note" class="pending-badge">{{ item.note }}</view>
+          <view v-if="item.note" :class="['fee-status-badge', item.payable ? 'pending-badge' : 'paid-badge']">{{ item.note }}</view>
         </view>
         <view class="item-actions">
           <view class="amount">¥{{ amountText(item.amount) }}</view>
           <view class="insurance-price">医保参考 ¥{{ amountText(item.insuranceAmount) }}</view>
-          <button class="button mini-pay" @tap="openPaymentDialog(item)">去缴费</button>
+          <button v-if="item.payable" class="button mini-pay" @tap="openPaymentDialog(item)">去缴费</button>
         </view>
       </view>
     </view>
 
-    <view v-if="checkItems.length" class="card fee-card fee-check">
-      <view class="section-head">
-        <view class="section-icon check-icon">查</view>
-        <view class="section-title">检查费</view>
-        <view class="section-count">{{ checkItems.length }} 项</view>
-      </view>
-      <view v-for="item in checkItems" :key="item.businessId" class="item-row">
-        <view class="item-main">
-          <view class="item-title">{{ item.title }}</view>
-          <view class="item-desc">{{ item.description }}</view>
-          <view v-if="item.note" class="pending-badge">{{ item.note }}</view>
-        </view>
-        <view class="item-actions">
-          <view class="amount">¥{{ amountText(item.amount) }}</view>
-          <view class="insurance-price">医保参考 ¥{{ amountText(item.insuranceAmount) }}</view>
-          <button class="button mini-pay" @tap="openPaymentDialog(item)">去缴费</button>
-        </view>
-      </view>
-    </view>
-
-    <view v-if="labItems.length" class="card fee-card fee-lab">
-      <view class="section-head">
-        <view class="section-icon lab-icon">检</view>
-        <view class="section-title">检验费</view>
-        <view class="section-count">{{ labItems.length }} 项</view>
-      </view>
-      <view v-for="item in labItems" :key="item.businessId" class="item-row">
-        <view class="item-main">
-          <view class="item-title">{{ item.title }}</view>
-          <view class="item-desc">{{ item.description }}</view>
-          <view v-if="item.note" class="pending-badge">{{ item.note }}</view>
-        </view>
-        <view class="item-actions">
-          <view class="amount">¥{{ amountText(item.amount) }}</view>
-          <view class="insurance-price">医保参考 ¥{{ amountText(item.insuranceAmount) }}</view>
-          <button class="button mini-pay" @tap="openPaymentDialog(item)">去缴费</button>
-        </view>
-      </view>
-    </view>
-
-    <view v-if="disposalItems.length" class="card fee-card fee-disposal">
-      <view class="section-head">
-        <view class="section-icon disposal-icon">处</view>
-        <view class="section-title">处置费</view>
-        <view class="section-count">{{ disposalItems.length }} 项</view>
-      </view>
-      <view v-for="item in disposalItems" :key="item.businessId" class="item-row">
-        <view class="item-main">
-          <view class="item-title">{{ item.title }}</view>
-          <view class="item-desc">{{ item.description }}</view>
-          <view v-if="item.note" class="pending-badge">{{ item.note }}</view>
-        </view>
-        <view class="item-actions">
-          <view class="amount">¥{{ amountText(item.amount) }}</view>
-          <view class="insurance-price">医保参考 ¥{{ amountText(item.insuranceAmount) }}</view>
-          <button class="button mini-pay" @tap="openPaymentDialog(item)">去缴费</button>
-        </view>
-      </view>
-    </view>
-
-    <view v-if="prescriptionItems.length" class="card fee-card fee-drug">
-      <view class="section-head">
-        <view class="section-icon drug-icon">药</view>
-        <view class="section-title">药费</view>
-        <view class="section-count">{{ prescriptionItems.length }} 项</view>
-      </view>
-      <view v-for="item in prescriptionItems" :key="item.businessId" class="item-row">
-        <view class="item-main">
-          <view class="item-title">{{ item.title }}</view>
-          <view class="item-desc">{{ item.description }}</view>
-          <view v-if="item.note" class="pending-badge">{{ item.note }}</view>
-        </view>
-        <view class="item-actions">
-          <view class="amount">¥{{ amountText(item.amount) }}</view>
-          <view class="insurance-price">医保参考 ¥{{ amountText(item.insuranceAmount) }}</view>
-          <button class="button mini-pay" @tap="openPaymentDialog(item)">去缴费</button>
-        </view>
-      </view>
-    </view>
-
-    <view v-if="!totalCount" class="card muted">暂无待缴费项目</view>
+    <view v-if="!activeTabCount" class="card muted">{{ activePaymentTab === 'paid' ? '暂无已缴费项目' : '暂无未缴费项目' }}</view>
     </view>
 
     <view v-if="paymentDialogVisible && selectedPaymentItem" class="payment-mask">
@@ -288,6 +225,7 @@ interface PendingItem {
   title: string;
   description: string;
   note?: string;
+  payable: boolean;
   amount: number;
   insuranceAmount: number;
   sortTime: string;
@@ -304,10 +242,12 @@ const recordMedicalOrders = ref<MedicalOrder[]>([]);
 const recordPrescriptions = ref<Prescription[]>([]);
 const loadWarning = ref('');
 const mode = ref<'pending' | 'record'>('pending');
+const activePaymentTab = ref<'unpaid' | 'paid'>('unpaid');
 const paymentDialogVisible = ref(false);
 const selectedPaymentItem = ref<PendingItem | null>(null);
 const dialogPaymentMethod = ref<'WECHAT' | 'MEDICAL_INSURANCE'>('WECHAT');
 const registeredAppointmentStatuses = new Set(['WAITING', 'CALLED', 'IN_VISIT', 'REVISIT_WAITING']);
+let paymentTouchStartX = 0;
 
 const checkItems = computed(() => medicalOrderItems.value.filter((item) => item.feeType === 'CHECK'));
 const labItems = computed(() => medicalOrderItems.value.filter((item) => item.feeType === 'LAB'));
@@ -315,16 +255,25 @@ const disposalItems = computed(() => medicalOrderItems.value.filter((item) => it
 const recordAppointmentMap = computed(() => new Map(recordAppointments.value.map((item) => [item.id, item])));
 const recordMedicalOrderMap = computed(() => new Map(recordMedicalOrders.value.map((item) => [item.id, item])));
 const recordPrescriptionMap = computed(() => new Map(recordPrescriptions.value.map((item) => [item.id, item])));
+const allPaymentItems = computed(() => [...registrationItems.value, ...medicalOrderItems.value, ...prescriptionItems.value]);
+const pendingPaymentItems = computed(() => allPaymentItems.value.filter((item) => item.payable));
+const paidPaymentItems = computed(() => allPaymentItems.value.filter((item) => !item.payable));
+const activePaymentItems = computed(() => activePaymentTab.value === 'paid' ? paidPaymentItems.value : pendingPaymentItems.value);
 
 const totalAmount = computed(() =>
-  [...registrationItems.value, ...medicalOrderItems.value, ...prescriptionItems.value]
+  pendingPaymentItems.value
     .reduce((sum, item) => sum + Number(item.amount ?? 0), 0)
 );
 const totalInsuranceAmount = computed(() =>
-  [...registrationItems.value, ...medicalOrderItems.value, ...prescriptionItems.value]
+  pendingPaymentItems.value
     .reduce((sum, item) => sum + Number(item.insuranceAmount ?? 0), 0)
 );
 const totalCount = computed(() => registrationItems.value.length + medicalOrderItems.value.length + prescriptionItems.value.length);
+const pendingCount = computed(() => pendingPaymentItems.value.length);
+const paidCount = computed(() => paidPaymentItems.value.length);
+const activeTabAmount = computed(() => activePaymentItems.value.reduce((sum, item) => sum + Number(item.amount ?? 0), 0));
+const activeTabInsuranceAmount = computed(() => activePaymentItems.value.reduce((sum, item) => sum + Number(item.insuranceAmount ?? 0), 0));
+const activeTabCount = computed(() => activePaymentItems.value.length);
 const insuranceBound = computed(() => auth.isMedicalInsuranceBound(auth.boundPatient?.id));
 const dialogPayAmount = computed(() => {
   if (!selectedPaymentItem.value) return 0;
@@ -345,12 +294,59 @@ const sortedFinancialRecords = computed(() =>
 );
 
 const categorySummaries = computed(() => [
-  summarizeCategory('registration', '挂号费', registrationItems.value),
-  summarizeCategory('check', '检查费', checkItems.value),
-  summarizeCategory('lab', '检验费', labItems.value),
-  summarizeCategory('disposal', '处置费', disposalItems.value),
-  summarizeCategory('drug', '药费', prescriptionItems.value)
+  summarizeCategory('registration', '挂号费', activeSectionItems(registrationItems.value)),
+  summarizeCategory('check', '检查费', activeSectionItems(checkItems.value)),
+  summarizeCategory('lab', '检验费', activeSectionItems(labItems.value)),
+  summarizeCategory('disposal', '处置费', activeSectionItems(disposalItems.value)),
+  summarizeCategory('drug', '药费', activeSectionItems(prescriptionItems.value))
 ]);
+
+const activeCategorySections = computed(() => [
+  {
+    key: 'registration',
+    label: '挂号费',
+    icon: '号',
+    iconClass: 'reg-icon',
+    cardClass: 'fee-registration',
+    items: activeSectionItems(registrationItems.value)
+  },
+  {
+    key: 'check',
+    label: '检查费',
+    icon: '查',
+    iconClass: 'check-icon',
+    cardClass: 'fee-check',
+    items: activeSectionItems(checkItems.value)
+  },
+  {
+    key: 'lab',
+    label: '检验费',
+    icon: '检',
+    iconClass: 'lab-icon',
+    cardClass: 'fee-lab',
+    items: activeSectionItems(labItems.value)
+  },
+  {
+    key: 'disposal',
+    label: '处置费',
+    icon: '处',
+    iconClass: 'disposal-icon',
+    cardClass: 'fee-disposal',
+    items: activeSectionItems(disposalItems.value)
+  },
+  {
+    key: 'drug',
+    label: '药费',
+    icon: '药',
+    iconClass: 'drug-icon',
+    cardClass: 'fee-drug',
+    items: activeSectionItems(prescriptionItems.value)
+  }
+].filter((section) => section.items.length > 0));
+
+function activeSectionItems(items: PendingItem[]) {
+  return items.filter((item) => activePaymentTab.value === 'paid' ? !item.payable : item.payable);
+}
 
 function summarizeCategory(key: string, label: string, items: PendingItem[]) {
   return {
@@ -543,6 +539,46 @@ function paymentRecordStatusRank(item: FinancialRecord) {
   return isPendingFinancialRecord(item) ? 0 : 1;
 }
 
+function isPayableAppointment(item: Appointment) {
+  return item.paymentStatus === 'UNPAID' || item.paymentStatus === 'FAILED';
+}
+
+function isVisibleAppointmentPayment(item: Appointment) {
+  return isPayableAppointment(item) || item.paymentStatus === 'PAID';
+}
+
+function isPayableMedicalOrder(item: MedicalOrder) {
+  return item.paymentStatus === 'UNPAID';
+}
+
+function isVisibleMedicalOrderPayment(item: MedicalOrder) {
+  return isPayableMedicalOrder(item) || item.paymentStatus === 'PAID';
+}
+
+function isPayablePrescription(item: Prescription) {
+  return item.status === 'PENDING_PAYMENT' || item.status === 'CONFIRMED';
+}
+
+function isVisiblePrescriptionPayment(item: Prescription) {
+  return isPayablePrescription(item) || ['PAID', 'WAITING_DISPENSE', 'DISPENSED'].includes(item.status);
+}
+
+function feePaymentNote(payable: boolean) {
+  return payable ? '待缴费' : '已缴费';
+}
+
+function feeStatusRank(item: PendingItem) {
+  return item.payable ? 0 : 1;
+}
+
+function sortFeeItems(left: PendingItem, right: PendingItem) {
+  const statusDiff = feeStatusRank(left) - feeStatusRank(right);
+  if (statusDiff !== 0) {
+    return statusDiff;
+  }
+  return right.sortTime.localeCompare(left.sortTime);
+}
+
 function pendingAppointmentSortTime(item: Appointment) {
   const startTime = normalizeStartTime(item.startTime) || '00:00';
   return item.visitDate ? `${item.visitDate}T${startTime}:00` : item.createdAt || '';
@@ -566,9 +602,21 @@ function openPendingPayment(item: FinancialRecord) {
   uni.navigateTo({ url: '/pages/pending-payments/index' });
 }
 
+function onPaymentTouchStart(event: TouchEvent) {
+  paymentTouchStartX = event.changedTouches?.[0]?.clientX ?? 0;
+}
+
+function onPaymentTouchEnd(event: TouchEvent) {
+  const endX = event.changedTouches?.[0]?.clientX ?? paymentTouchStartX;
+  const deltaX = endX - paymentTouchStartX;
+  if (Math.abs(deltaX) < 60) return;
+  activePaymentTab.value = deltaX < 0 ? 'paid' : 'unpaid';
+}
+
 onLoad((options) => {
   mode.value = options?.mode === 'record' ? 'record' : 'pending';
-  uni.setNavigationBarTitle({ title: mode.value === 'record' ? '缴费退费记录' : '待缴费项目' });
+  activePaymentTab.value = 'unpaid';
+  uni.setNavigationBarTitle({ title: mode.value === 'record' ? '缴费退费记录' : '门诊缴费' });
 });
 
 function appointmentStatusLabel(item: Appointment) {
@@ -663,10 +711,10 @@ async function load() {
   }
   const warnings: string[] = [];
   const [appointmentsResult, paymentsResult, medicalOrdersResult, prescriptionsResult] = await Promise.allSettled([
-    request<Appointment[]>({ url: `/appointments?status=PENDING_PAYMENT&${patientQuery}`, method: 'GET' }),
-    request<PaymentOrder[]>({ url: `/payments?businessType=APPOINTMENT&status=PENDING&${patientQuery}`, method: 'GET' }),
-    request<MedicalOrder[]>({ url: `/medical-orders?status=PENDING_PAYMENT&${patientQuery}&view=OUTPATIENT_PAYMENT`, method: 'GET' }),
-    request<Prescription[]>({ url: `/prescriptions?${patientQuery}&view=OUTPATIENT_PAYMENT`, method: 'GET' })
+    request<Appointment[]>({ url: `/appointments?${patientQuery}`, method: 'GET' }),
+    request<PaymentOrder[]>({ url: `/payments?businessType=APPOINTMENT&${patientQuery}`, method: 'GET' }),
+    request<MedicalOrder[]>({ url: `/medical-orders?${patientQuery}&view=PAYMENT_RECORD`, method: 'GET' }),
+    request<Prescription[]>({ url: `/prescriptions?${patientQuery}&view=PAYMENT_RECORD`, method: 'GET' })
   ]);
 
   const appointments = unwrapResult(appointmentsResult, [], '挂号费');
@@ -681,52 +729,65 @@ async function load() {
   const paymentByBusinessId = new Map(payments.map((item) => [item.businessId, item]));
 
   registrationItems.value = appointments
-    .filter((item) => item.paymentStatus === 'UNPAID' || item.paymentStatus === 'FAILED')
-    .map((item) => ({
+    .filter(isVisibleAppointmentPayment)
+    .map((item) => {
+      const payable = isPayableAppointment(item);
+      const amount = paymentByBusinessId.get(item.id)?.amount ?? 0.01;
+      return {
       businessType: 'APPOINTMENT' as const,
       businessId: item.id,
       feeType: 'REGISTRATION' as const,
       title: `${item.departmentName} · ${item.doctorName}`,
       description: `${item.visitDate} ${item.period}`,
-      note: `待缴费`,
-      amount: paymentByBusinessId.get(item.id)?.amount ?? 0.01,
+      note: feePaymentNote(payable),
+      payable,
+      amount,
       insuranceAmount: insuranceAmount({
         feeType: 'REGISTRATION',
-        amount: paymentByBusinessId.get(item.id)?.amount ?? 0.01
+        amount
       }),
       sortTime: pendingAppointmentSortTime(item)
-    }))
-    .sort((left, right) => right.sortTime.localeCompare(left.sortTime));
+    };
+    })
+    .sort(sortFeeItems);
 
   medicalOrderItems.value = medicalOrders
-    .filter((item) => item.paymentStatus === 'UNPAID')
-    .map((item) => ({
+    .filter(isVisibleMedicalOrderPayment)
+    .map((item) => {
+      const payable = isPayableMedicalOrder(item);
+      return {
       businessType: 'MEDICAL_ORDER' as const,
       businessId: item.id,
       feeType: item.orderType,
       title: item.itemName,
       description: `${orderTypeLabel(item.orderType)} · ${urgencyLabel(item.urgency)}`,
-      note: `待缴费`,
+      note: feePaymentNote(payable),
+      payable,
       amount: item.amount,
       insuranceAmount: insuranceAmount({ feeType: item.orderType, amount: item.amount }),
       sortTime: item.createdAt || ''
-    }))
-    .sort((left, right) => right.sortTime.localeCompare(left.sortTime));
+    };
+    })
+    .sort(sortFeeItems);
 
   prescriptionItems.value = prescriptions
-    .filter((item) => item.status === 'PENDING_PAYMENT' || item.status === 'CONFIRMED')
-    .map((item) => ({
+    .filter(isVisiblePrescriptionPayment)
+    .map((item) => {
+      const payable = isPayablePrescription(item);
+      return {
       businessType: 'PRESCRIPTION' as const,
       businessId: item.id,
       feeType: 'DRUG' as const,
       title: '药费',
       description: item.diagnosis || '待医生确认诊断',
-      note: `待缴费`,
+      note: feePaymentNote(payable),
+      payable,
       amount: item.totalAmount,
       insuranceAmount: insuranceAmount({ feeType: 'DRUG', amount: item.totalAmount }),
       sortTime: item.confirmedAt || item.createdAt || ''
-    }))
-    .sort((left, right) => right.sortTime.localeCompare(left.sortTime));
+    };
+    })
+    .sort(sortFeeItems);
 
   function unwrapResult<T>(result: PromiseSettledResult<T>, fallback: T, label: string): T {
     if (result.status === 'fulfilled') {
@@ -795,6 +856,44 @@ onShow(load);
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 20rpx;
   margin-bottom: 20rpx;
+}
+
+.payment-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8rpx;
+  margin-bottom: 20rpx;
+  padding: 8rpx;
+  border: 1px solid #cdeff0;
+  border-radius: 18rpx;
+  background: rgba(255, 255, 255, 0.76);
+  box-shadow: 0 8rpx 22rpx rgba(80, 100, 95, 0.06);
+}
+
+.payment-tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10rpx;
+  min-width: 0;
+  height: 72rpx;
+  border-radius: 14rpx;
+  color: #64748b;
+  font-size: 28rpx;
+  font-weight: 700;
+}
+
+.payment-tab.active {
+  background: linear-gradient(135deg, #0cbdcc 0%, #0899a5 100%);
+  color: #fff;
+  box-shadow: 0 8rpx 18rpx rgba(8, 153, 165, 0.22);
+}
+
+.payment-tab em {
+  font-style: normal;
+  font-size: 22rpx;
+  font-weight: 700;
+  opacity: 0.86;
 }
 
 .warning-card {
@@ -1009,19 +1108,27 @@ onShow(load);
 .fee-disposal { border-left-color: #D06050; }
 .fee-drug { border-left-color: #3DA878; }
 
-.pending-badge {
+.fee-status-badge {
   display: inline-block;
   align-self: flex-start;
   margin-top: 6rpx;
   padding: 4rpx 18rpx;
   border-radius: 999rpx;
-  background: linear-gradient(135deg, #FF6B6B 0%, #EE5A24 100%);
-  color: #fff;
   font-size: 22rpx;
   font-weight: 600;
   line-height: 1.6;
+}
+
+.pending-badge {
+  background: linear-gradient(135deg, #FF6B6B 0%, #EE5A24 100%);
+  color: #fff;
   box-shadow: 0 4rpx 12rpx rgba(238, 90, 36, 0.35);
   animation: badge-pulse 2s ease-in-out infinite;
+}
+
+.paid-badge {
+  background: #dcfce7;
+  color: #166534;
 }
 
 @keyframes badge-pulse {

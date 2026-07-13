@@ -16,6 +16,10 @@ export interface PaymentOrder {
   createdAt?: string;
   paymentScene?: string;
   channelTradeNo?: string;
+  patientName?: string;
+  idNumber?: string;
+  itemTitle?: string;
+  assignedLocation?: string;
 }
 
 export interface RefundOrder {

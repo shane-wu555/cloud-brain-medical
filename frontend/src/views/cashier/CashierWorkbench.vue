@@ -414,10 +414,8 @@
             </el-table-column>
             <el-table-column label="分配诊室" min-width="160">
               <template #default="{ row }">
-                <template v-if="row.businessType === 'MEDICAL_ORDER'">
-                  <span v-if="medicalOrderExecutor(row.businessId)">{{ medicalOrderExecutor(row.businessId) }}</span>
-                  <span v-else class="muted-cell">—</span>
-                </template>
+                <span v-if="paymentRecordAssignedLocation(row)">{{ paymentRecordAssignedLocation(row) }}</span>
+                <span v-else class="muted-cell">—</span>
               </template>
             </el-table-column>
             <el-table-column label="时间" min-width="170">
@@ -782,6 +780,9 @@ const prescriptions = ref<Prescription[]>([]);
 const drugReturns = ref<DrugReturnOrder[]>([]);
 const refundingReturnId = ref('');
 const paymentRecords = ref<PaymentOrder[]>([]);
+const paymentRecordAppointments = ref<Appointment[]>([]);
+const paymentRecordMedicalOrders = ref<MedicalOrder[]>([]);
+const paymentRecordPrescriptions = ref<Prescription[]>([]);
 const patientProfiles = ref<PatientProfile[]>([]);
 const refundingAppointmentId = ref('');
 
@@ -988,6 +989,9 @@ const canRegister = computed(() => Boolean(canConfirmPatient.value && selectedSc
 const appointmentMap = computed(() => new Map(appointments.value.map(item => [item.id, item])));
 const medicalOrderMap = computed(() => new Map(medicalOrders.value.map(item => [item.id, item])));
 const prescriptionMap = computed(() => new Map(prescriptions.value.map(item => [item.id, item])));
+const paymentRecordAppointmentMap = computed(() => new Map(paymentRecordAppointments.value.map(item => [item.id, item])));
+const paymentRecordMedicalOrderMap = computed(() => new Map(paymentRecordMedicalOrders.value.map(item => [item.id, item])));
+const paymentRecordPrescriptionMap = computed(() => new Map(paymentRecordPrescriptions.value.map(item => [item.id, item])));
 const pendingPaymentMap = computed(() => {
   const map = new Map<string, PaymentOrder>();
   paymentRecords.value
@@ -1276,9 +1280,9 @@ async function loadPaymentRecordsPage() {
       getMedicalOrders({ patientId }),
       getPayments(paymentParams)
     ]);
-    appointments.value = unwrap(appointmentsResult, [], '挂号记录');
-    prescriptions.value = unwrap(prescriptionsResult, [], '处方');
-    medicalOrders.value = unwrap(medicalOrdersResult, [], '检查检验处置医嘱');
+    paymentRecordAppointments.value = unwrap(appointmentsResult, [], '挂号记录');
+    paymentRecordPrescriptions.value = unwrap(prescriptionsResult, [], '处方');
+    paymentRecordMedicalOrders.value = unwrap(medicalOrdersResult, [], '检查检验处置医嘱');
     paymentRecords.value = unwrap(paymentsResult, [], '缴费记录');
     await syncPatientProfiles();
   } finally {
@@ -1298,6 +1302,7 @@ async function loadDrugReturnRefundPage() {
 }
 
 async function refreshWorkbenchAlerts() {
+  const shouldReplaceBusinessLists = currentPage.value === 'payments';
   const [appointmentsResult, prescriptionsResult, medicalOrdersResult, drugReturnsResult] = await Promise.allSettled([
     getAppointments({ status: 'PENDING_PAYMENT', includeRoom: false }),
     getPrescriptions({ view: 'OUTPATIENT_PAYMENT' }),
@@ -1306,21 +1311,21 @@ async function refreshWorkbenchAlerts() {
   ]);
 
   if (appointmentsResult.status === 'fulfilled') {
-    appointments.value = appointmentsResult.value;
+    if (shouldReplaceBusinessLists) appointments.value = appointmentsResult.value;
   } else if (isUnauthorized(appointmentsResult.reason)) {
     redirectToLogin();
     return;
   }
 
   if (prescriptionsResult.status === 'fulfilled') {
-    prescriptions.value = prescriptionsResult.value;
+    if (shouldReplaceBusinessLists) prescriptions.value = prescriptionsResult.value;
   } else if (isUnauthorized(prescriptionsResult.reason)) {
     redirectToLogin();
     return;
   }
 
   if (medicalOrdersResult.status === 'fulfilled') {
-    medicalOrders.value = medicalOrdersResult.value;
+    if (shouldReplaceBusinessLists) medicalOrders.value = medicalOrdersResult.value;
   } else if (isUnauthorized(medicalOrdersResult.reason)) {
     redirectToLogin();
     return;
@@ -1337,6 +1342,9 @@ async function syncPatientProfiles() {
   const patientIds = [
     ...new Set([
       ...appointments.value.map(item => item.patientId),
+      ...paymentRecordAppointments.value.map(item => item.patientId),
+      ...paymentRecordMedicalOrders.value.map(item => item.patientId),
+      ...paymentRecordPrescriptions.value.map(item => item.patientId),
       ...paymentRecords.value.map(item => item.patientId)
     ].filter(Boolean))
   ];
@@ -2195,15 +2203,36 @@ function medicalOrderExecutor(businessId: string) {
   return order.roomLocation ? `${order.roomName} · ${order.roomLocation}` : order.roomName;
 }
 
-function paymentRecordTitle(item: PaymentOrder) {
+function paymentRecordMedicalOrderExecutor(businessId: string) {
+  const order = paymentRecordMedicalOrderMap.value.get(businessId);
+  if (!order?.roomName) return '';
+  return order.roomLocation ? `${order.roomName} · ${order.roomLocation}` : order.roomName;
+}
+
+function paymentRecordAssignedLocation(item: PaymentOrder) {
+  if (item.assignedLocation) return item.assignedLocation;
+  if (item.businessType === 'MEDICAL_ORDER') {
+    return paymentRecordMedicalOrderExecutor(item.businessId);
+  }
   if (item.businessType === 'APPOINTMENT') {
-    const appointment = appointmentMap.value.get(item.businessId);
+    const appointment = paymentRecordAppointmentMap.value.get(item.businessId);
+    if (!appointment) return '';
+    const roomName = appointmentRoomName(appointment);
+    return roomName && roomName !== '-' ? roomName : appointment.departmentName;
+  }
+  return '药房';
+}
+
+function paymentRecordTitle(item: PaymentOrder) {
+  if (item.itemTitle) return item.itemTitle;
+  if (item.businessType === 'APPOINTMENT') {
+    const appointment = paymentRecordAppointmentMap.value.get(item.businessId);
     return appointment ? `${appointment.departmentName} · ${appointment.doctorName}` : '挂号费';
   }
   if (item.businessType === 'MEDICAL_ORDER') {
-    return medicalOrderMap.value.get(item.businessId)?.itemName ?? '医技费用';
+    return paymentRecordMedicalOrderMap.value.get(item.businessId)?.itemName ?? '医技费用';
   }
-  return prescriptionMap.value.get(item.businessId)?.prescriptionNo ?? '处方药费';
+  return '处方药费';
 }
 
 function paymentProofNumber(item: PaymentOrder) {
@@ -2221,22 +2250,22 @@ function paymentProofDate(item: PaymentOrder) {
 
 function paymentProofSpec(item: PaymentOrder) {
   if (item.businessType === 'APPOINTMENT') return '门诊挂号';
-  if (item.businessType === 'MEDICAL_ORDER') return medicalOrderMap.value.get(item.businessId)?.orderType ?? '医技项目';
+  if (item.businessType === 'MEDICAL_ORDER') return paymentRecordMedicalOrderMap.value.get(item.businessId)?.orderType ?? '医技项目';
   return '门诊处方';
 }
 
 function paymentProofRemark(item: PaymentOrder) {
   if (item.businessType === 'APPOINTMENT') {
-    const appointment = appointmentMap.value.get(item.businessId);
+    const appointment = paymentRecordAppointmentMap.value.get(item.businessId);
     if (!appointment) return `业务编号：${item.businessId}`;
     return `挂号单号：${appointment.businessNo}；就诊时间：${appointment.visitDate} ${normalizeStartTime(appointment.startTime) || appointment.period}；队列号：${appointment.queueNumber}`;
   }
   if (item.businessType === 'MEDICAL_ORDER') {
-    const order = medicalOrderMap.value.get(item.businessId);
-    const executor = medicalOrderExecutor(item.businessId);
+    const order = paymentRecordMedicalOrderMap.value.get(item.businessId);
+    const executor = paymentRecordMedicalOrderExecutor(item.businessId);
     return `医嘱编号：${item.businessId}${order?.bodyPart ? `；部位：${order.bodyPart}` : ''}${executor ? `；执行科室：${executor}` : ''}`;
   }
-  const prescription = prescriptionMap.value.get(item.businessId);
+  const prescription = paymentRecordPrescriptionMap.value.get(item.businessId);
   return `处方编号：${prescription?.prescriptionNo || item.businessId}`;
 }
 
@@ -2283,12 +2312,15 @@ function amountToChinese(value: number) {
 }
 
 function paymentRecordPatientName(item: PaymentOrder) {
-  if (item.businessType === 'APPOINTMENT') return appointmentMap.value.get(item.businessId)?.patientName ?? '-';
-  if (item.businessType === 'MEDICAL_ORDER') return medicalOrderMap.value.get(item.businessId)?.patientName ?? '-';
-  return prescriptionMap.value.get(item.businessId)?.patientName ?? '-';
+  if (item.patientName) return item.patientName;
+  const profileName = patientProfileMap.value.get(item.patientId)?.name;
+  if (item.businessType === 'APPOINTMENT') return paymentRecordAppointmentMap.value.get(item.businessId)?.patientName ?? profileName ?? '-';
+  if (item.businessType === 'MEDICAL_ORDER') return paymentRecordMedicalOrderMap.value.get(item.businessId)?.patientName ?? profileName ?? '-';
+  return paymentRecordPrescriptionMap.value.get(item.businessId)?.patientName ?? profileName ?? '-';
 }
 
 function paymentRecordIdNumber(item: PaymentOrder) {
+  if (item.idNumber) return item.idNumber;
   return patientProfileMap.value.get(item.patientId)?.idNumber || '-';
 }
 
