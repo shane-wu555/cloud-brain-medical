@@ -152,7 +152,7 @@
                     <template v-else-if="volume">
                       <div class="ct-image-stage" :style="axialImageStageStyle">
                       <canvas ref="canvasAxial" class="ct-panel__canvas"></canvas>
-                      <div v-if="showImageAiOverlay" class="ct-ai-overlay">
+                      <div v-if="showImageAiOverlay" class="ct-ai-overlay ct-ai-overlay--normal">
                         <button
                           v-for="item in imageAiFindings"
                           :key="item.id"
@@ -191,7 +191,7 @@
                     <template v-else-if="imagePreviewUrl">
                       <div class="ct-image-stage" :style="axialImageStageStyle">
                       <img :src="imagePreviewUrl" class="ct-panel__img" alt="轴位" />
-                      <div v-if="showImageAiOverlay" class="ct-ai-overlay">
+                      <div v-if="showImageAiOverlay" class="ct-ai-overlay ct-ai-overlay--normal">
                         <button
                           v-for="item in imageAiFindings"
                           :key="item.id"
@@ -278,6 +278,20 @@
                     <button v-if="volume" class="ct-zoom-btn" type="button" @click.stop="openCtZoom('coronal')">放大</button>
                     <template v-if="volume">
                       <canvas ref="canvasCoronal" class="ct-panel__canvas"></canvas>
+                      <div v-if="showMprAiOverlay" class="ct-ai-overlay ct-ai-overlay--normal">
+                        <button
+                          v-for="item in imageAiFindings"
+                          :key="`coronal-${item.id}`"
+                          :class="['ct-ai-marker', `ct-ai-marker--${item.tone}`]"
+                          type="button"
+                          :title="item.label"
+                          :aria-label="item.label"
+                          :style="coronalAiMarkerStyle(item)"
+                          @click.stop="focusAiFinding(item)"
+                        >
+                          <span class="ct-ai-marker__dot"></span>
+                        </button>
+                      </div>
                       <div class="ct-line ct-line--h"></div>
                       <div class="ct-line ct-line--v"></div>
                       <span class="ct-orient ct-orient--ml">R</span>
@@ -305,6 +319,20 @@
                     <button v-if="volume" class="ct-zoom-btn" type="button" @click.stop="openCtZoom('sagittal')">放大</button>
                     <template v-if="volume">
                       <canvas ref="canvasSagittal" class="ct-panel__canvas"></canvas>
+                      <div v-if="showMprAiOverlay" class="ct-ai-overlay ct-ai-overlay--normal">
+                        <button
+                          v-for="item in imageAiFindings"
+                          :key="`sagittal-${item.id}`"
+                          :class="['ct-ai-marker', `ct-ai-marker--${item.tone}`]"
+                          type="button"
+                          :title="item.label"
+                          :aria-label="item.label"
+                          :style="sagittalAiMarkerStyle(item)"
+                          @click.stop="focusAiFinding(item)"
+                        >
+                          <span class="ct-ai-marker__dot"></span>
+                        </button>
+                      </div>
                       <div class="ct-line ct-line--h"></div>
                       <div class="ct-line ct-line--v"></div>
                       <span class="ct-orient ct-orient--ml">A</span>
@@ -333,70 +361,66 @@
                       <span v-if="ctZoomSliceText">{{ ctZoomSliceText }}</span>
                       <button type="button" @click="closeCtZoom">✕</button>
                     </div>
-                    <div v-if="volume" class="ct-zoom-grid">
-                      <div class="ct-zoom-cell" @wheel.prevent="onWheelPanel('axial', $event)">
-                        <span class="ct-panel__lbl">【轴位 Axial】</span>
-                        <span class="ct-panel__slice">切片: {{ sliceZ + 1 }} / {{ volume.nz }}</span>
-                        <div class="ct-zoom-image-stage" :style="axialImageStageStyle">
-                          <canvas ref="canvasZoomAxial" class="ct-zoom__canvas"></canvas>
-                          <div v-if="showImageAiOverlay" class="ct-ai-overlay ct-ai-overlay--zoom">
-                            <button
-                              v-for="item in imageAiFindings"
-                              :key="`zoom-${item.id}`"
-                              :class="['ct-ai-marker', `ct-ai-marker--${item.tone}`]"
-                              type="button"
-                              :title="item.label"
-                              :aria-label="item.label"
-                              :style="{ left: item.x, top: item.y }"
-                              @click.stop="focusAiFinding(item)"
-                            >
-                              <span class="ct-ai-marker__dot"></span>
-                            </button>
-                            <button
-                              v-for="item in imageAiFindings"
-                              :key="`zoom-${item.id}-label`"
-                              :class="['ct-ai-label', `ct-ai-label--${item.tone}`, `ct-ai-label--${aiFindingSide(item)}`]"
-                              type="button"
-                              :style="{ top: item.y }"
-                              @click.stop="focusAiFinding(item)"
-                            >
-                              <span>{{ item.label }}</span>
-                            </button>
-                          </div>
+                    <div
+                      v-if="volume && ctZoomView !== '3d'"
+                      class="ct-zoom__stage ct-zoom__stage--mpr"
+                      @wheel.prevent="onZoomMprWheel"
+                    >
+                      <span class="ct-panel__lbl">{{ ctZoomPanelLabel }}</span>
+                      <span class="ct-panel__slice">{{ ctZoomSliceText }}</span>
+                      <div v-if="ctZoomView === 'axial'" class="ct-zoom-image-stage" :style="axialImageStageStyle">
+                        <canvas ref="canvasZoom" class="ct-zoom__canvas"></canvas>
+                        <div v-if="showZoomAiOverlay" class="ct-ai-overlay ct-ai-overlay--zoom">
+                          <button
+                            v-for="item in imageAiFindings"
+                            :key="`zoom-${item.id}`"
+                            :class="['ct-ai-marker', `ct-ai-marker--${item.tone}`]"
+                            type="button"
+                            :title="item.label"
+                            :aria-label="item.label"
+                            :style="{ left: item.x, top: item.y }"
+                            @click.stop="focusAiFinding(item)"
+                          >
+                            <span class="ct-ai-marker__dot"></span>
+                          </button>
+                          <button
+                            v-for="item in imageAiFindings"
+                            :key="`zoom-${item.id}-label`"
+                            :class="['ct-ai-label', `ct-ai-label--${item.tone}`, `ct-ai-label--${aiFindingSide(item)}`]"
+                            type="button"
+                            :style="{ top: item.y }"
+                            @click.stop="focusAiFinding(item)"
+                          >
+                            <span>{{ item.label }}</span>
+                          </button>
                         </div>
-                        <div class="ct-line ct-line--h"></div>
-                        <div class="ct-line ct-line--v"></div>
-                        <input class="ct-slider" type="range" :min="0" :max="volume.nz - 1" :value="sliceZ" @click.stop @input="onSliceSlider('axial', $event)" />
                       </div>
-                      <div
-                        class="ct-zoom-cell ct-zoom-cell--3d"
-                        @mousedown="on3DDown"
-                        @mousemove="on3DMove"
-                        @mouseup="on3DUp"
-                        @mouseleave="on3DUp"
-                      >
-                        <span class="ct-panel__lbl">【3D 重建】</span>
-                        <span class="ct-3d-hint">拖拽旋转</span>
-                        <canvas ref="canvasZoom3D" class="ct-zoom__canvas ct-zoom__canvas--3d"></canvas>
-                        <div class="ct-line ct-line--h"></div>
-                        <div class="ct-line ct-line--v"></div>
-                      </div>
-                      <div class="ct-zoom-cell" @wheel.prevent="onWheelPanel('coronal', $event)">
-                        <span class="ct-panel__lbl">【冠状 Coronal】</span>
-                        <span class="ct-panel__slice">切片: {{ sliceY + 1 }} / {{ volume.ny }}</span>
-                        <canvas ref="canvasZoomCoronal" class="ct-zoom__canvas"></canvas>
-                        <div class="ct-line ct-line--h"></div>
-                        <div class="ct-line ct-line--v"></div>
-                        <input class="ct-slider" type="range" :min="0" :max="volume.ny - 1" :value="sliceY" @click.stop @input="onSliceSlider('coronal', $event)" />
-                      </div>
-                      <div class="ct-zoom-cell" @wheel.prevent="onWheelPanel('sagittal', $event)">
-                        <span class="ct-panel__lbl">【矢状 Sagittal】</span>
-                        <span class="ct-panel__slice">切片: {{ sliceX + 1 }} / {{ volume.nx }}</span>
-                        <canvas ref="canvasZoomSagittal" class="ct-zoom__canvas"></canvas>
-                        <div class="ct-line ct-line--h"></div>
-                        <div class="ct-line ct-line--v"></div>
-                        <input class="ct-slider" type="range" :min="0" :max="volume.nx - 1" :value="sliceX" @click.stop @input="onSliceSlider('sagittal', $event)" />
-                      </div>
+                      <canvas v-else ref="canvasZoom" class="ct-zoom__canvas"></canvas>
+                      <div class="ct-line ct-line--h"></div>
+                      <div class="ct-line ct-line--v"></div>
+                      <input
+                        class="ct-slider"
+                        type="range"
+                        :min="0"
+                        :max="ctZoomSliceMax"
+                        :value="ctZoomSliceValue"
+                        @click.stop
+                        @input="onZoomSliceSlider"
+                      />
+                    </div>
+                    <div
+                      v-else-if="volume && ctZoomView === '3d'"
+                      class="ct-zoom__stage ct-zoom__stage--3d"
+                      @mousedown="on3DDown"
+                      @mousemove="on3DMove"
+                      @mouseup="on3DUp"
+                      @mouseleave="on3DUp"
+                    >
+                      <span class="ct-panel__lbl">【3D 重建】</span>
+                      <span class="ct-3d-hint">拖拽旋转</span>
+                      <canvas ref="canvasZoom3D" class="ct-zoom__canvas ct-zoom__canvas--3d"></canvas>
+                      <div class="ct-line ct-line--h"></div>
+                      <div class="ct-line ct-line--v"></div>
                     </div>
                     <div v-else class="ct-zoom__stage">
                       <div class="ct-zoom-image-stage" :style="axialImageStageStyle">
@@ -1073,6 +1097,7 @@ const imageAiFindings = computed<ImageAiFinding[]>(() => {
   return items;
 });
 const showImageAiOverlay = computed(() => imageAiFindings.value.length > 0 && (Boolean(volume.value) || Boolean(imagePreviewUrl.value)));
+const showMprAiOverlay = computed(() => imageAiFindings.value.length > 0 && Boolean(volume.value));
 const overlaySliceLabel = computed(() => volume.value ? `当前层 ${sliceZ.value + 1}/${volume.value.nz}` : '当前图像');
 const axialImageStageStyle = computed(() => ({
   aspectRatio: volume.value ? `${volume.value.nx} / ${volume.value.ny}` : '1 / 1',
@@ -1082,15 +1107,56 @@ function aiFindingSide(item: ImageAiFinding): 'left' | 'right' {
   return Number.parseFloat(item.x) < 50 ? 'left' : 'right';
 }
 
-const ctZoomTitle = computed(() => {
-  if (volume.value) return 'MPR/3D 放大视图';
-  if (ctZoomView.value === 'axial') return '轴位 Axial';
+function percentFromSlice(sliceIndex: number | undefined): string {
+  const vol = volume.value;
+  if (!vol || sliceIndex === undefined || vol.nz <= 1) return '50%';
+  return `${Math.max(4, Math.min(96, (sliceIndex / (vol.nz - 1)) * 100))}%`;
+}
+
+function coronalAiMarkerStyle(item: ImageAiFinding) {
+  return {
+    left: item.x,
+    top: percentFromSlice(item.sliceIndex),
+  };
+}
+
+function sagittalAiMarkerStyle(item: ImageAiFinding) {
+  return {
+    left: item.y,
+    top: percentFromSlice(item.sliceIndex),
+  };
+}
+
+const ctZoomTitle = computed(() => ctZoomPanelLabel.value.replace(/[【】]/g, ''));
+const ctZoomPanelLabel = computed(() => {
+  if (ctZoomView.value === 'axial') return '【轴位 Axial】';
+  if (ctZoomView.value === 'coronal') return '【冠状 Coronal】';
+  if (ctZoomView.value === 'sagittal') return '【矢状 Sagittal】';
+  if (ctZoomView.value === '3d') return '【3D 重建】';
   return '';
 });
 const ctZoomSliceText = computed(() => {
   const vol = volume.value;
   if (!vol) return ctZoomView.value === 'axial' && imagePreviewUrl.value ? '当前图像' : '';
-  return `轴位 ${sliceZ.value + 1}/${vol.nz} · 冠状 ${sliceY.value + 1}/${vol.ny} · 矢状 ${sliceX.value + 1}/${vol.nx}`;
+  if (ctZoomView.value === 'axial') return `切片 ${sliceZ.value + 1} / ${vol.nz}`;
+  if (ctZoomView.value === 'coronal') return `切片 ${sliceY.value + 1} / ${vol.ny}`;
+  if (ctZoomView.value === 'sagittal') return `切片 ${sliceX.value + 1} / ${vol.nx}`;
+  return '';
+});
+const showZoomAiOverlay = computed(() => ctZoomView.value === 'axial' && showImageAiOverlay.value);
+const ctZoomSliceMax = computed(() => {
+  const vol = volume.value;
+  if (!vol) return 0;
+  if (ctZoomView.value === 'axial') return vol.nz - 1;
+  if (ctZoomView.value === 'coronal') return vol.ny - 1;
+  if (ctZoomView.value === 'sagittal') return vol.nx - 1;
+  return 0;
+});
+const ctZoomSliceValue = computed(() => {
+  if (ctZoomView.value === 'axial') return sliceZ.value;
+  if (ctZoomView.value === 'coronal') return sliceY.value;
+  if (ctZoomView.value === 'sagittal') return sliceX.value;
+  return 0;
 });
 
 function isInteractiveCtTarget(target: EventTarget | null) {
@@ -1116,10 +1182,7 @@ function renderCtZoom() {
   const view = ctZoomView.value;
   const vol = volume.value;
   if (!view) return;
-  if (vol) {
-    if (canvasZoomAxial.value) renderAxial(canvasZoomAxial.value, vol, sliceZ.value, winC.value, winW.value);
-    if (canvasZoomCoronal.value) renderCoronal(canvasZoomCoronal.value, vol, sliceY.value, winC.value, winW.value);
-    if (canvasZoomSagittal.value) renderSagittal(canvasZoomSagittal.value, vol, sliceX.value, winC.value, winW.value);
+  if (vol && view === '3d') {
     if (!canvasZoom3D.value) return;
     try {
       canvasZoom3D.value.width = canvasZoom3D.value.clientWidth || 900;
@@ -1132,6 +1195,26 @@ function renderCtZoom() {
     }
     return;
   }
+  if (!vol || !canvasZoom.value) return;
+  if (view === 'axial') renderAxial(canvasZoom.value, vol, sliceZ.value, winC.value, winW.value);
+  else if (view === 'coronal') renderCoronal(canvasZoom.value, vol, sliceY.value, winC.value, winW.value);
+  else if (view === 'sagittal') renderSagittal(canvasZoom.value, vol, sliceX.value, winC.value, winW.value);
+}
+
+function zoomMprPlane(): 'axial' | 'coronal' | 'sagittal' | undefined {
+  return ctZoomView.value === 'axial' || ctZoomView.value === 'coronal' || ctZoomView.value === 'sagittal'
+    ? ctZoomView.value
+    : undefined;
+}
+
+function onZoomMprWheel(event: WheelEvent) {
+  const plane = zoomMprPlane();
+  if (plane) onWheelPanel(plane, event);
+}
+
+function onZoomSliceSlider(event: Event) {
+  const plane = zoomMprPlane();
+  if (plane) onSliceSlider(plane, event);
 }
 
 const hasPositiveMetalSegmentation = computed(() => Boolean(aiStructured.value.metalArtifactSegmentation?.enabled && aiStructured.value.metalArtifactSegmentation?.hasArtifactRegion));
@@ -1332,9 +1415,7 @@ const canvasAxial    = ref<HTMLCanvasElement>();
 const canvasCoronal  = ref<HTMLCanvasElement>();
 const canvasSagittal = ref<HTMLCanvasElement>();
 const canvas3D       = ref<HTMLCanvasElement>();
-const canvasZoomAxial = ref<HTMLCanvasElement>();
-const canvasZoomCoronal = ref<HTMLCanvasElement>();
-const canvasZoomSagittal = ref<HTMLCanvasElement>();
+const canvasZoom     = ref<HTMLCanvasElement>();
 const canvasZoom3D   = ref<HTMLCanvasElement>();
 type CtZoomView = 'axial' | 'coronal' | 'sagittal' | '3d';
 const ctZoomView = ref<CtZoomView | ''>('');
@@ -3178,6 +3259,20 @@ onUnmounted(() => {
 .ct-ai-marker--risk { color: #fda4af; }
 .ct-ai-marker--support { color: #bef264; }
 
+.ct-ai-overlay--normal .ct-ai-marker {
+  width: 18px;
+  height: 18px;
+}
+
+.ct-ai-overlay--normal .ct-ai-marker::before {
+  height: 24px;
+}
+
+.ct-ai-overlay--normal .ct-ai-marker__dot {
+  width: 9px;
+  height: 9px;
+}
+
 .ct-ai-label {
   position: absolute;
   z-index: 8;
@@ -3457,29 +3552,10 @@ onUnmounted(() => {
   overflow: hidden;
   background: #000;
 }
-.ct-zoom-grid {
-  flex: 1;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 1px;
-  background: #1f2937;
-}
-.ct-zoom-cell {
-  position: relative;
-  min-width: 0;
-  min-height: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  background: #000;
-}
-.ct-zoom-cell--3d {
+.ct-zoom__stage--3d {
   cursor: grab;
 }
-.ct-zoom-cell--3d:active {
+.ct-zoom__stage--3d:active {
   cursor: grabbing;
 }
 .ct-zoom__canvas,
@@ -3493,10 +3569,6 @@ onUnmounted(() => {
 }
 .ct-zoom__canvas {
   display: block;
-}
-.ct-zoom-cell > .ct-zoom__canvas {
-  max-width: 96%;
-  max-height: 92%;
 }
 .ct-zoom__canvas--3d {
   width: 100% !important;
