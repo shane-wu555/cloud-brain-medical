@@ -570,10 +570,10 @@
                 <div class="med-report__section">
                   <div class="med-report__section-lbl med-report__section-lbl--emphasis">结　论 / 结　果</div>
                   <textarea
-                    class="med-report__area med-report__area--emphasis"
+                    class="med-report__area med-report__area--single med-report__area--emphasis"
                     v-model="report.conclusion"
                     placeholder="填写检查结论或检验结果…"
-                    rows="4"
+                    rows="1"
                   />
                 </div>
               </template>
@@ -582,10 +582,10 @@
               <div class="med-report__section" style="margin-top:14px">
                 <div class="med-report__section-lbl">后续建议</div>
                 <textarea
-                  class="med-report__area med-report__area--single"
+                  class="med-report__area"
                   v-model="report.advice"
                   placeholder="后续复查建议、注意事项…"
-                  rows="1"
+                  rows="3"
                 />
               </div>
 
@@ -1663,7 +1663,7 @@ async function loadExistingReport(orderId: string): Promise<MedicalReport | unde
   const reportDto = workspace.detail?.report ?? null;
   if (!reportDto) return undefined;
   report.findings = reportDto.findings || '';
-  report.conclusion = reportDto.conclusion || '';
+  report.conclusion = cleanReportConclusion(reportDto.conclusion);
   report.advice = reportDto.advice || '';
   published.value = reportDto.status === 'CONFIRMED';
   confirmedAt.value = reportDto.confirmedAt ? formatReportDate(reportDto.confirmedAt) : '';
@@ -1673,6 +1673,20 @@ async function loadExistingReport(orderId: string): Promise<MedicalReport | unde
 function cleanPathologyReportValue(value: string) {
   const text = value.trim();
   return text === '—' ? '' : text;
+}
+
+function cleanReportConclusion(value?: string) {
+  if (!value) return '';
+  return value
+    .split(/\r?\n/)
+    .map(line => line
+      .replace(/^\s*(?:AI|人工智能|模型|辅助判断|辅助诊断|智能辅助)\s*(?:初步)?(?:结论|判断|提示|诊断)?[：:]\s*/i, '')
+      .replace(/\s*[（(](?:AI|人工智能|模型|智能辅助)[^）)]*[）)]\s*/gi, '')
+      .trim()
+    )
+    .filter(line => line && !/(?:AI|人工智能|模型|智能辅助).{0,12}(?:仅供参考|提示|建议)/i.test(line))
+    .join(' ')
+    .trim();
 }
 
 function fieldFromReportFindings(findings: string, label: string) {
@@ -2002,7 +2016,7 @@ function syncCtAiResult(task: AiMedicalTask) {
     lesionSegmentation: result.lesionSegmentation,
   };
   report.findings = result.findings || report.findings;
-  report.conclusion = result.conclusion || report.conclusion;
+  report.conclusion = cleanReportConclusion(result.conclusion) || report.conclusion;
   report.advice = result.riskAdvice || report.advice;
   const timingSummary = formatInferenceTimings(result.inferenceTimingsMs);
   aiMessages.value = [
@@ -2427,7 +2441,7 @@ async function generateAiDraft() {
     ].filter(m => m.content);
   } else {
     report.findings = draft.findings;
-    report.conclusion = draft.conclusion;
+    report.conclusion = cleanReportConclusion(draft.conclusion);
     aiMessages.value = [
       { id: 'f', label: '检查所见建议', content: draft.findings, kind: 'findings' },
       { id: 'c', label: '结论建议', content: draft.conclusion, kind: 'conclusion' },
@@ -2440,7 +2454,7 @@ async function generateAiDraft() {
 }
 
 function applyToFindings(content: string) { report.findings = content; mainTab.value = 'report'; }
-function applyToConclusion(content: string) { report.conclusion = content; mainTab.value = 'report'; }
+function applyToConclusion(content: string) { report.conclusion = cleanReportConclusion(content); mainTab.value = 'report'; }
 function applyToAdvice(content: string) { report.advice = content; mainTab.value = 'report'; }
 function focusAiFinding(item: ImageAiFinding) {
   if (volume.value && item.sliceIndex !== undefined) {
@@ -2543,11 +2557,12 @@ onUnmounted(() => {
 <style scoped>
 /* ── Root ── */
 .wks {
-  min-height: 100vh;
+  height: 100vh;
   display: flex;
   flex-direction: column;
   background: #f0f2f5;
   font-family: Inter, "Microsoft YaHei", system-ui, sans-serif;
+  overflow: hidden;
 }
 
 /* ── Navbar ── */
@@ -2587,6 +2602,7 @@ onUnmounted(() => {
   flex: 1;
   overflow: hidden;
   height: calc(100vh - 56px);
+  min-height: 0;
 }
 
 /* ── Left sidebar ── */
@@ -2641,7 +2657,7 @@ onUnmounted(() => {
 
 /* ── Main content ── */
 .wks-main {
-  flex: 1; min-width: 0; overflow: hidden;
+  flex: 1; min-width: 0; min-height: 0; overflow: hidden;
   padding: 12px 14px;
   display: flex; flex-direction: column;
 }
@@ -3621,15 +3637,31 @@ onUnmounted(() => {
 /* ── AI panel ── */
 .wks-ai {
   width: clamp(300px, 18vw, 336px); flex-shrink: 0;
-  overflow-y: auto; padding: 14px;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  overflow: hidden; padding: 14px;
   border-left: 1px solid #dbe3ef; background: linear-gradient(180deg, #f8fafc 0%, #eef7f8 100%);
   box-sizing: border-box;
 }
 .ai-card {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   border-color: #b9edf0;
   border-radius: 8px;
   overflow: hidden;
   box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
+}
+.ai-card :deep(.el-card__header) {
+  flex-shrink: 0;
+}
+.ai-card :deep(.el-card__body) {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .ai-header {
   display: flex;
