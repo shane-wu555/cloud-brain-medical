@@ -32,6 +32,7 @@ uniform float uWL,   uWW;
 uniform float uVmin, uVmax;
 uniform int   uMode;
 uniform float uRoiScale;
+uniform float uZoom;
 // Physical normalized dimensions: (nx*dx, ny*dy, nz*dz) / max(nx*dx, ny*dy, nz*dz)
 // This tells the shader the true shape of the volume (not necessarily a cube).
 uniform vec3  uPhysNorm;
@@ -128,7 +129,7 @@ void main() {
   // Camera is centred at the volume's physical midpoint.
   // Screen maps to the largest physical dimension for a consistent FOV.
   vec3  center = uPhysNorm * 0.5;
-  float scale  = max(uPhysNorm.x, max(uPhysNorm.y, uPhysNorm.z)) * 0.6;
+  float scale  = max(uPhysNorm.x, max(uPhysNorm.y, uPhysNorm.z)) * 0.6 / max(uZoom, 0.25);
 
   vec3 ro = center
             + rgt * (uv.x - 0.5) * 2.0 * scale * asp
@@ -317,7 +318,8 @@ export class VolumeRenderer3D {
     wc: number,
     ww: number,
     mode: VolumeRenderMode = 'brain',
-    roiScale = 0.76
+    roiScale = 0.76,
+    zoom = 1
   ): void {
     const { gl, prog, tex, vao } = this
     const w = gl.canvas.width, h = gl.canvas.height
@@ -341,6 +343,7 @@ export class VolumeRenderer3D {
     gl.uniform1f(u('uVmax'), this.vmax)
     gl.uniform1i(u('uMode'), mode === 'brain' ? 0 : mode === 'composite' ? 1 : 2)
     gl.uniform1f(u('uRoiScale'), roiScale)
+    gl.uniform1f(u('uZoom'), zoom)
     gl.uniform3f(u('uPhysNorm'), ...this.physNorm)
 
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)

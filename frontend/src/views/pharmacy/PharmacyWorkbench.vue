@@ -325,81 +325,75 @@
                   <el-button :loading="loadingReturns" @click="loadReturns">刷新</el-button>
                 </div>
               </div>
-              <el-table v-loading="loadingReturns" :data="filteredDrugReturns" row-key="id" empty-text="暂无退药单">
-                <el-table-column prop="returnNo" label="退药单号" min-width="150" />
-                <el-table-column prop="prescriptionNo" label="处方号" min-width="150" />
-                <el-table-column prop="patientName" label="患者" min-width="110" />
-                <el-table-column label="金额" width="110" align="right">
-                  <template #default="{ row }">¥{{ amountText(row.totalAmount) }}</template>
-                </el-table-column>
-                <el-table-column label="状态" width="130">
-                  <template #default="{ row }">
-                    <el-tag :type="returnStatusType(row.status)" effect="plain">{{ returnStatusLabel(row.status) }}</el-tag>
-                  </template>
-                </el-table-column>
-                <el-table-column label="操作" width="180" fixed="right">
-                  <template #default="{ row }">
-                    <el-button type="primary" link @click="showReturnPrescriptionDetail(row)">处方明细</el-button>
-                    <el-button type="warning" link @click="showReturnDetail(row)">退药明细</el-button>
-                  </template>
-                </el-table-column>
-              </el-table>
-            </section>
+              <div v-loading="loadingReturns" class="return-list">
+                <el-empty v-if="!filteredDrugReturns.length" description="暂无退药单" :image-size="96" />
+                <article
+                  v-for="row in filteredDrugReturns"
+                  :key="row.id"
+                  :class="['return-card', isReturnExpanded(row.id) && 'return-card--open']"
+                >
+                  <button class="return-card__main" type="button" @click="toggleReturnDetail(row.id)">
+                    <span class="return-card__identity">
+                      <strong>{{ row.patientName || '-' }}</strong>
+                      <em>{{ row.returnNo }}</em>
+                    </span>
+                    <span class="return-card__prescription">{{ row.prescriptionNo }}</span>
+                    <span class="return-card__amount">¥{{ amountText(row.totalAmount) }}</span>
+                    <span class="return-card__status">
+                      <el-tag :type="returnStatusType(row.status)" effect="plain" size="small">
+                        {{ returnStatusLabel(row.status) }}
+                      </el-tag>
+                    </span>
+                    <span class="return-card__time">{{ formatDateTime(row.createdAt) }}</span>
+                    <span class="return-card__toggle">{{ isReturnExpanded(row.id) ? '收起' : '展开' }}</span>
+                  </button>
 
-            <aside class="detail-panel">
-              <div class="detail-panel__head">
-                <h2>{{ returnDetailTitle }}</h2>
-                <el-tag v-if="selectedReturn" :type="returnStatusType(selectedReturn.status)" effect="plain">
-                  {{ returnStatusLabel(selectedReturn.status) }}
-                </el-tag>
+                  <div v-show="isReturnExpanded(row.id)" class="return-card__detail">
+                    <aside class="return-detail-summary">
+                      <div class="return-detail-summary__head">
+                        <span>{{ row.patientName || '-' }}</span>
+                        <el-tag :type="returnStatusType(row.status)" effect="plain" size="small">
+                          {{ returnStatusLabel(row.status) }}
+                        </el-tag>
+                      </div>
+                      <div class="return-detail-summary__no">{{ row.returnNo }}</div>
+                      <div class="return-detail-meta">
+                        <span>处方号</span><strong>{{ row.prescriptionNo }}</strong>
+                        <span>意见类型</span><strong>{{ row.opinionTemplate || '-' }}</strong>
+                        <span>申请时间</span><strong>{{ formatDateTime(row.createdAt) }}</strong>
+                        <span>完成时间</span><strong>{{ formatDateTime(row.completedAt) }}</strong>
+                      </div>
+                      <div class="return-opinion-block">
+                        <span>医生退药意见</span>
+                        <p>{{ row.doctorOpinion || '' }}</p>
+                      </div>
+                      <div v-if="row.pharmacistOpinion" class="return-opinion-block">
+                        <span>药房意见</span>
+                        <p>{{ row.pharmacistOpinion }}</p>
+                      </div>
+                    </aside>
+
+                    <div class="return-drug-checklist">
+                      <div class="return-drug-checklist__head">
+                        <span>处方药品与退药明细</span>
+                        <em>核对退回药品、数量、单价、金额及验收备注</em>
+                      </div>
+                      <div v-if="row.items?.length" class="return-drug-list">
+                        <div v-for="(drug, index) in row.items" :key="`${row.id}-${drug.drugName}-${index}`" class="return-drug-row">
+                          <span class="return-drug-row__index">{{ index + 1 }}</span>
+                          <span class="return-drug-row__name">{{ drug.drugName }}</span>
+                          <span class="return-drug-row__qty">× {{ drug.quantity }}</span>
+                          <span class="return-drug-row__unit">¥{{ amountText(drug.unitPrice) }}</span>
+                          <span class="return-drug-row__price">¥{{ amountText(drug.amount) }}</span>
+                          <span class="return-drug-row__note">{{ drug.pharmacistNote || '待药房验收' }}</span>
+                        </div>
+                      </div>
+                      <el-empty v-else description="暂无退药明细" :image-size="72" />
+                    </div>
+                  </div>
+                </article>
               </div>
-              <el-empty v-if="!selectedReturn" description="点击明细按钮查看详情" :image-size="86" />
-              <template v-else-if="returnDetailMode === 'prescription'">
-                <div class="rx-summary">
-                  <strong>{{ selectedReturn.patientName || '-' }}</strong>
-                  <span>{{ selectedReturn.prescriptionNo }}</span>
-                  <em>退药单 {{ selectedReturn.returnNo }}</em>
-                </div>
-                <div class="detail-meta">
-                  <span>退药状态</span><strong>{{ returnStatusLabel(selectedReturn.status) }}</strong>
-                  <span>退药金额</span><strong>¥{{ amountText(selectedReturn.totalAmount) }}</strong>
-                  <span>申请时间</span><strong>{{ formatDateTime(selectedReturn.createdAt) }}</strong>
-                </div>
-                <el-table :data="selectedReturn.items" size="small" empty-text="暂无处方药品明细">
-                  <el-table-column prop="drugName" label="药品" min-width="130" show-overflow-tooltip />
-                  <el-table-column prop="quantity" label="数量" width="70" />
-                  <el-table-column label="单价" width="90" align="right">
-                    <template #default="{ row }">¥{{ amountText(row.unitPrice) }}</template>
-                  </el-table-column>
-                  <el-table-column label="金额" width="90" align="right">
-                    <template #default="{ row }">¥{{ amountText(row.amount) }}</template>
-                  </el-table-column>
-                </el-table>
-              </template>
-              <template v-else>
-                <div class="rx-summary">
-                  <strong>{{ selectedReturn.patientName || '-' }}</strong>
-                  <span>{{ selectedReturn.returnNo }}</span>
-                  <em>{{ selectedReturn.prescriptionNo }}</em>
-                </div>
-                <div class="detail-meta">
-                  <span>意见类型</span><strong>{{ selectedReturn.opinionTemplate || '-' }}</strong>
-                  <span>申请时间</span><strong>{{ formatDateTime(selectedReturn.createdAt) }}</strong>
-                  <template v-if="selectedReturn.status === 'RETURN_REFUNDED'">
-                    <span>退费收银员</span><strong>{{ selectedReturn.cashierId || '-' }}</strong>
-                    <span>退费时间</span><strong>{{ formatDateTime(selectedReturn.completedAt) }}</strong>
-                  </template>
-                </div>
-                <div class="opinion-block">
-                  <span>医生退药意见</span>
-                  <p>{{ selectedReturn.doctorOpinion || '-' }}</p>
-                </div>
-                <div v-if="selectedReturn.pharmacistOpinion" class="opinion-block">
-                  <span>药房意见</span>
-                  <p>{{ selectedReturn.pharmacistOpinion }}</p>
-                </div>
-              </template>
-            </aside>
+            </section>
           </div>
         </section>
 
@@ -547,12 +541,11 @@ const auth = useAuthStore();
 const currentPage = ref<PageKey>('dispense');
 const activeDispenseTab = ref<'waiting' | 'dispensed'>('waiting');
 const expandedPrescriptionIds = ref<string[]>([]);
+const expandedReturnIds = ref<string[]>([]);
 const waitingPrescriptions = ref<Prescription[]>([]);
 const waitingPrescriptionAlerts = ref<Prescription[]>([]);
 const dispensedPrescriptions = ref<Prescription[]>([]);
 const selected = ref<Prescription>();
-const selectedReturn = ref<DrugReturnOrder>();
-const returnDetailMode = ref<'prescription' | 'return'>('prescription');
 const drugReturns = ref<DrugReturnOrder[]>([]);
 const returnAlertOrders = ref<DrugReturnOrder[]>([]);
 const drugs = ref<Drug[]>([]);
@@ -687,8 +680,6 @@ const filteredDrugReturns = computed(() => {
     ]);
   });
 });
-const returnDetailTitle = computed(() => (returnDetailMode.value === 'prescription' ? '处方明细' : '退药明细'));
-
 const today = computed(() => new Date().toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }));
 const dayOfWeek = computed(() => ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][new Date().getDay()]);
 
@@ -846,14 +837,12 @@ function togglePrescriptionDetail(id: string) {
     : [id];
 }
 
-function showReturnPrescriptionDetail(row: DrugReturnOrder) {
-  selectedReturn.value = row;
-  returnDetailMode.value = 'prescription';
+function isReturnExpanded(id: string) {
+  return expandedReturnIds.value.includes(id);
 }
 
-function showReturnDetail(row: DrugReturnOrder) {
-  selectedReturn.value = row;
-  returnDetailMode.value = 'return';
+function toggleReturnDetail(id: string) {
+  expandedReturnIds.value = isReturnExpanded(id) ? expandedReturnIds.value.filter((item) => item !== id) : [id];
 }
 
 function applyPrescriptionSearch() {
@@ -929,8 +918,7 @@ function switchPage(page: PageKey) {
     selected.value = undefined;
   }
   if (page !== 'returns') {
-    selectedReturn.value = undefined;
-    returnDetailMode.value = 'prescription';
+    expandedReturnIds.value = [];
   }
   currentPage.value = page;
   markPageAsRead(page);
@@ -1082,6 +1070,13 @@ watch(
 );
 
 watch(
+  () => [returnSearch.keyword, returnStatus.value],
+  () => {
+    expandedReturnIds.value = [];
+  }
+);
+
+watch(
   () => waitingPrescriptionAlerts.value.map((item) => item.id),
   (ids) => {
     dispenseUnreadTracker.sync(ids);
@@ -1096,8 +1091,8 @@ watch(
 );
 
 // 定时轮询处方列表：缴费后自动刷新待发药列表
-// 查看处方明细时跳过轮询，避免刷新导致选中状态丢失
-const isEditing = computed(() => !!selected.value || !!selectedReturn.value || expandedPrescriptionIds.value.length > 0);
+// 查看明细时跳过轮询，避免刷新导致展开状态丢失
+const isEditing = computed(() => !!selected.value || expandedPrescriptionIds.value.length > 0 || expandedReturnIds.value.length > 0);
 useQueuePolling(isEditing, async () => {
   await Promise.all([loadPrescriptions(true), loadReturns(true), refreshWorkbenchAlerts()]);
 });
@@ -1531,6 +1526,281 @@ onMounted(async () => {
   box-shadow: 0 10px 28px rgba(15, 23, 42, 0.05);
 }
 
+.return-list {
+  min-height: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.return-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  overflow: hidden;
+  background: linear-gradient(180deg, #ffffff 0%, #fbfdfe 100%);
+  transition: border-color 0.16s, box-shadow 0.16s;
+}
+
+.return-card:hover,
+.return-card--open {
+  border-color: #9de3e7;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
+}
+
+.return-card__main {
+  width: 100%;
+  min-height: 76px;
+  border: none;
+  padding: 14px 16px;
+  display: grid;
+  grid-template-columns: minmax(150px, 1.05fr) minmax(170px, 1.2fr) 108px 122px minmax(150px, 1fr) 62px;
+  align-items: center;
+  gap: 12px;
+  background: #fff;
+  color: #1f2937;
+  cursor: pointer;
+  text-align: left;
+}
+
+.return-card__main:hover {
+  background: #f8fcfd;
+}
+
+.return-card__identity {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.return-card__identity strong {
+  color: #111827;
+  font-size: 17px;
+}
+
+.return-card__identity em {
+  color: #64748b;
+  font-size: 12px;
+  font-style: normal;
+}
+
+.return-card__prescription,
+.return-card__time {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #475569;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.return-card__amount {
+  color: #0899a5;
+  font-size: 18px;
+  font-weight: 800;
+  text-align: right;
+}
+
+.return-card__status {
+  display: flex;
+  justify-content: center;
+}
+
+.return-card__status :deep(.el-tag),
+.return-detail-summary__head :deep(.el-tag) {
+  height: 22px;
+  padding: 0 7px;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.return-card__toggle {
+  height: 28px;
+  border: 1px solid #b9edf0;
+  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #0899a5;
+  background: #f0f9fa;
+  font-weight: 700;
+  text-align: center;
+}
+
+.return-card__detail {
+  padding: 14px 16px 16px;
+  border-top: 1px solid #e5e7eb;
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 14px;
+  background:
+    linear-gradient(135deg, rgba(8, 153, 165, 0.07) 0%, rgba(255, 255, 255, 0) 36%),
+    #fbfdfe;
+}
+
+.return-detail-summary,
+.return-drug-checklist {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.return-detail-summary {
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.return-detail-summary__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.return-detail-summary__head span {
+  min-width: 0;
+  color: #111827;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.return-detail-summary__no {
+  color: #0899a5;
+  font-size: 13px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.return-detail-meta {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 8px 10px;
+  font-size: 13px;
+}
+
+.return-detail-meta span {
+  color: #64748b;
+}
+
+.return-detail-meta strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: #1f2937;
+  font-weight: 600;
+}
+
+.return-opinion-block {
+  padding: 10px;
+  border-radius: 6px;
+  background: #f8fafc;
+}
+
+.return-opinion-block span {
+  display: block;
+  margin-bottom: 6px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.return-opinion-block p {
+  min-height: 42px;
+  margin: 0;
+  color: #475569;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.return-drug-checklist {
+  min-width: 0;
+  padding: 14px;
+}
+
+.return-drug-checklist__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.return-drug-checklist__head span {
+  color: #111827;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.return-drug-checklist__head em {
+  color: #94a3b8;
+  font-size: 12px;
+  font-style: normal;
+}
+
+.return-drug-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.return-drug-row {
+  min-height: 46px;
+  padding: 8px 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 72px 92px 96px minmax(120px, 0.8fr);
+  align-items: center;
+  gap: 10px;
+  background: #fff;
+}
+
+.return-drug-row__index {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #e6f9fa;
+  color: #0899a5;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.return-drug-row__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #1f2937;
+  font-weight: 700;
+}
+
+.return-drug-row__qty,
+.return-drug-row__unit,
+.return-drug-row__price {
+  color: #475569;
+  font-weight: 700;
+  text-align: right;
+}
+
+.return-drug-row__price {
+  color: #0899a5;
+  font-weight: 800;
+}
+
+.return-drug-row__note {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #64748b;
+  font-size: 13px;
+}
+
 .dispense-switch {
   position: relative;
   width: 260px;
@@ -1896,10 +2166,7 @@ onMounted(async () => {
 }
 
 .return-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 360px;
-  gap: 16px;
-  align-items: start;
+  display: block;
 }
 
 .prescription-lists {
@@ -2029,10 +2296,6 @@ onMounted(async () => {
 }
 
 @media (max-width: 1200px) {
-  .return-layout {
-    grid-template-columns: 1fr;
-  }
-
   .dispense-board-head {
     align-items: flex-start;
     flex-direction: column;
@@ -2061,7 +2324,19 @@ onMounted(async () => {
     display: none;
   }
 
+  .return-card__main {
+    grid-template-columns: minmax(150px, 1fr) minmax(170px, 1.2fr) 108px 122px 62px;
+  }
+
+  .return-card__time {
+    display: none;
+  }
+
   .rx-detail-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .return-card__detail {
     grid-template-columns: 1fr;
   }
 
@@ -2154,8 +2429,18 @@ onMounted(async () => {
     gap: 8px;
   }
 
+  .return-card__main {
+    grid-template-columns: 1fr auto;
+    gap: 8px;
+  }
+
   .rx-card__diagnosis,
   .rx-card__status {
+    grid-column: 1 / -1;
+  }
+
+  .return-card__prescription,
+  .return-card__status {
     grid-column: 1 / -1;
   }
 
@@ -2163,8 +2448,13 @@ onMounted(async () => {
     text-align: left;
   }
 
+  .return-card__amount {
+    text-align: left;
+  }
+
   .rx-drug-checklist__head,
-  .rx-card__actions {
+  .rx-card__actions,
+  .return-drug-checklist__head {
     align-items: stretch;
     flex-direction: column;
   }
@@ -2174,6 +2464,17 @@ onMounted(async () => {
   }
 
   .rx-drug-row__price {
+    grid-column: 2 / -1;
+    text-align: left;
+  }
+
+  .return-drug-row {
+    grid-template-columns: 28px minmax(0, 1fr) auto;
+  }
+
+  .return-drug-row__unit,
+  .return-drug-row__price,
+  .return-drug-row__note {
     grid-column: 2 / -1;
     text-align: left;
   }

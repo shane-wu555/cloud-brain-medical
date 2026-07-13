@@ -327,21 +327,80 @@
 
                 </div><!-- /ct-panels -->
                 <div v-if="ctZoomView" class="ct-zoom" @click.self="closeCtZoom">
-                  <div class="ct-zoom__panel" @wheel.prevent="onCtZoomWheel">
+                  <div class="ct-zoom__panel">
                     <div class="ct-zoom__bar">
                       <strong>{{ ctZoomTitle }}</strong>
                       <span v-if="ctZoomSliceText">{{ ctZoomSliceText }}</span>
                       <button type="button" @click="closeCtZoom">✕</button>
                     </div>
-                    <div class="ct-zoom__stage">
-                      <div v-if="ctZoomView === 'axial'" class="ct-zoom-image-stage" :style="axialImageStageStyle">
-                        <template v-if="imagePreviewUrl && !volume">
-                          <img :src="imagePreviewUrl" class="ct-zoom__img" alt="轴位放大" />
-                        </template>
-                        <template v-else>
-                          <canvas ref="canvasZoom" class="ct-zoom__canvas"></canvas>
-                        </template>
-
+                    <div v-if="volume" class="ct-zoom-grid">
+                      <div class="ct-zoom-cell" @wheel.prevent="onWheelPanel('axial', $event)">
+                        <span class="ct-panel__lbl">【轴位 Axial】</span>
+                        <span class="ct-panel__slice">切片: {{ sliceZ + 1 }} / {{ volume.nz }}</span>
+                        <div class="ct-zoom-image-stage" :style="axialImageStageStyle">
+                          <canvas ref="canvasZoomAxial" class="ct-zoom__canvas"></canvas>
+                          <div v-if="showImageAiOverlay" class="ct-ai-overlay ct-ai-overlay--zoom">
+                            <button
+                              v-for="item in imageAiFindings"
+                              :key="`zoom-${item.id}`"
+                              :class="['ct-ai-marker', `ct-ai-marker--${item.tone}`]"
+                              type="button"
+                              :title="item.label"
+                              :aria-label="item.label"
+                              :style="{ left: item.x, top: item.y }"
+                              @click.stop="focusAiFinding(item)"
+                            >
+                              <span class="ct-ai-marker__dot"></span>
+                            </button>
+                            <button
+                              v-for="item in imageAiFindings"
+                              :key="`zoom-${item.id}-label`"
+                              :class="['ct-ai-label', `ct-ai-label--${item.tone}`, `ct-ai-label--${aiFindingSide(item)}`]"
+                              type="button"
+                              :style="{ top: item.y }"
+                              @click.stop="focusAiFinding(item)"
+                            >
+                              <span>{{ item.label }}</span>
+                            </button>
+                          </div>
+                        </div>
+                        <div class="ct-line ct-line--h"></div>
+                        <div class="ct-line ct-line--v"></div>
+                        <input class="ct-slider" type="range" :min="0" :max="volume.nz - 1" :value="sliceZ" @click.stop @input="onSliceSlider('axial', $event)" />
+                      </div>
+                      <div
+                        class="ct-zoom-cell ct-zoom-cell--3d"
+                        @mousedown="on3DDown"
+                        @mousemove="on3DMove"
+                        @mouseup="on3DUp"
+                        @mouseleave="on3DUp"
+                      >
+                        <span class="ct-panel__lbl">【3D 重建】</span>
+                        <span class="ct-3d-hint">拖拽旋转</span>
+                        <canvas ref="canvasZoom3D" class="ct-zoom__canvas ct-zoom__canvas--3d"></canvas>
+                        <div class="ct-line ct-line--h"></div>
+                        <div class="ct-line ct-line--v"></div>
+                      </div>
+                      <div class="ct-zoom-cell" @wheel.prevent="onWheelPanel('coronal', $event)">
+                        <span class="ct-panel__lbl">【冠状 Coronal】</span>
+                        <span class="ct-panel__slice">切片: {{ sliceY + 1 }} / {{ volume.ny }}</span>
+                        <canvas ref="canvasZoomCoronal" class="ct-zoom__canvas"></canvas>
+                        <div class="ct-line ct-line--h"></div>
+                        <div class="ct-line ct-line--v"></div>
+                        <input class="ct-slider" type="range" :min="0" :max="volume.ny - 1" :value="sliceY" @click.stop @input="onSliceSlider('coronal', $event)" />
+                      </div>
+                      <div class="ct-zoom-cell" @wheel.prevent="onWheelPanel('sagittal', $event)">
+                        <span class="ct-panel__lbl">【矢状 Sagittal】</span>
+                        <span class="ct-panel__slice">切片: {{ sliceX + 1 }} / {{ volume.nx }}</span>
+                        <canvas ref="canvasZoomSagittal" class="ct-zoom__canvas"></canvas>
+                        <div class="ct-line ct-line--h"></div>
+                        <div class="ct-line ct-line--v"></div>
+                        <input class="ct-slider" type="range" :min="0" :max="volume.nx - 1" :value="sliceX" @click.stop @input="onSliceSlider('sagittal', $event)" />
+                      </div>
+                    </div>
+                    <div v-else class="ct-zoom__stage">
+                      <div class="ct-zoom-image-stage" :style="axialImageStageStyle">
+                        <img :src="imagePreviewUrl" class="ct-zoom__img" alt="轴位放大" />
                         <div v-if="showImageAiOverlay" class="ct-ai-overlay ct-ai-overlay--zoom">
                           <button
                             v-for="item in imageAiFindings"
@@ -367,13 +426,6 @@
                           </button>
                         </div>
                       </div>
-                      <template v-else-if="ctZoomView === '3d'">
-                        <canvas ref="canvasZoom3D" class="ct-zoom__canvas"></canvas>
-                      </template>
-                      <template v-else>
-                        <canvas ref="canvasZoom" class="ct-zoom__canvas"></canvas>
-                      </template>
-
                       <div class="ct-line ct-line--h"></div>
                       <div class="ct-line ct-line--v"></div>
                     </div>
@@ -942,15 +994,16 @@ const imageAiFindings = computed<ImageAiFinding[]>(() => {
   if (role.value !== 'CHECK_DOCTOR') return [];
   const items: ImageAiFinding[] = [];
   const regions = Array.isArray(aiStructured.value.abnormalRegions) ? aiStructured.value.abnormalRegions : [];
+  const maxVisibleDistance = volume.value ? Math.max(3, Math.round(volume.value.nz * 0.025)) : 8;
   const sortedRegions = regions
     .map((region, index) => ({ region, index, distance: sliceDistance(region) }))
     .sort((a, b) => a.distance - b.distance);
-  const closeRegions = sortedRegions.filter(item => item.distance <= 8);
+  const closeRegions = sortedRegions.filter(item => item.distance <= maxVisibleDistance);
   const visibleRegions = (closeRegions.length ? closeRegions : sortedRegions).slice(0, 3);
   visibleRegions.forEach(({ region, index }) => {
     const pos = imageRegionPosition(region, index);
     const label = regionLabel(region);
-    const sliceIndex = numericValue(region.sliceIndex ?? region.slice ?? region.z);
+    const sliceIndex = regionSliceIndex(region);
     items.push({
       id: `region-${index}`,
       label: sliceIndex !== undefined ? `${label} 第 ${sliceIndex + 1} 层` : label,
@@ -964,29 +1017,33 @@ const imageAiFindings = computed<ImageAiFinding[]>(() => {
   });
   if (hasPositiveLesionSegmentation.value && items.length < 3) {
     const seg = aiStructured.value.lesionSegmentation || {};
-    const sliceIndex = bestSegmentationSlice(seg);
+    const bestRegion = bestSegmentationRegion(seg);
+    const sliceIndex = bestRegion?.sliceIndex;
+    const pos = bestRegion ? imageRegionPosition(bestRegion.region, items.length) : { x: '58%', y: '46%' };
     items.push({
       id: 'lesion-seg',
       label: `疑似病灶 ${seg.affectedSlices || 0}/${seg.totalSlices || 0} 层`,
       detail: seg.summary || seg.labelCn || seg.label || 'AI 已返回病灶分割摘要',
       kind: 'findings',
       tone: 'finding',
-      x: '58%',
-      y: '46%',
+      x: pos.x,
+      y: pos.y,
       sliceIndex,
     });
   }
   if (hasPositiveMetalSegmentation.value && items.length < 3) {
     const seg = aiStructured.value.metalArtifactSegmentation || {};
-    const sliceIndex = bestSegmentationSlice(seg);
+    const bestRegion = bestSegmentationRegion(seg);
+    const sliceIndex = bestRegion?.sliceIndex;
+    const pos = bestRegion ? imageRegionPosition(bestRegion.region, items.length) : { x: '42%', y: '56%' };
     items.push({
       id: 'metal-seg',
       label: `金属伪影 ${seg.affectedSlices || 0}/${seg.totalSlices || 0} 层`,
       detail: seg.summary || seg.labelCn || seg.label || 'AI 已返回金属伪影分割摘要',
       kind: 'advice',
       tone: 'risk',
-      x: '42%',
-      y: '56%',
+      x: pos.x,
+      y: pos.y,
       sliceIndex,
     });
   }
@@ -1026,19 +1083,14 @@ function aiFindingSide(item: ImageAiFinding): 'left' | 'right' {
 }
 
 const ctZoomTitle = computed(() => {
+  if (volume.value) return 'MPR/3D 放大视图';
   if (ctZoomView.value === 'axial') return '轴位 Axial';
-  if (ctZoomView.value === 'coronal') return '冠状 Coronal';
-  if (ctZoomView.value === 'sagittal') return '矢状 Sagittal';
-  if (ctZoomView.value === '3d') return '3D 重建';
   return '';
 });
 const ctZoomSliceText = computed(() => {
   const vol = volume.value;
   if (!vol) return ctZoomView.value === 'axial' && imagePreviewUrl.value ? '当前图像' : '';
-  if (ctZoomView.value === 'axial') return `切片 ${sliceZ.value + 1} / ${vol.nz}`;
-  if (ctZoomView.value === 'coronal') return `切片 ${sliceY.value + 1} / ${vol.ny}`;
-  if (ctZoomView.value === 'sagittal') return `切片 ${sliceX.value + 1} / ${vol.nx}`;
-  return '';
+  return `轴位 ${sliceZ.value + 1}/${vol.nz} · 冠状 ${sliceY.value + 1}/${vol.ny} · 矢状 ${sliceX.value + 1}/${vol.nx}`;
 });
 
 function isInteractiveCtTarget(target: EventTarget | null) {
@@ -1064,28 +1116,22 @@ function renderCtZoom() {
   const view = ctZoomView.value;
   const vol = volume.value;
   if (!view) return;
-  if (view === '3d') {
-    if (!vol || !canvasZoom3D.value) return;
+  if (vol) {
+    if (canvasZoomAxial.value) renderAxial(canvasZoomAxial.value, vol, sliceZ.value, winC.value, winW.value);
+    if (canvasZoomCoronal.value) renderCoronal(canvasZoomCoronal.value, vol, sliceY.value, winC.value, winW.value);
+    if (canvasZoomSagittal.value) renderSagittal(canvasZoomSagittal.value, vol, sliceX.value, winC.value, winW.value);
+    if (!canvasZoom3D.value) return;
     try {
       canvasZoom3D.value.width = canvasZoom3D.value.clientWidth || 900;
       canvasZoom3D.value.height = canvasZoom3D.value.clientHeight || 620;
       rendererZoom3D.value?.destroy();
       rendererZoom3D.value = new VolumeRenderer3D(canvasZoom3D.value, vol);
-      rendererZoom3D.value.render(azim3D.value, elev3D.value, winC.value, winW.value, render3DMode.value, render3DRoi.value);
+      rendererZoom3D.value.render(azim3D.value, elev3D.value, winC.value, winW.value, render3DMode.value, render3DRoi.value, 1.85);
     } catch {
       rendererZoom3D.value = null;
     }
     return;
   }
-  if (!vol || !canvasZoom.value) return;
-  if (view === 'axial') renderAxial(canvasZoom.value, vol, sliceZ.value, winC.value, winW.value);
-  else if (view === 'coronal') renderCoronal(canvasZoom.value, vol, sliceY.value, winC.value, winW.value);
-  else renderSagittal(canvasZoom.value, vol, sliceX.value, winC.value, winW.value);
-}
-
-function onCtZoomWheel(e: WheelEvent) {
-  if (!ctZoomView.value || ctZoomView.value === '3d') return;
-  onWheelPanel(ctZoomView.value, e);
 }
 
 const hasPositiveMetalSegmentation = computed(() => Boolean(aiStructured.value.metalArtifactSegmentation?.enabled && aiStructured.value.metalArtifactSegmentation?.hasArtifactRegion));
@@ -1149,16 +1195,30 @@ function numericValue(value: unknown): number | undefined {
   return Number.isFinite(number) ? number : undefined;
 }
 
+function regionSliceIndex(region: Record<string, any>): number | undefined {
+  const direct = numericValue(region.sliceIndex ?? region.slice ?? region.z ?? region.centerZ ?? region.cz);
+  if (direct !== undefined) return direct;
+  const center = Array.isArray(region.center) ? region.center : Array.isArray(region.centroid) ? region.centroid : undefined;
+  if (center && center.length >= 3) return numericValue(center[2]);
+  const bbox = Array.isArray(region.bbox) ? region.bbox.map(Number) : [];
+  if (bbox.length >= 6 && bbox.every(Number.isFinite)) {
+    const format = String(region.bboxFormat || region.boxFormat || region.format || '').toLowerCase();
+    return format.includes('xyzwhd') ? bbox[2] + bbox[5] / 2 : (bbox[2] + bbox[5]) / 2;
+  }
+  return undefined;
+}
+
 function sliceDistance(region: Record<string, any>): number {
-  const sliceIndex = numericValue(region.sliceIndex ?? region.slice ?? region.z);
+  const sliceIndex = regionSliceIndex(region);
   if (sliceIndex === undefined || !volume.value) return 0;
   return Math.abs(sliceIndex - sliceZ.value);
 }
 
 function imageRegionPosition(region: Record<string, any>, index: number): { x: string; y: string } {
   const bbox = Array.isArray(region.bbox) ? region.bbox.map(Number) : [];
-  let rawX = numericValue(region.x ?? region.centerX ?? region.cx ?? region.left);
-  let rawY = numericValue(region.y ?? region.centerY ?? region.cy ?? region.top);
+  const center = Array.isArray(region.center) ? region.center : Array.isArray(region.centroid) ? region.centroid : undefined;
+  let rawX = numericValue(region.x ?? region.centerX ?? region.cx ?? region.left ?? region.column ?? center?.[0]);
+  let rawY = numericValue(region.y ?? region.centerY ?? region.cy ?? region.top ?? region.row ?? center?.[1]);
   if (bbox.length >= 4 && bbox.every(Number.isFinite)) {
     const format = String(region.bboxFormat || region.boxFormat || region.format || '').toLowerCase();
     const looksLikeXywh = format.includes('xywh') || format.includes('width') || bbox[2] < bbox[0] || bbox[3] < bbox[1];
@@ -1217,17 +1277,17 @@ function regionDetail(region: Record<string, any>): string {
   ].filter(Boolean).join('；');
 }
 
-function bestSegmentationSlice(seg?: Record<string, any>): number | undefined {
+function bestSegmentationRegion(seg?: Record<string, any>): { region: Record<string, any>; sliceIndex: number; confidence: number } | undefined {
   const topSlices = Array.isArray(seg?.topSlices) ? seg?.topSlices : [];
   if (!topSlices.length) return undefined;
-  const best = topSlices
+  return topSlices
     .map((item: any) => ({
-      sliceIndex: numericValue(item.sliceIndex ?? item.slice ?? item.z),
+      region: item as Record<string, any>,
+      sliceIndex: regionSliceIndex(item),
       confidence: numericValue(item.maxProb ?? item.confidence ?? item.score) ?? 0,
     }))
-    .filter((item: { sliceIndex?: number }) => item.sliceIndex !== undefined)
+    .filter((item): item is { region: Record<string, any>; sliceIndex: number; confidence: number } => item.sliceIndex !== undefined)
     .sort((a: { confidence: number }, b: { confidence: number }) => b.confidence - a.confidence)[0];
-  return best?.sliceIndex;
 }
 
 // Imaging state (CHECK_DOCTOR)
@@ -1272,7 +1332,9 @@ const canvasAxial    = ref<HTMLCanvasElement>();
 const canvasCoronal  = ref<HTMLCanvasElement>();
 const canvasSagittal = ref<HTMLCanvasElement>();
 const canvas3D       = ref<HTMLCanvasElement>();
-const canvasZoom     = ref<HTMLCanvasElement>();
+const canvasZoomAxial = ref<HTMLCanvasElement>();
+const canvasZoomCoronal = ref<HTMLCanvasElement>();
+const canvasZoomSagittal = ref<HTMLCanvasElement>();
 const canvasZoom3D   = ref<HTMLCanvasElement>();
 type CtZoomView = 'axial' | 'coronal' | 'sagittal' | '3d';
 const ctZoomView = ref<CtZoomView | ''>('');
@@ -1347,7 +1409,7 @@ function rerenderMpr() {
 }
 function rerender3D() {
   renderer3D.value?.render(azim3D.value, elev3D.value, winC.value, winW.value, render3DMode.value, render3DRoi.value);
-  rendererZoom3D.value?.render(azim3D.value, elev3D.value, winC.value, winW.value, render3DMode.value, render3DRoi.value);
+  rendererZoom3D.value?.render(azim3D.value, elev3D.value, winC.value, winW.value, render3DMode.value, render3DRoi.value, 1.85);
 }
 
 function set3DMode(mode: VolumeRenderMode) {
@@ -3119,7 +3181,7 @@ onUnmounted(() => {
 .ct-ai-label {
   position: absolute;
   z-index: 8;
-  max-width: min(180px, 28%);
+  max-width: min(260px, 42%);
   min-height: 28px;
   transform: translateY(-50%);
   display: flex;
@@ -3144,9 +3206,10 @@ onUnmounted(() => {
   right: 12px;
 }
 .ct-ai-label span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  word-break: keep-all;
 }
 .ct-ai-label:hover,
 .ct-ai-label:focus-visible {
@@ -3394,6 +3457,31 @@ onUnmounted(() => {
   overflow: hidden;
   background: #000;
 }
+.ct-zoom-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1px;
+  background: #1f2937;
+}
+.ct-zoom-cell {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: #000;
+}
+.ct-zoom-cell--3d {
+  cursor: grab;
+}
+.ct-zoom-cell--3d:active {
+  cursor: grabbing;
+}
 .ct-zoom__canvas,
 .ct-zoom__img {
   width: auto;
@@ -3406,8 +3494,18 @@ onUnmounted(() => {
 .ct-zoom__canvas {
   display: block;
 }
+.ct-zoom-cell > .ct-zoom__canvas {
+  max-width: 96%;
+  max-height: 92%;
+}
+.ct-zoom__canvas--3d {
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 100%;
+  max-height: 100%;
+}
 .ct-zoom .ct-ai-label {
-  max-width: min(230px, 26%);
+  max-width: min(320px, 46%);
 }
 .ct-ai-overlay--zoom {
   z-index: 9;
