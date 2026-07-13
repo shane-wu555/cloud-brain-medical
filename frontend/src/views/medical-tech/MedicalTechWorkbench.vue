@@ -775,8 +775,8 @@
         </template>
       </main>
 
-      <!-- Right: AI panel -->
-      <aside v-if="!showMySchedule" class="wks-ai">
+      <!-- Right: AI panel (CHECK_DOCTOR only) -->
+      <aside v-if="!showMySchedule && role === 'CHECK_DOCTOR'" class="wks-ai">
         <el-card shadow="never" class="ai-card">
           <template #header>
             <div class="ai-header">
@@ -787,136 +787,109 @@
             </div>
           </template>
 
-          <template v-if="role === 'CHECK_DOCTOR'">
-            <section class="ai-decision">
-              <div class="ai-decision__top">
-                <span :class="['ai-risk-dot', `ai-risk-dot--${aiRiskLevel}`]"></span>
-                <div>
-                  <strong>{{ aiDecisionTitle }}</strong>
-                  <em v-if="aiDecisionSubtitle">{{ aiDecisionSubtitle }}</em>
-                </div>
-                <el-tag :type="aiStatusTagType(aiStatus)" size="small" effect="plain">{{ aiStatusLabel(aiStatus) }}</el-tag>
-              </div>
-              <div class="ai-decision__score">
-                <span>模型置信度</span>
-                <strong>{{ confidenceText(aiStructured.confidence) }}</strong>
-              </div>
-              <div class="ai-diagnosis-actions">
-                <el-button
-                  class="ai-theme-button"
-                  :loading="aiSubmitting"
-                  :disabled="aiDiagnosisDisabled"
-                  @click="startAiDiagnosis"
-                >
-                  {{ aiDiagnosisButtonText }}
-                </el-button>
-                <el-button
-                  class="ai-theme-button ai-theme-button--ghost"
-                  :disabled="!aiTaskId || aiSubmitting"
-                  @click="pollAi()"
-                >
-                  刷新判断
-                </el-button>
-              </div>
-              <div class="ai-metric-grid">
-                <div class="ai-metric">
-                  <span>风险级别</span>
-                  <strong>{{ aiRiskText }}</strong>
-                </div>
-                <div class="ai-metric">
-                  <span>异常定位</span>
-                  <strong>{{ aiStructured.abnormalRegions?.length || 0 }}</strong>
-                </div>
-                <div class="ai-metric">
-                  <span>病灶分割</span>
-                  <strong>{{ lesionSegText }}</strong>
-                </div>
-                <div class="ai-metric">
-                  <span>金属伪影</span>
-                  <strong>{{ metalArtifactText }}</strong>
-                </div>
-              </div>
-            </section>
-
-            <section class="ai-evidence-panel">
-              <div class="ai-section-head">
-                <span>影像证据</span>
-                <strong>{{ imageAiFindings.length }}</strong>
-              </div>
-              <div v-if="imageAiFindings.length" class="ai-evidence-list">
-                <button
-                  v-for="item in imageAiFindings"
-                  :key="item.id"
-                  class="ai-evidence"
-                  type="button"
-                  @click="focusAiFinding(item)"
-                >
-                  <span :class="['ai-evidence__pin', `ai-evidence__pin--${item.tone}`]"></span>
-                  <span>
-                    <strong>{{ item.label }}</strong>
-                    <em>{{ item.detail || '点击跳转至影像证据' }}</em>
-                  </span>
-                </button>
-              </div>
-              <div v-else-if="aiEvidenceEmptyText" class="ai-evidence-empty">
-                {{ aiEvidenceEmptyText }}
-              </div>
-            </section>
-
-            <section class="ai-judgement-panel">
-              <div class="ai-section-head">
-                <span>辅助判断</span>
-                <strong>{{ aiMessages.length }}</strong>
-              </div>
-              <div v-if="aiMessages.length" class="ai-judgement-list">
-                <button
-                  v-for="msg in aiMessages"
-                  :key="msg.id"
-                  class="ai-judgement"
-                  type="button"
-                  @click="focusAiMessage(msg.kind)"
-                >
-                  <span>{{ msg.label }}</span>
-                  <p>{{ msg.content }}</p>
-                </button>
-              </div>
-              <div v-else-if="aiJudgementEmptyText" class="ai-evidence-empty">{{ aiJudgementEmptyText }}</div>
-            </section>
-
-            <section class="ai-report-build">
+          <section class="ai-decision">
+            <div class="ai-decision__top">
+              <span :class="['ai-risk-dot', `ai-risk-dot--${aiRiskLevel}`]"></span>
               <div>
-                <strong>报告草稿</strong>
+                <strong>{{ aiDecisionTitle }}</strong>
+                <em v-if="aiDecisionSubtitle">{{ aiDecisionSubtitle }}</em>
               </div>
-              <el-button class="full ai-action ai-theme-button" :disabled="!current || !aiMessages.length" @click="generateAiDraft">
-                根据判断生成报告草稿
-              </el-button>
-            </section>
-          </template>
-
-          <template v-else>
-            <div class="ai-messages">
-              <div v-for="msg in aiMessages" :key="msg.id" class="ai-message">
-                <span class="ai-msg-label">{{ msg.label }}</span>
-                <p>{{ msg.content }}</p>
-                <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
-                  <el-button v-if="msg.kind === 'findings'" size="small" @click="applyToFindings(msg.content)">
-                    填入所见
-                  </el-button>
-                  <el-button v-if="msg.kind === 'conclusion'" size="small" @click="applyToConclusion(msg.content)">
-                    填入结论
-                  </el-button>
-                  <el-button v-if="msg.kind === 'advice'" size="small" @click="applyToAdvice(msg.content)">
-                    填入建议
-                  </el-button>
-                </div>
-              </div>
-              <el-empty v-if="!aiMessages.length" description="点击生成后在此显示" :image-size="60" />
+              <el-tag :type="aiStatusTagType(aiStatus)" size="small" effect="plain">{{ aiStatusLabel(aiStatus) }}</el-tag>
             </div>
+            <div class="ai-decision__score">
+              <span>模型置信度</span>
+              <strong>{{ confidenceText(aiStructured.confidence) }}</strong>
+            </div>
+            <div class="ai-diagnosis-actions">
+              <el-button
+                class="ai-theme-button"
+                :loading="aiSubmitting"
+                :disabled="aiDiagnosisDisabled"
+                @click="startAiDiagnosis"
+              >
+                {{ aiDiagnosisButtonText }}
+              </el-button>
+              <el-button
+                class="ai-theme-button ai-theme-button--ghost"
+                :disabled="!aiTaskId || aiSubmitting"
+                @click="pollAi()"
+              >
+                刷新判断
+              </el-button>
+            </div>
+            <div class="ai-metric-grid">
+              <div class="ai-metric">
+                <span>风险级别</span>
+                <strong>{{ aiRiskText }}</strong>
+              </div>
+              <div class="ai-metric">
+                <span>异常定位</span>
+                <strong>{{ aiStructured.abnormalRegions?.length || 0 }}</strong>
+              </div>
+              <div class="ai-metric">
+                <span>病灶分割</span>
+                <strong>{{ lesionSegText }}</strong>
+              </div>
+              <div class="ai-metric">
+                <span>金属伪影</span>
+                <strong>{{ metalArtifactText }}</strong>
+              </div>
+            </div>
+          </section>
 
-            <el-button type="primary" class="full ai-action" :disabled="!current" @click="generateAiDraft">
-              生成 AI 后续建议
+          <section class="ai-evidence-panel">
+            <div class="ai-section-head">
+              <span>影像证据</span>
+              <strong>{{ imageAiFindings.length }}</strong>
+            </div>
+            <div v-if="imageAiFindings.length" class="ai-evidence-list">
+              <button
+                v-for="item in imageAiFindings"
+                :key="item.id"
+                class="ai-evidence"
+                type="button"
+                @click="focusAiFinding(item)"
+              >
+                <span :class="['ai-evidence__pin', `ai-evidence__pin--${item.tone}`]"></span>
+                <span>
+                  <strong>{{ item.label }}</strong>
+                  <em>{{ item.detail || '点击跳转至影像证据' }}</em>
+                </span>
+              </button>
+            </div>
+            <div v-else-if="aiEvidenceEmptyText" class="ai-evidence-empty">
+              {{ aiEvidenceEmptyText }}
+            </div>
+          </section>
+
+          <section class="ai-judgement-panel">
+            <div class="ai-section-head">
+              <span>辅助判断</span>
+              <strong>{{ aiMessages.length }}</strong>
+            </div>
+            <div v-if="aiMessages.length" class="ai-judgement-list">
+              <button
+                v-for="msg in aiMessages"
+                :key="msg.id"
+                class="ai-judgement"
+                type="button"
+                @click="focusAiMessage(msg.kind)"
+              >
+                <span>{{ msg.label }}</span>
+                <p>{{ msg.content }}</p>
+              </button>
+            </div>
+            <div v-else-if="aiJudgementEmptyText" class="ai-evidence-empty">{{ aiJudgementEmptyText }}</div>
+          </section>
+
+          <section class="ai-report-build">
+            <div>
+              <strong>报告草稿</strong>
+            </div>
+            <el-button class="full ai-action ai-theme-button" :disabled="!current || !aiMessages.length" @click="generateAiDraft">
+              根据判断生成报告草稿
             </el-button>
-          </template>
+          </section>
         </el-card>
       </aside>
     </div>
@@ -2867,6 +2840,21 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
+.wks :deep(.el-button--primary) {
+  --el-button-bg-color: #0899a5;
+  --el-button-border-color: #0899a5;
+  --el-button-hover-bg-color: #0cbdcc;
+  --el-button-hover-border-color: #0cbdcc;
+  --el-button-active-bg-color: #087f89;
+  --el-button-active-border-color: #087f89;
+}
+
+.wks :deep(.el-button:not(.el-button--primary):not(.is-link)) {
+  --el-button-hover-text-color: #0899a5;
+  --el-button-hover-border-color: #9de3e7;
+  --el-button-hover-bg-color: #f0f9fa;
+}
+
 /* ── Navbar ── */
 .wks-nav {
   display: flex;
@@ -3161,7 +3149,7 @@ onUnmounted(() => {
 .ct-panel__slice {
   position: absolute; top: 8px; right: 10px;
   font-size: 11px; color: #fff;
-  background: #1d4ed8;
+  background: #0899a5;
   padding: 2px 8px; border-radius: 12px;
   pointer-events: none; z-index: 5;
 }
@@ -4161,12 +4149,15 @@ onUnmounted(() => {
 
 /* ── AI panel ── */
 .wks-ai {
-  width: clamp(300px, 18vw, 336px); flex-shrink: 0;
+  width: clamp(300px, 18vw, 336px);
+  flex-shrink: 0;
   height: 100%;
   min-height: 0;
   display: flex;
-  overflow: hidden; padding: 14px;
-  border-left: 1px solid #dbe3ef; background: linear-gradient(180deg, #f8fafc 0%, #eef7f8 100%);
+  overflow: hidden;
+  padding: 14px;
+  border-left: 1px solid #dbe3ef;
+  background: linear-gradient(180deg, #f8fafc 0%, #eef7f8 100%);
   box-sizing: border-box;
 }
 .ai-card {
