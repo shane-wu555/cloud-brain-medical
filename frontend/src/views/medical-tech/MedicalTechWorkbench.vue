@@ -142,7 +142,7 @@
                 <div v-show="ctViewerMode === 'mpr'" class="ct-panels">
 
                   <!-- Axial -->
-                  <div class="ct-panel" @dragover.prevent @drop.prevent="handleDrop" @wheel.prevent="onWheelPanel('axial', $event)">
+                  <div class="ct-panel ct-panel--zoomable" @click="openCtZoom('axial', $event)" @dragover.prevent @drop.prevent="handleDrop" @wheel.prevent="onWheelPanel('axial', $event)">
                     <span class="ct-panel__lbl">【轴检 Axial】</span>
                     <span class="ct-panel__slice" v-if="volume">切片: {{ sliceZ + 1 }} / {{ volume.nz }}</span>
 
@@ -151,19 +151,26 @@
                     <template v-else-if="volume">
                       <canvas ref="canvasAxial" class="ct-panel__canvas"></canvas>
                       <div v-if="showImageAiOverlay" class="ct-ai-overlay">
-                        <div class="ct-ai-overlay__head">
-                          <span>AI 结果叠加</span>
-                          <strong>{{ overlaySliceLabel }}</strong>
-                        </div>
                         <button
                           v-for="item in imageAiFindings"
                           :key="item.id"
                           :class="['ct-ai-marker', `ct-ai-marker--${item.tone}`]"
                           type="button"
+                          :title="item.label"
+                          :aria-label="item.label"
                           :style="{ left: item.x, top: item.y }"
                           @click.stop="focusAiFinding(item)"
                         >
                           <span class="ct-ai-marker__dot"></span>
+                        </button>
+                        <button
+                          v-for="item in imageAiFindings"
+                          :key="`${item.id}-label`"
+                          :class="['ct-ai-label', `ct-ai-label--${item.tone}`, `ct-ai-label--${aiFindingSide(item)}`]"
+                          type="button"
+                          :style="{ top: item.y }"
+                          @click.stop="focusAiFinding(item)"
+                        >
                           <span>{{ item.label }}</span>
                         </button>
                       </div>
@@ -174,32 +181,39 @@
                       <span class="ct-orient ct-orient--tl">S</span>
                       <span class="ct-orient ct-orient--bl">I</span>
                       <div class="ct-scale">{{ volume.dx.toFixed(2) }}mm/px</div>
-                      <button class="ct-clear" @click="clearFile">✕</button>
-                      <input class="ct-slider" type="range" :min="0" :max="volume.nz - 1" :value="sliceZ" @input="onSliceSlider('axial', $event)" />
+                      <button class="ct-clear" @click.stop="clearFile">✕</button>
+                      <input class="ct-slider" type="range" :min="0" :max="volume.nz - 1" :value="sliceZ" @click.stop @input="onSliceSlider('axial', $event)" />
                     </template>
 
                     <template v-else-if="imagePreviewUrl">
                       <img :src="imagePreviewUrl" class="ct-panel__img" alt="轴位" />
                       <div v-if="showImageAiOverlay" class="ct-ai-overlay">
-                        <div class="ct-ai-overlay__head">
-                          <span>AI 结果叠加</span>
-                          <strong>{{ overlaySliceLabel }}</strong>
-                        </div>
                         <button
                           v-for="item in imageAiFindings"
                           :key="item.id"
                           :class="['ct-ai-marker', `ct-ai-marker--${item.tone}`]"
                           type="button"
+                          :title="item.label"
+                          :aria-label="item.label"
                           :style="{ left: item.x, top: item.y }"
                           @click.stop="focusAiFinding(item)"
                         >
                           <span class="ct-ai-marker__dot"></span>
+                        </button>
+                        <button
+                          v-for="item in imageAiFindings"
+                          :key="`${item.id}-label`"
+                          :class="['ct-ai-label', `ct-ai-label--${item.tone}`, `ct-ai-label--${aiFindingSide(item)}`]"
+                          type="button"
+                          :style="{ top: item.y }"
+                          @click.stop="focusAiFinding(item)"
+                        >
                           <span>{{ item.label }}</span>
                         </button>
                       </div>
                       <div class="ct-line ct-line--h"></div>
                       <div class="ct-line ct-line--v"></div>
-                      <button class="ct-clear" @click="clearFile">✕</button>
+                      <button class="ct-clear" @click.stop="clearFile">✕</button>
                     </template>
 
                     <template v-else-if="file">
@@ -207,7 +221,7 @@
                         <div class="ct-dicom-hint__icon">📄</div>
                         <div class="ct-dicom-hint__name">{{ file.name }}</div>
                         <div class="ct-dicom-hint__sub">DICOM 格式，可提交 AI 分析</div>
-                        <button class="ct-clear" @click="clearFile" style="position:static;margin-top:8px">✕ 移除</button>
+                        <button class="ct-clear" @click.stop="clearFile" style="position:static;margin-top:8px">✕ 移除</button>
                       </div>
                     </template>
 
@@ -222,7 +236,8 @@
                   </div>
 
                   <!-- 3D WebGL reconstruction -->
-                  <div class="ct-panel ct-panel--3d"
+                  <div class="ct-panel ct-panel--3d ct-panel--zoomable"
+                       @click="openCtZoom('3d', $event)"
                        @mousedown="on3DDown"
                        @mousemove="on3DMove"
                        @mouseup="on3DUp"
@@ -251,7 +266,7 @@
                   </div>
 
                   <!-- Coronal -->
-                  <div class="ct-panel" @wheel.prevent="onWheelPanel('coronal', $event)">
+                  <div class="ct-panel ct-panel--zoomable" @click="openCtZoom('coronal', $event)" @wheel.prevent="onWheelPanel('coronal', $event)">
                     <span class="ct-panel__lbl">【冠状 Coronal】</span>
                     <span class="ct-panel__slice" v-if="volume">切片: {{ sliceY + 1 }} / {{ volume.ny }}</span>
                     <template v-if="volume">
@@ -263,7 +278,7 @@
                       <span class="ct-orient ct-orient--tl">S</span>
                       <span class="ct-orient ct-orient--bl">I</span>
                       <div class="ct-scale">{{ volume.dy.toFixed(2) }}mm/px</div>
-                      <input class="ct-slider" type="range" :min="0" :max="volume.ny - 1" :value="sliceY" @input="onSliceSlider('coronal', $event)" />
+                      <input class="ct-slider" type="range" :min="0" :max="volume.ny - 1" :value="sliceY" @click.stop @input="onSliceSlider('coronal', $event)" />
                     </template>
                     <template v-else>
                       <div class="ct-placeholder">
@@ -277,7 +292,7 @@
                   </div>
 
                   <!-- Sagittal -->
-                  <div class="ct-panel" @wheel.prevent="onWheelPanel('sagittal', $event)">
+                  <div class="ct-panel ct-panel--zoomable" @click="openCtZoom('sagittal', $event)" @wheel.prevent="onWheelPanel('sagittal', $event)">
                     <span class="ct-panel__lbl">【矢状 Sagittal】</span>
                     <span class="ct-panel__slice" v-if="volume">切片: {{ sliceX + 1 }} / {{ volume.nx }}</span>
                     <template v-if="volume">
@@ -289,7 +304,7 @@
                       <span class="ct-orient ct-orient--tl">S</span>
                       <span class="ct-orient ct-orient--bl">I</span>
                       <div class="ct-scale">{{ volume.dz.toFixed(2) }}mm/px</div>
-                      <input class="ct-slider" type="range" :min="0" :max="volume.nx - 1" :value="sliceX" @input="onSliceSlider('sagittal', $event)" />
+                      <input class="ct-slider" type="range" :min="0" :max="volume.nx - 1" :value="sliceX" @click.stop @input="onSliceSlider('sagittal', $event)" />
                     </template>
                     <template v-else>
                       <div class="ct-placeholder">
@@ -303,7 +318,54 @@
                   </div>
 
                 </div><!-- /ct-panels -->
+                <div v-if="ctZoomView" class="ct-zoom" @click.self="closeCtZoom">
+                  <div class="ct-zoom__panel" @wheel.prevent="onCtZoomWheel">
+                    <div class="ct-zoom__bar">
+                      <strong>{{ ctZoomTitle }}</strong>
+                      <span v-if="ctZoomSliceText">{{ ctZoomSliceText }}</span>
+                      <button type="button" @click="closeCtZoom">✕</button>
+                    </div>
+                    <div class="ct-zoom__stage">
+                      <template v-if="ctZoomView === 'axial' && imagePreviewUrl && !volume">
+                        <img :src="imagePreviewUrl" class="ct-zoom__img" alt="轴位放大" />
+                      </template>
+                      <template v-else-if="ctZoomView === '3d'">
+                        <canvas ref="canvasZoom3D" class="ct-zoom__canvas"></canvas>
+                      </template>
+                      <template v-else>
+                        <canvas ref="canvasZoom" class="ct-zoom__canvas"></canvas>
+                      </template>
 
+                      <div v-if="ctZoomView === 'axial' && showImageAiOverlay" class="ct-ai-overlay ct-ai-overlay--zoom">
+                        <button
+                          v-for="item in imageAiFindings"
+                          :key="`zoom-${item.id}`"
+                          :class="['ct-ai-marker', `ct-ai-marker--${item.tone}`]"
+                          type="button"
+                          :title="item.label"
+                          :aria-label="item.label"
+                          :style="{ left: item.x, top: item.y }"
+                          @click.stop="focusAiFinding(item)"
+                        >
+                          <span class="ct-ai-marker__dot"></span>
+                        </button>
+                        <button
+                          v-for="item in imageAiFindings"
+                          :key="`zoom-${item.id}-label`"
+                          :class="['ct-ai-label', `ct-ai-label--${item.tone}`, `ct-ai-label--${aiFindingSide(item)}`]"
+                          type="button"
+                          :style="{ top: item.y }"
+                          @click.stop="focusAiFinding(item)"
+                        >
+                          <span>{{ item.label }}</span>
+                        </button>
+                      </div>
+
+                      <div class="ct-line ct-line--h"></div>
+                      <div class="ct-line ct-line--v"></div>
+                    </div>
+                  </div>
+                </div>
                 <div v-show="ctViewerMode === 'film'" ref="filmScrollRef" class="ct-film" @scroll="onFilmScroll">
                   <div v-if="!volume" class="ct-placeholder">
                     <div class="ct-placeholder__icon">⬡</div>
@@ -942,6 +1004,74 @@ const imageAiFindings = computed<ImageAiFinding[]>(() => {
 });
 const showImageAiOverlay = computed(() => imageAiFindings.value.length > 0 && (Boolean(volume.value) || Boolean(imagePreviewUrl.value)));
 const overlaySliceLabel = computed(() => volume.value ? `当前层 ${sliceZ.value + 1}/${volume.value.nz}` : '当前图像');
+
+function aiFindingSide(item: ImageAiFinding): 'left' | 'right' {
+  return Number.parseFloat(item.x) < 50 ? 'left' : 'right';
+}
+
+const ctZoomTitle = computed(() => {
+  if (ctZoomView.value === 'axial') return '轴位 Axial';
+  if (ctZoomView.value === 'coronal') return '冠状 Coronal';
+  if (ctZoomView.value === 'sagittal') return '矢状 Sagittal';
+  if (ctZoomView.value === '3d') return '3D 重建';
+  return '';
+});
+const ctZoomSliceText = computed(() => {
+  const vol = volume.value;
+  if (!vol) return ctZoomView.value === 'axial' && imagePreviewUrl.value ? '当前图像' : '';
+  if (ctZoomView.value === 'axial') return `切片 ${sliceZ.value + 1} / ${vol.nz}`;
+  if (ctZoomView.value === 'coronal') return `切片 ${sliceY.value + 1} / ${vol.ny}`;
+  if (ctZoomView.value === 'sagittal') return `切片 ${sliceX.value + 1} / ${vol.nx}`;
+  return '';
+});
+
+function isInteractiveCtTarget(target: EventTarget | null) {
+  return target instanceof HTMLElement && Boolean(target.closest('button,input,label,select,textarea,a'));
+}
+
+async function openCtZoom(view: CtZoomView, event?: MouseEvent) {
+  if (event && isInteractiveCtTarget(event.target)) return;
+  if (view !== 'axial' && !volume.value) return;
+  if (view === 'axial' && !volume.value && !imagePreviewUrl.value) return;
+  ctZoomView.value = view;
+  await nextTick();
+  renderCtZoom();
+}
+
+function closeCtZoom() {
+  ctZoomView.value = '';
+  rendererZoom3D.value?.destroy();
+  rendererZoom3D.value = null;
+}
+
+function renderCtZoom() {
+  const view = ctZoomView.value;
+  const vol = volume.value;
+  if (!view) return;
+  if (view === '3d') {
+    if (!vol || !canvasZoom3D.value) return;
+    try {
+      canvasZoom3D.value.width = canvasZoom3D.value.clientWidth || 900;
+      canvasZoom3D.value.height = canvasZoom3D.value.clientHeight || 620;
+      rendererZoom3D.value?.destroy();
+      rendererZoom3D.value = new VolumeRenderer3D(canvasZoom3D.value, vol);
+      rendererZoom3D.value.render(azim3D.value, elev3D.value, winC.value, winW.value, render3DMode.value, render3DRoi.value);
+    } catch {
+      rendererZoom3D.value = null;
+    }
+    return;
+  }
+  if (!vol || !canvasZoom.value) return;
+  if (view === 'axial') renderAxial(canvasZoom.value, vol, sliceZ.value, winC.value, winW.value);
+  else if (view === 'coronal') renderCoronal(canvasZoom.value, vol, sliceY.value, winC.value, winW.value);
+  else renderSagittal(canvasZoom.value, vol, sliceX.value, winC.value, winW.value);
+}
+
+function onCtZoomWheel(e: WheelEvent) {
+  if (!ctZoomView.value || ctZoomView.value === '3d') return;
+  onWheelPanel(ctZoomView.value, e);
+}
+
 const hasPositiveMetalSegmentation = computed(() => Boolean(aiStructured.value.metalArtifactSegmentation?.enabled && aiStructured.value.metalArtifactSegmentation?.hasArtifactRegion));
 const hasPositiveLesionSegmentation = computed(() => Boolean(aiStructured.value.lesionSegmentation?.enabled && aiStructured.value.lesionSegmentation?.hasLesionRegion));
 const aiRiskLevel = computed<'none' | 'low' | 'medium' | 'high'>(() => {
@@ -1122,9 +1252,14 @@ const canvasAxial    = ref<HTMLCanvasElement>();
 const canvasCoronal  = ref<HTMLCanvasElement>();
 const canvasSagittal = ref<HTMLCanvasElement>();
 const canvas3D       = ref<HTMLCanvasElement>();
+const canvasZoom     = ref<HTMLCanvasElement>();
+const canvasZoom3D   = ref<HTMLCanvasElement>();
+type CtZoomView = 'axial' | 'coronal' | 'sagittal' | '3d';
+const ctZoomView = ref<CtZoomView | ''>('');
 
 // 3D renderer
 const renderer3D = ref<VolumeRenderer3D | null>(null);
+const rendererZoom3D = ref<VolumeRenderer3D | null>(null);
 const azim3D = ref(220);
 const elev3D = ref(18);
 const render3DMode = ref<VolumeRenderMode>('brain');
@@ -1188,9 +1323,11 @@ function rerenderMpr() {
   if (canvasAxial.value)    renderAxial(canvasAxial.value,       vol, sliceZ.value, winC.value, winW.value);
   if (canvasCoronal.value)  renderCoronal(canvasCoronal.value,   vol, sliceY.value, winC.value, winW.value);
   if (canvasSagittal.value) renderSagittal(canvasSagittal.value, vol, sliceX.value, winC.value, winW.value);
+  renderCtZoom();
 }
 function rerender3D() {
   renderer3D.value?.render(azim3D.value, elev3D.value, winC.value, winW.value, render3DMode.value, render3DRoi.value);
+  rendererZoom3D.value?.render(azim3D.value, elev3D.value, winC.value, winW.value, render3DMode.value, render3DRoi.value);
 }
 
 function set3DMode(mode: VolumeRenderMode) {
@@ -1413,9 +1550,9 @@ function exportSelectedFilm() {
   ElMessage.success('已导出所选切片胶片 PNG');
 }
 
-watch(sliceZ, () => { if (syncingSlices) return; const v = volume.value; if (v && canvasAxial.value)    renderAxial(canvasAxial.value,       v, sliceZ.value, winC.value, winW.value); });
-watch(sliceY, () => { if (syncingSlices) return; const v = volume.value; if (v && canvasCoronal.value)  renderCoronal(canvasCoronal.value,   v, sliceY.value, winC.value, winW.value); });
-watch(sliceX, () => { if (syncingSlices) return; const v = volume.value; if (v && canvasSagittal.value) renderSagittal(canvasSagittal.value, v, sliceX.value, winC.value, winW.value); });
+watch(sliceZ, () => { if (syncingSlices) return; const v = volume.value; if (v && canvasAxial.value)    renderAxial(canvasAxial.value,       v, sliceZ.value, winC.value, winW.value); renderCtZoom(); });
+watch(sliceY, () => { if (syncingSlices) return; const v = volume.value; if (v && canvasCoronal.value)  renderCoronal(canvasCoronal.value,   v, sliceY.value, winC.value, winW.value); renderCtZoom(); });
+watch(sliceX, () => { if (syncingSlices) return; const v = volume.value; if (v && canvasSagittal.value) renderSagittal(canvasSagittal.value, v, sliceX.value, winC.value, winW.value); renderCtZoom(); });
 watch(visibleFilmSliceIndexes, indexes => queueFilmThumbs(indexes), { immediate: true });
 watch([azim3D, elev3D], rerender3D);
 watch([render3DMode, render3DRoi], rerender3D);
@@ -1425,6 +1562,7 @@ watch(volume, async (vol) => {
   // destroy old renderer
   renderer3D.value?.destroy();
   renderer3D.value = null;
+  closeCtZoom();
   selectedFilmSlices.value = [];
   clearFilmThumbCache();
   filmScrollTop.value = 0;
@@ -2551,6 +2689,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   stopAiPolling();
+  rendererZoom3D.value?.destroy();
 });
 </script>
 
@@ -2721,6 +2860,7 @@ onUnmounted(() => {
 /* ── CT Viewer (CHECK_DOCTOR) ── */
 .ct-viewer {
   flex: 1;
+  position: relative;
   display: flex;
   flex-direction: column;
   background: #f8fafc;
@@ -2828,6 +2968,15 @@ onUnmounted(() => {
   min-width: 0;
   min-height: 0;
 }
+.ct-panel--zoomable {
+  cursor: zoom-in;
+}
+.ct-panel--zoomable .ct-slider,
+.ct-panel--zoomable button,
+.ct-panel--zoomable input,
+.ct-panel--zoomable label {
+  cursor: initial;
+}
 .ct-panel + .ct-panel { border-left: 1px solid #dbe3ef; }
 .ct-panel:nth-child(3),
 .ct-panel:nth-child(4) { border-top: 1px solid #dbe3ef; }
@@ -2883,13 +3032,60 @@ onUnmounted(() => {
 .ct-ai-marker {
   position: absolute;
   transform: translate(-50%, -50%);
-  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  display: flex;
   align-items: center;
-  gap: 6px;
-  max-width: 188px;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.ct-ai-marker::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 15px;
+  width: 1px;
+  height: 34px;
+  background: currentColor;
+  opacity: 0.78;
+  box-shadow: 0 0 8px currentColor;
+  transform: translateX(-50%);
+}
+.ct-ai-marker:hover .ct-ai-marker__dot,
+.ct-ai-marker:focus-visible .ct-ai-marker__dot {
+  transform: scale(1.18);
+  box-shadow: 0 0 0 7px rgba(255,255,255,0.1), 0 0 18px currentColor;
+}
+.ct-ai-marker__dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: currentColor;
+  border: 2px solid rgba(255, 255, 255, 0.82);
+  box-shadow: 0 0 0 5px rgba(255,255,255,0.08), 0 0 14px currentColor;
+  flex-shrink: 0;
+  transition: transform 0.12s, box-shadow 0.12s;
+}
+.ct-ai-marker--finding { color: #67e8f9; }
+.ct-ai-marker--risk { color: #fda4af; }
+.ct-ai-marker--support { color: #bef264; }
+
+.ct-ai-label {
+  position: absolute;
+  z-index: 8;
+  max-width: min(180px, 28%);
   min-height: 28px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
   padding: 5px 9px;
-  border: 1px solid rgba(255, 255, 255, 0.48);
+  border: 1px solid rgba(255, 255, 255, 0.42);
   border-radius: 4px;
   background: rgba(8, 13, 23, 0.82);
   color: #fff;
@@ -2898,29 +3094,28 @@ onUnmounted(() => {
   text-align: left;
   cursor: pointer;
   pointer-events: auto;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45), 0 0 24px rgba(34, 211, 238, 0.18);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45), 0 0 18px rgba(34, 211, 238, 0.12);
+  backdrop-filter: blur(4px);
 }
-.ct-ai-marker::before {
-  content: '';
-  position: absolute;
-  left: 50%;
-  top: 100%;
-  width: 1px;
-  height: 34px;
-  background: currentColor;
-  opacity: 0.7;
+.ct-ai-label--left {
+  left: 12px;
 }
-.ct-ai-marker__dot {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: currentColor;
-  box-shadow: 0 0 0 5px rgba(255,255,255,0.08), 0 0 14px currentColor;
-  flex-shrink: 0;
+.ct-ai-label--right {
+  right: 12px;
 }
-.ct-ai-marker--finding { color: #67e8f9; }
-.ct-ai-marker--risk { color: #fda4af; }
-.ct-ai-marker--support { color: #bef264; }
+.ct-ai-label span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ct-ai-label:hover,
+.ct-ai-label:focus-visible {
+  border-color: currentColor;
+  background: rgba(15, 23, 42, 0.92);
+}
+.ct-ai-label--finding { color: #67e8f9; }
+.ct-ai-label--risk { color: #fda4af; }
+.ct-ai-label--support { color: #bef264; }
 
 /* Crosshair lines */
 .ct-line {
@@ -3096,6 +3291,83 @@ onUnmounted(() => {
   height: 92% !important;
   max-height: 100%;
   image-rendering: auto;
+}
+
+.ct-zoom {
+  position: absolute;
+  inset: 44px 0 52px;
+  z-index: 30;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  padding: 10px;
+  background: rgba(15, 23, 42, 0.58);
+  backdrop-filter: blur(2px);
+}
+.ct-zoom__panel {
+  width: min(100%, 1180px);
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #000;
+  box-shadow: 0 18px 50px rgba(15, 23, 42, 0.35);
+}
+.ct-zoom__bar {
+  height: 42px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  border-bottom: 1px solid #1f2937;
+  background: #0f172a;
+  color: #e2e8f0;
+}
+.ct-zoom__bar strong {
+  font-size: 14px;
+}
+.ct-zoom__bar span {
+  color: #67e8f9;
+  font-size: 12px;
+}
+.ct-zoom__bar button {
+  margin-left: auto;
+  width: 30px;
+  height: 30px;
+  border: 1px solid #475569;
+  border-radius: 5px;
+  background: #111827;
+  color: #e5e7eb;
+  cursor: pointer;
+}
+.ct-zoom__stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: #000;
+}
+.ct-zoom__canvas,
+.ct-zoom__img {
+  max-width: 96%;
+  max-height: 96%;
+  object-fit: contain;
+  image-rendering: auto;
+}
+.ct-zoom__canvas {
+  display: block;
+}
+.ct-zoom .ct-ai-label {
+  max-width: min(230px, 26%);
+}
+.ct-ai-overlay--zoom {
+  z-index: 9;
 }
 .ct-3d-controls {
   position: absolute;
