@@ -71,16 +71,17 @@ const groupedRecords = computed(() => {
 
 function statusLabel(status: string) {
   const map: Record<string, string> = {
-    DRAFT: '待完善',
+    DRAFT: '就诊中',
     ACTIVE: '就诊中',
-    ARCHIVED: '已归档',
-    COMPLETED: '已完成',
+    ARCHIVED: '已就诊',
+    COMPLETED: '已就诊',
+    FINISHED: '已就诊',
     CANCELLED: '已取消',
     PENDING: '待就诊',
     PENDING_PAYMENT: '待缴费',
     WAITING: '待就诊',
-    CONFIRMED: '已确认',
-    IN_PROGRESS: '进行中',
+    CONFIRMED: '待就诊',
+    IN_PROGRESS: '就诊中',
     REFUNDED: '已退款',
     FAILED: '已失败',
     PAID: '已缴费',
@@ -228,14 +229,23 @@ function goDetail(item: VisitRecord) {
   font-size: 22rpx;
 }
 
+.status-tag.PENDING,
+.status-tag.WAITING,
+.status-tag.CONFIRMED {
+  background: #fff7ed;
+  color: #c2410c;
+}
+
 .status-tag.ACTIVE,
-.status-tag.PENDING {
+.status-tag.IN_PROGRESS,
+.status-tag.DRAFT {
   background: #ecfeff;
   color: #0f766e;
 }
 
 .status-tag.COMPLETED,
-.status-tag.ARCHIVED {
+.status-tag.ARCHIVED,
+.status-tag.FINISHED {
   background: #f1f5f9;
   color: #475569;
 }
@@ -245,8 +255,4 @@ function goDetail(item: VisitRecord) {
   color: #c53030;
 }
 
-.status-tag.DRAFT {
-  background: #fff7ed;
-  color: #c2410c;
-}
 </style>

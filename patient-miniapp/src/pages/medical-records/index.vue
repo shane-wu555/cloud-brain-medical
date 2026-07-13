@@ -80,9 +80,9 @@ const emptyText = computed(() => (selectedAppointmentId.value ? '暂无对应电
 
 function statusLabel(status: MedicalRecord['status']) {
   return {
-    DRAFT: '待完善',
+    DRAFT: '就诊中',
     ACTIVE: '就诊中',
-    ARCHIVED: '已归档'
+    ARCHIVED: '已就诊'
   }[status] ?? status;
 }
 
@@ -163,11 +163,7 @@ onShow(async () => {
   white-space: nowrap;
 }
 
-.draft {
-  background: #fff7ed;
-  color: #c2410c;
-}
-
+.draft,
 .active {
   background: #ecfeff;
   color: #0f766e;
