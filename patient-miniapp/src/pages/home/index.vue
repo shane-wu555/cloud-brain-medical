@@ -8,9 +8,18 @@
       </view>
     </view>
 
-    <swiper class="banner-swiper" :indicator-dots="true" :autoplay="false" indicator-color="rgba(255, 255, 255, 0.72)" indicator-active-color="#0899a5">
-      <swiper-item>
-        <image class="banner-image" src="/static/banners/home-banner.png" mode="aspectFill" />
+    <swiper
+      class="banner-swiper"
+      :indicator-dots="true"
+      :autoplay="true"
+      :circular="true"
+      :interval="3500"
+      :duration="500"
+      indicator-color="rgba(255, 255, 255, 0.72)"
+      indicator-active-color="#0899a5"
+    >
+      <swiper-item v-for="banner in homeBanners" :key="banner.id">
+        <image class="banner-image" :src="banner.image" mode="aspectFill" />
       </swiper-item>
     </swiper>
 
@@ -137,6 +146,12 @@ const notifStore = useNotificationStore();
 const activeGroup = ref('门诊');
 
 let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+const homeBanners = [
+  { id: 'home-banner-1', image: '/static/banners/home-banner-1.png' },
+  { id: 'home-banner-2', image: '/static/banners/home-banner-2.png' },
+  { id: 'home-banner-3', image: '/static/banners/home-banner-3.png' }
+];
 
 const quickEntries: QuickEntry[] = [
   { name: 'AI问诊建议', desc: '智能推荐科室', icon: 'stethoscope', tone: 'tone-disease', url: '/pages/consultation/index' },

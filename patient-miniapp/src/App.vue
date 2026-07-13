@@ -2,12 +2,10 @@
 import { onHide, onLaunch, onShow } from '@dcloudio/uni-app';
 import { useAuthStore } from './stores/auth';
 import { useNotificationStore } from './stores/notification';
-import { preloadMedicalIcons } from './utils/preload-icons';
 
 onLaunch(() => {
   useAuthStore().restore();
   useNotificationStore().startCalledPolling();
-  preloadMedicalIcons();
 });
 
 onShow(() => {
