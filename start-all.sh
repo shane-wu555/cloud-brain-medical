@@ -7,8 +7,11 @@ PROJECT_DIR=/opt/cloud-brain-medical
 BACKEND_DIR=$PROJECT_DIR/backend
 FRONTEND_DIR=$PROJECT_DIR/frontend
 DOCKER_DIR=$PROJECT_DIR/docker
+FRP_DIR="${FRP_DIR:-/opt/frp_0.61.1_linux_amd64}"
+FRPS_CONFIG="${FRPS_CONFIG:-$FRP_DIR/frps.toml}"
 
 LOG_DIR=$BACKEND_DIR/logs
+mkdir -p $LOG_DIR
 
 PUBLIC_IP=$(curl -fsS \
     --connect-timeout 3 \
@@ -22,6 +25,7 @@ if [[ ! "$PUBLIC_IP" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
 fi
 
 export PAYMENT_PUBLIC_SCAN_BASE_URL="http://${PUBLIC_IP}"
+export AI_SERVICE_URL="${AI_SERVICE_URL:-http://127.0.0.1:18000}"
 
 echo "公网 IP：${PUBLIC_IP}"
 echo "扫码基础地址：${PAYMENT_PUBLIC_SCAN_BASE_URL}"
@@ -29,6 +33,32 @@ echo "扫码基础地址：${PAYMENT_PUBLIC_SCAN_BASE_URL}"
 echo "================================="
 echo " Cloud Brain Medical Deployment "
 echo "================================="
+echo "AI Service URL: ${AI_SERVICE_URL}"
+echo "FRP server config: ${FRPS_CONFIG}"
+
+#################################
+# 0. Start FRP server
+#################################
+
+echo ""
+echo "========== Start FRP Server =========="
+
+if [ -x "$FRP_DIR/frps" ] && [ -f "$FRPS_CONFIG" ]; then
+
+    pkill -f "frps -c $FRPS_CONFIG" || true
+
+    nohup "$FRP_DIR/frps" -c "$FRPS_CONFIG" \
+    > "$LOG_DIR/frps.log" 2>&1 &
+
+    echo "frps started"
+
+else
+
+    echo "WARN: frps not found or config missing, skipped"
+    echo "      expected binary: $FRP_DIR/frps"
+    echo "      expected config: $FRPS_CONFIG"
+
+fi
 
 # ==============================
 # RDS PostgreSQL Configuration
