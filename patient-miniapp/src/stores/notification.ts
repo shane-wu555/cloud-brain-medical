@@ -1,10 +1,29 @@
 import { defineStore } from 'pinia';
+import { request } from '../api/http';
 import { fetchNotifications, fetchUnreadCount, markRead, type NotificationItem } from '../api/notification';
 
 let calledPollTimer: ReturnType<typeof setInterval> | null = null;
+let unreadPollTimer: ReturnType<typeof setInterval> | null = null;
 let calledModalOpen = false;
 const handledCalledIds = new Set<string>();
 const excludedNotificationRoutes = new Set(['pages/login/index']);
+
+interface Appointment {
+  id: string;
+  paymentStatus: string;
+}
+
+interface MedicalOrder {
+  id: string;
+  orderType: 'CHECK' | 'LAB' | 'DISPOSAL';
+  paymentStatus: string;
+  status: string;
+}
+
+interface Prescription {
+  id: string;
+  status: string;
+}
 
 function currentRoute() {
   const pages = getCurrentPages();
@@ -30,6 +49,9 @@ export const useNotificationStore = defineStore('notification', {
     unreadTotal: 0,
     unreadByCategory: {} as Record<string, number>,
     pendingPaymentTodoCount: 0,
+    examTodoCount: 0,
+    disposalTodoCount: 0,
+    dispenseTodoCount: 0,
   }),
 
   getters: {
@@ -43,16 +65,16 @@ export const useNotificationStore = defineStore('notification', {
         + this.drugsDispensedCount;
     },
     pendingPaymentCount(): number {
-      return Math.max(this.pendingPaymentTodoCount, this.unreadByCategory['PENDING_PAYMENT'] || 0);
+      return this.pendingPaymentTodoCount;
     },
     examAndReportCount(): number {
-      return this.unreadByCategory['EXAM_ARRANGEMENT'] || 0;
+      return this.examTodoCount;
     },
     disposalCompletedCount(): number {
-      return this.unreadByCategory['DISPOSAL_ARRANGEMENT'] || 0;
+      return this.disposalTodoCount;
     },
     drugsDispensedCount(): number {
-      return this.unreadByCategory['DISPENSE_ARRANGEMENT'] || 0;
+      return this.dispenseTodoCount;
     },
   },
 
@@ -60,7 +82,10 @@ export const useNotificationStore = defineStore('notification', {
     async refreshUnreadCount(): Promise<void> {
       if (!canPollNotifications()) return;
       try {
-        const counts = await fetchUnreadCount();
+        const [counts] = await Promise.all([
+          fetchUnreadCount(),
+          this.refreshBusinessTodoCounts(),
+        ]);
         this.unreadTotal = counts.total || 0;
         this.unreadByCategory = counts;
       } catch {
@@ -87,6 +112,67 @@ export const useNotificationStore = defineStore('notification', {
 
     setPendingPaymentTodoCount(count: number): void {
       this.pendingPaymentTodoCount = Math.max(0, Number(count) || 0);
+    },
+
+    setBusinessTodoCounts(counts: {
+      pendingPayment: number;
+      exam: number;
+      disposal: number;
+      dispense: number;
+    }): void {
+      this.pendingPaymentTodoCount = Math.max(0, Number(counts.pendingPayment) || 0);
+      this.examTodoCount = Math.max(0, Number(counts.exam) || 0);
+      this.disposalTodoCount = Math.max(0, Number(counts.disposal) || 0);
+      this.dispenseTodoCount = Math.max(0, Number(counts.dispense) || 0);
+    },
+
+    async refreshBusinessTodoCounts(): Promise<void> {
+      const patient = uni.getStorageSync('bound_patient');
+      if (!patient?.id) {
+        this.setBusinessTodoCounts({
+          pendingPayment: 0,
+          exam: 0,
+          disposal: 0,
+          dispense: 0,
+        });
+        return;
+      }
+      try {
+        const patientQuery = `patientId=${encodeURIComponent(patient.id)}`;
+        const [appointments, medicalOrders, prescriptions] = await Promise.all([
+          request<Appointment[]>({ url: `/appointments?${patientQuery}`, method: 'GET' }),
+          request<MedicalOrder[]>({ url: `/medical-orders?${patientQuery}&view=PAYMENT_RECORD`, method: 'GET' }),
+          request<Prescription[]>({ url: `/prescriptions?${patientQuery}&view=PAYMENT_RECORD`, method: 'GET' }),
+        ]);
+        const registrationCount = appointments
+          .filter((item) => item.paymentStatus === 'UNPAID' || item.paymentStatus === 'FAILED')
+          .length;
+        const medicalOrderCount = medicalOrders
+          .filter((item) => item.paymentStatus === 'UNPAID')
+          .length;
+        const prescriptionCount = prescriptions
+          .filter((item) => item.status === 'PENDING_PAYMENT' || item.status === 'CONFIRMED')
+          .length;
+        const examCount = medicalOrders
+          .filter((item) => (item.orderType === 'CHECK' || item.orderType === 'LAB')
+            && !['COMPLETED', 'MISSED', 'REPORT_PENDING'].includes(item.status))
+          .length;
+        const disposalCount = medicalOrders
+          .filter((item) => item.orderType === 'DISPOSAL'
+            && (item.paymentStatus === 'UNPAID' || !['COMPLETED', 'MISSED', 'REPORT_PENDING'].includes(item.status)))
+          .length;
+        const dispenseCount = prescriptions
+          .filter((item) => ['CONFIRMED', 'PENDING_PAYMENT', 'PAID', 'WAITING_DISPENSE'].includes(item.status))
+          .length;
+        this.setBusinessTodoCounts({
+          pendingPayment: registrationCount + medicalOrderCount + prescriptionCount,
+          exam: examCount,
+          disposal: disposalCount,
+          dispense: dispenseCount,
+        });
+      } catch {
+        // keep existing todo counts when business data polling fails
+      }
     },
 
     async checkCalledAlert(): Promise<void> {
@@ -133,10 +219,27 @@ export const useNotificationStore = defineStore('notification', {
       }, 15000);
     },
 
+    startUnreadPolling(): void {
+      if (unreadPollTimer) {
+        return;
+      }
+      this.refreshUnreadCount();
+      unreadPollTimer = setInterval(() => {
+        this.refreshUnreadCount();
+      }, 10000);
+    },
+
     stopCalledPolling(): void {
       if (calledPollTimer) {
         clearInterval(calledPollTimer);
         calledPollTimer = null;
+      }
+    },
+
+    stopUnreadPolling(): void {
+      if (unreadPollTimer) {
+        clearInterval(unreadPollTimer);
+        unreadPollTimer = null;
       }
     },
   },

@@ -146,6 +146,7 @@ import { computed, ref } from 'vue';
 import { onLoad, onShow } from '@dcloudio/uni-app';
 import { request } from '../../api/http';
 import { useAuthStore } from '../../stores/auth';
+import { useNotificationStore } from '../../stores/notification';
 import { formatDateTime } from '../../utils/format';
 
 interface Appointment {
@@ -232,6 +233,7 @@ interface PendingItem {
 }
 
 const auth = useAuthStore();
+const notifStore = useNotificationStore();
 const registrationItems = ref<PendingItem[]>([]);
 const medicalOrderItems = ref<PendingItem[]>([]);
 const prescriptionItems = ref<PendingItem[]>([]);
@@ -841,6 +843,7 @@ async function pay(item: PendingItem, method: 'WECHAT' | 'MEDICAL_INSURANCE') {
     uni.showToast({ title: method === 'MEDICAL_INSURANCE' ? '医保缴费成功' : '缴费成功', icon: 'success' });
     closePaymentDialog();
     await load();
+    await notifStore.refreshUnreadCount();
   } catch (error) {
     uni.hideLoading();
     uni.showToast({ title: (error as Error).message, icon: 'none' });

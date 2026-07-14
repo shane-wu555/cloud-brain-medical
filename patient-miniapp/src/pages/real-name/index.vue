@@ -76,8 +76,10 @@
 import { computed, reactive, ref, watch } from 'vue';
 import { onLoad, onShow } from '@dcloudio/uni-app';
 import { useAuthStore } from '../../stores/auth';
+import { useNotificationStore } from '../../stores/notification';
 
 const auth = useAuthStore();
+const notifStore = useNotificationStore();
 const loading = ref(false);
 
 const idTypeOptions = [
@@ -150,6 +152,7 @@ function onGenderChange(event: { detail: { value: string } }) {
 async function bind(patientId: string) {
   try {
     await auth.bindPatient(patientId);
+    await notifStore.refreshUnreadCount();
     uni.showToast({ title: '已切换就诊人', icon: 'success' });
   } catch (error) {
     uni.showToast({ title: (error as Error).message, icon: 'none' });

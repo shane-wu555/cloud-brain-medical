@@ -100,7 +100,6 @@ import { onHide, onShow } from '@dcloudio/uni-app';
 import { ref } from 'vue';
 import MedicalIcon from '../../components/MedicalIcon.vue';
 import type { MedicalIconName } from '../../constants/medical-icons';
-import { request } from '../../api/http';
 import { useAuthStore } from '../../stores/auth';
 import { useNotificationStore } from '../../stores/notification';
 
@@ -124,21 +123,6 @@ interface ServiceItem {
 interface ServiceGroup {
   title: string;
   items: ServiceItem[];
-}
-
-interface Appointment {
-  id: string;
-  paymentStatus: string;
-}
-
-interface MedicalOrder {
-  id: string;
-  paymentStatus: string;
-}
-
-interface Prescription {
-  id: string;
-  status: string;
 }
 
 const auth = useAuthStore();
@@ -226,44 +210,17 @@ function serviceBadgeCount(categories: string[]): number {
 }
 
 function categoryBadgeCount(category: string) {
-  if (category === 'PENDING_PAYMENT') {
-    return notifStore.pendingPaymentCount;
-  }
-  return notifStore.unreadByCategory[category] || 0;
+  const counts: Record<string, number> = {
+    PENDING_PAYMENT: notifStore.pendingPaymentCount,
+    EXAM_ARRANGEMENT: notifStore.examAndReportCount,
+    DISPOSAL_ARRANGEMENT: notifStore.disposalCompletedCount,
+    DISPENSE_ARRANGEMENT: notifStore.drugsDispensedCount,
+  };
+  return counts[category] || 0;
 }
 
 async function refreshNotifications() {
-  await Promise.all([
-    notifStore.refreshUnreadCount(),
-    refreshPendingPaymentTodoCount(),
-  ]);
-}
-
-async function refreshPendingPaymentTodoCount() {
-  if (!auth.boundPatient) {
-    notifStore.setPendingPaymentTodoCount(0);
-    return;
-  }
-  try {
-    const patientQuery = `patientId=${encodeURIComponent(auth.boundPatient.id)}`;
-    const [appointments, medicalOrders, prescriptions] = await Promise.all([
-      request<Appointment[]>({ url: `/appointments?status=PENDING_PAYMENT&${patientQuery}`, method: 'GET' }),
-      request<MedicalOrder[]>({ url: `/medical-orders?status=PENDING_PAYMENT&${patientQuery}&view=OUTPATIENT_PAYMENT`, method: 'GET' }),
-      request<Prescription[]>({ url: `/prescriptions?${patientQuery}&view=OUTPATIENT_PAYMENT`, method: 'GET' }),
-    ]);
-    const registrationCount = appointments
-      .filter((item) => item.paymentStatus === 'UNPAID' || item.paymentStatus === 'FAILED')
-      .length;
-    const medicalOrderCount = medicalOrders
-      .filter((item) => item.paymentStatus === 'UNPAID')
-      .length;
-    const prescriptionCount = prescriptions
-      .filter((item) => item.status === 'PENDING_PAYMENT' || item.status === 'CONFIRMED')
-      .length;
-    notifStore.setPendingPaymentTodoCount(registrationCount + medicalOrderCount + prescriptionCount);
-  } catch {
-    // keep existing notification count fallback when business data polling fails
-  }
+  await notifStore.refreshUnreadCount();
 }
 
 function go(url: string, readCategories?: string[]) {

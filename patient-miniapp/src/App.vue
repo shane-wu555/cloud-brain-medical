@@ -6,14 +6,17 @@ import { useNotificationStore } from './stores/notification';
 onLaunch(() => {
   useAuthStore().restore();
   useNotificationStore().startCalledPolling();
+  useNotificationStore().startUnreadPolling();
 });
 
 onShow(() => {
   useNotificationStore().startCalledPolling();
+  useNotificationStore().startUnreadPolling();
 });
 
 onHide(() => {
   useNotificationStore().stopCalledPolling();
+  useNotificationStore().stopUnreadPolling();
 });
 </script>
 
